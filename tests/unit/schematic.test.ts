@@ -205,3 +205,33 @@ describe('Netlist и проверки перед расчётом', () => {
     assert.doesNotMatch(nl.text.split('\n').slice(1).join('\n'), /[^\x00-\x7f]/);
   });
 });
+
+describe('Трассировка проводов', () => {
+  test('провода разных цепей не ложатся друг на друга и не проходят через чужие выводы', async () => {
+    const { Builder, p } = await import('../sim-helpers');
+    const { pinPosition } = await import('../../src/core/schematic');
+    // Та же раскладка, на которой в интерфейсе провода накладывались
+    const b = new Builder();
+    const v = b.place('V', 120, 250), r1 = b.place('R', 300, 150), r2 = b.place('R', 300, 350), g = b.place('GND', 120, 450);
+    b.wire(p(v, '+'), p(r1, '1'));
+    b.wire(p(r1, '2'), p(r2, '1'));
+    b.wire(p(r2, '2'), p(g, '1'));
+    b.wire(p(v, '-'), p(g, '1'));
+    const ws = b.doc.schematic.wires;
+    const segs = (pts: { x: number; y: number }[]) => pts.slice(1).map((q, i) => [pts[i]!, q] as const);
+    for (let i = 0; i < ws.length; i++) for (let j = i + 1; j < ws.length; j++) {
+      if (ws[i]!.netId === ws[j]!.netId) continue;
+      for (const [a1, a2] of segs(ws[i]!.points)) for (const [b1, b2] of segs(ws[j]!.points)) {
+        const vert = a1.x === a2.x && b1.x === b2.x && a1.x === b1.x;
+        const hor = a1.y === a2.y && b1.y === b2.y && a1.y === b1.y;
+        if (vert) assert.ok(Math.min(Math.max(a1.y, a2.y), Math.max(b1.y, b2.y)) - Math.max(Math.min(a1.y, a2.y), Math.min(b1.y, b2.y)) <= 0, 'вертикальные отрезки разных цепей перекрываются');
+        if (hor) assert.ok(Math.min(Math.max(a1.x, a2.x), Math.max(b1.x, b2.x)) - Math.max(Math.min(a1.x, a2.x), Math.min(b1.x, b2.x)) <= 0, 'горизонтальные отрезки разных цепей перекрываются');
+      }
+    }
+    // концы проводов — точно на выводах
+    for (const w of ws) {
+      assert.deepEqual(w.points[0], pinPosition(b.doc, w.from!));
+      assert.deepEqual(w.points.at(-1), pinPosition(b.doc, w.to!));
+    }
+  });
+});

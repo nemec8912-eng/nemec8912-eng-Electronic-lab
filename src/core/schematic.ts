@@ -47,16 +47,72 @@ export function routeWire(a: Point, b: Point): Point[] {
   return [a, { x: b.x, y: a.y }, b];
 }
 
+type Seg = [Point, Point];
+
+const segsOf = (pts: Point[]): Seg[] => pts.slice(1).map((q, i) => [pts[i]!, q] as Seg);
+
+/** Отрезки лежат на одной прямой и перекрываются на участке ненулевой длины. */
+function overlapCollinear(a: Seg, b: Seg): boolean {
+  const [a1, a2] = a, [b1, b2] = b;
+  if (a1.x === a2.x && b1.x === b2.x && a1.x === b1.x) {
+    const lo = Math.max(Math.min(a1.y, a2.y), Math.min(b1.y, b2.y)), hi = Math.min(Math.max(a1.y, a2.y), Math.max(b1.y, b2.y));
+    return hi - lo > 0;
+  }
+  if (a1.y === a2.y && b1.y === b2.y && a1.y === b1.y) {
+    const lo = Math.max(Math.min(a1.x, a2.x), Math.min(b1.x, b2.x)), hi = Math.min(Math.max(a1.x, a2.x), Math.max(b1.x, b2.x));
+    return hi - lo > 0;
+  }
+  return false;
+}
+
+/** Точка лежит на отрезке (оси параллельны сетке). */
+function onSeg(p: Point, [a, b]: Seg): boolean {
+  if (a.x === b.x) return p.x === a.x && p.y >= Math.min(a.y, b.y) && p.y <= Math.max(a.y, b.y);
+  if (a.y === b.y) return p.y === a.y && p.x >= Math.min(a.x, b.x) && p.x <= Math.max(a.x, b.x);
+  return false;
+}
+
+/**
+ * Трассировка провода так, чтобы он не ложился на провода других цепей и не проходил через выводы
+ * других цепей (иначе на рисунке это выглядит как соединение). Перебираются Г- и П-образные варианты.
+ */
+export function routeAvoiding(doc: ProjectDoc, a: Point, b: Point, netId: string | null, skipWireId?: string): Point[] {
+  const foreign: Seg[] = doc.schematic.wires.filter((w) => w.id !== skipWireId && w.netId !== netId).flatMap((w) => segsOf(w.points));
+  const foreignPins: Point[] = [];
+  for (const inst of doc.schematic.instances) for (const pin of symbolOf(doc, inst)?.pins ?? []) {
+    const ref = { instanceId: inst.id, pin: pin.number };
+    const n = netOfPin(doc, ref);
+    if (netId !== null && n?.id === netId) continue;
+    const pos = pinPosition(doc, ref)!;
+    if ((pos.x === a.x && pos.y === a.y) || (pos.x === b.x && pos.y === b.y)) continue;
+    foreignPins.push(pos);
+  }
+  const ok = (pts: Point[]) => segsOf(pts).every((sg) => !foreign.some((f) => overlapCollinear(sg, f)) && !foreignPins.some((fp) => onSeg(fp, sg)));
+  const dedupe = (pts: Point[]) => pts.filter((q, i) => i === 0 || q.x !== pts[i - 1]!.x || q.y !== pts[i - 1]!.y);
+  const candidates: Point[][] = [routeWire(a, b), [a, { x: a.x, y: b.y }, b]];
+  for (const off of [GRID * 2, -GRID * 2, GRID * 4, -GRID * 4, GRID * 6, -GRID * 6]) {
+    const mx = snap((a.x + b.x) / 2) + off, my = snap((a.y + b.y) / 2) + off;
+    candidates.push([a, { x: mx, y: a.y }, { x: mx, y: b.y }, b]);
+    candidates.push([a, { x: a.x, y: my }, { x: b.x, y: my }, b]);
+    candidates.push([a, { x: a.x + off, y: a.y }, { x: a.x + off, y: b.y }, b]);
+    candidates.push([a, { x: a.x, y: a.y + off }, { x: b.x, y: a.y + off }, b]);
+  }
+  for (const c of candidates) { const d = dedupe(c); if (ok(d)) return d; }
+  return routeWire(a, b);
+}
+
 function rerouteWires(doc: ProjectDoc, instanceIds: Set<string>): ProjectDoc {
   let changed = false;
-  const wires = doc.schematic.wires.map((w) => {
-    if (!w.from || !w.to || (!instanceIds.has(w.from.instanceId) && !instanceIds.has(w.to.instanceId))) return w;
-    const a = pinPosition(doc, w.from), b = pinPosition(doc, w.to);
-    if (!a || !b) return w;
+  let d = doc;
+  for (const w of doc.schematic.wires) {
+    if (!w.from || !w.to || (!instanceIds.has(w.from.instanceId) && !instanceIds.has(w.to.instanceId))) continue;
+    const a = pinPosition(d, w.from), b = pinPosition(d, w.to);
+    if (!a || !b) continue;
     changed = true;
-    return { ...w, points: routeWire(a, b) };
-  });
-  return changed ? { ...doc, schematic: { ...doc.schematic, wires } } : doc;
+    const points = routeAvoiding(d, a, b, w.netId, w.id);
+    d = { ...d, schematic: { ...d.schematic, wires: d.schematic.wires.map((x) => (x.id === w.id ? { ...x, points } : x)) } };
+  }
+  return changed ? d : doc;
 }
 
 // ---------- Размещение деталей ----------
@@ -202,7 +258,8 @@ export function connectPins(doc: ProjectDoc, a: PinRef, b: PinRef): { doc: Proje
     netId = newId();
     nets.push({ id: netId, name: null, connections: [a, b] });
   }
-  const wire: Wire = { id: newId(), netId, from: a, to: b, points: routeWire(pa, pb) };
+  const merged = { ...doc, schematic: { ...doc.schematic, nets, wires } };
+  const wire: Wire = { id: newId(), netId, from: a, to: b, points: routeAvoiding(merged, pa, pb, netId) };
   wires.push(wire);
   const d = { ...doc, schematic: { ...doc.schematic, nets, wires } };
   return { doc: touch(withGroundNames(d)), error: null };

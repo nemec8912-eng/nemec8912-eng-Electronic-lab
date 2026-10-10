@@ -137,9 +137,14 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
   }
 
   // Плата
+  // Плата синхронизируется со схемой явно (ТЗ): между изменением схемы и синхронизацией размещение
+  // может ссылаться на удалённую деталь, а дорожка — на исчезнувшую цепь. Это не нарушение целостности,
+  // а «несинхронизированное» состояние: его показывают отчёт синхронизации и DRC. Корпус и площадки
+  // при этом обязаны существовать.
   for (const pl of doc.pcb.placements) {
+    if (!packages.has(pl.packageId)) dangling(pl.id, 'packageId', pl.packageId);
     const inst = instances.get(pl.instanceId);
-    if (!inst) { dangling(pl.id, 'instanceId', pl.instanceId); continue; }
+    if (!inst) continue;
     const part = parts.get(inst.partId);
     if (part && !part.packages.some((p) => p.packageId === pl.packageId)) {
       dangling(pl.id, 'packageId (не входит в корпуса детали)', pl.packageId);
@@ -147,7 +152,6 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
   }
   const placements = new Map(doc.pcb.placements.map((p) => [p.id, p]));
   for (const t of doc.pcb.tracks) {
-    if (!nets.has(t.netId)) dangling(t.id, 'netId', t.netId);
     for (const end of [t.from, t.to]) {
       if (!end) continue;
       const pl = placements.get(end.placementId);
@@ -158,7 +162,6 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
       }
     }
   }
-  for (const v of doc.pcb.vias) if (!nets.has(v.netId)) dangling(v.id, 'netId', v.netId);
 
   return issues;
 }

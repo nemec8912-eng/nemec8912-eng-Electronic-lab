@@ -7,6 +7,7 @@ import { canRedo, canUndo, initHistory, pushState, redo, undo } from '../../src/
 import { isUuid, newId } from '../../src/core/ids';
 import { checkIntegrity } from '../../src/core/integrity';
 import { loadDocument } from '../../src/core/migrations';
+import { CURRENT_SCHEMA_VERSION } from '../../src/core/model';
 import { remapDocs, remapIds } from '../../src/core/remap';
 import { linkSignature, makeRichDoc } from '../helpers';
 
@@ -86,16 +87,31 @@ describe('Проверка целостности', () => {
 });
 
 describe('Загрузка и миграции', () => {
-  test('миграция версии 0 → 1 сохраняет ID и заметки', () => {
+  test('миграция версии 0 → текущая сохраняет ID и заметки', () => {
     const v0 = fixture('project-v0.json');
     const r = loadDocument(v0);
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     assert.equal(r.migratedFrom, 0);
-    assert.equal(r.doc.schemaVersion, 1);
+    assert.equal(r.doc.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.equal(r.doc.id, v0.id);
     assert.equal(r.doc.name, v0.title);
     assert.deepEqual(r.doc.schematic.annotations.map((a) => [a.id, a.text, a.position]), v0.notes.map((n: { id: string; text: string; x: number; y: number }) => [n.id, n.text, { x: n.x, y: n.y }]));
     assert.deepEqual(v0.version, 0, 'исходные данные не изменены');
+  });
+
+  test('миграция v1 → v2: связи сохранены, концы проводов и дорожек — null, площадки получили координаты', () => {
+    const v1 = fixture('project-v1.json');
+    const r = loadDocument(v1);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    assert.equal(r.migratedFrom, 1);
+    assert.deepEqual(r.doc.schematic.wires.map((w) => [w.from, w.to]), [[null, null]]);
+    assert.deepEqual(r.doc.pcb.tracks.map((t) => [t.from, t.to]), [[null, null]]);
+    const axial = r.doc.library.packages.find((p) => p.name.startsWith('Выводной'))!;
+    assert.deepEqual(axial.pads.map((p) => [p.number, p.x, p.y, p.drill]), [['A', 0, 0, 0.9], ['B', 2.54, 0, 0.9]]);
+    assert.deepEqual(r.doc.simulation, { tran: { stopS: 0.01, stepS: 1e-5, startFromZero: true } });
+    const sig = linkSignature(r.doc) as Record<string, unknown>;
+    assert.equal((sig.nets as unknown[]).length, 3);
+    assert.deepEqual(r.doc.schematic.nets, v1.schematic.nets);
   });
 
   test('файл более новой версии не открывается', () => {

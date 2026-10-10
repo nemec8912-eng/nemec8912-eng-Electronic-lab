@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 1,
+  "id": "7f1ffa44-a4aa-4c78-8a1d-449638b8a1df",
+  "name": "Делитель v1",
+  "description": "",
+  "createdAt": "2026-10-10T19:13:52.777Z",
+  "updatedAt": "2026-10-10T19:13:52.778Z",
+  "revision": 1,
+  "schematic": {
+    "instances": [
+      {
+        "id": "33c60c16-1c5e-49e7-87f9-49d915bb1a9f",
+        "partId": "ca588a20-98b1-41c0-b2af-b572ca9c5116",
+        "refDes": "R1",
+        "position": {
+          "x": 100,
+          "y": 100
+        },
+        "rotation": 0,
+        "mirrored": false,
+        "values": {
+          "resistance": {
+            "value": 10000,
+            "unit": "Ω"
+          }
+        }
+      },
+      {
+        "id": "875cd482-0d17-46a1-85aa-c163188d1a99",
+        "partId": "ca588a20-98b1-41c0-b2af-b572ca9c5116",
+        "refDes": "R2",
+        "position": {
+          "x": 100,
+          "y": 200
+        },
+        "rotation": 90,
+        "mirrored": false,
+        "values": {
+          "resistance": {
+            "value": 4700,
+            "unit": "Ω"
+          }
+        }
+      }
+    ],
+    "nets": [
+      {
+        "id": "9292dcae-605e-492c-a104-3b672d3f29a3",
+        "name": "IN",
+        "connections": [
+          {
+            "instanceId": "33c60c16-1c5e-49e7-87f9-49d915bb1a9f",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "id": "457028dd-e130-47a8-b49a-ed554decd02a",
+        "name": "OUT",
+        "connections": [
+          {
+            "instanceId": "33c60c16-1c5e-49e7-87f9-49d915bb1a9f",
+            "pin": "2"
+          },
+          {
+            "instanceId": "875cd482-0d17-46a1-85aa-c163188d1a99",
+            "pin": "1"
+          }
+        ]
+      },
+      {
+        "id": "8f48231f-0819-49f1-80d3-551fe42c4098",
+        "name": "GND",
+        "connections": [
+          {
+            "instanceId": "875cd482-0d17-46a1-85aa-c163188d1a99",
+            "pin": "2"
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "88e225fd-8d0b-4e56-993c-106960189026",
+        "netId": "457028dd-e130-47a8-b49a-ed554decd02a",
+        "points": [
+          {
+            "x": 100,
+            "y": 130
+          },
+          {
+            "x": 100,
+            "y": 170
+          }
+        ]
+      }
+    ],
+    "annotations": [
+      {
+        "id": "aa6328f1-cdb7-43c6-b6da-0a7ef3a2d0dc",
+        "kind": "text",
+        "text": "Проверить делитель",
+        "position": {
+          "x": 40,
+          "y": 40
+        },
+        "targetId": null
+      }
+    ]
+  },
+  "library": {
+    "symbols": [
+      {
+        "id": "632ee3e0-5d3f-4f8e-9b1e-3cc0088112f4",
+        "name": "Резистор",
+        "standard": "IEC 60617",
+        "pins": [
+          {
+            "number": "1",
+            "name": "1",
+            "electricalType": "passive"
+          },
+          {
+            "number": "2",
+            "name": "2",
+            "electricalType": "passive"
+          }
+        ]
+      }
+    ],
+    "packages": [
+      {
+        "id": "e9092b09-0350-4f5d-8d66-862db3438c50",
+        "name": "0805",
+        "family": "SMD",
+        "pin1Marker": null,
+        "pads": [
+          {
+            "number": "1"
+          },
+          {
+            "number": "2"
+          }
+        ]
+      },
+      {
+        "id": "e3a8b247-5752-416e-b254-0bce7ef6ae3b",
+        "name": "Выводной 0.4\"",
+        "family": "THT",
+        "pin1Marker": null,
+        "pads": [
+          {
+            "number": "A"
+          },
+          {
+            "number": "B"
+          }
+        ]
+      }
+    ],
+    "models": [
+      {
+        "id": "8deee669-da48-4e30-a32f-382f03a34500",
+        "name": "R",
+        "kind": "spice-primitive",
+        "text": "R {n1} {n2} {value}",
+        "source": null,
+        "verified": true
+      }
+    ],
+    "parts": [
+      {
+        "id": "ca588a20-98b1-41c0-b2af-b572ca9c5116",
+        "name": "Резистор 0.125 Вт",
+        "category": "resistor",
+        "manufacturer": null,
+        "partNumber": null,
+        "symbolId": "632ee3e0-5d3f-4f8e-9b1e-3cc0088112f4",
+        "packages": [
+          {
+            "packageId": "e9092b09-0350-4f5d-8d66-862db3438c50",
+            "pinMap": [
+              {
+                "symbolPin": "1",
+                "pad": "1"
+              },
+              {
+                "symbolPin": "2",
+                "pad": "2"
+              }
+            ]
+          },
+          {
+            "packageId": "e3a8b247-5752-416e-b254-0bce7ef6ae3b",
+            "pinMap": [
+              {
+                "symbolPin": "1",
+                "pad": "B"
+              },
+              {
+                "symbolPin": "2",
+                "pad": "A"
+              }
+            ]
+          }
+        ],
+        "modelId": "8deee669-da48-4e30-a32f-382f03a34500",
+        "ratings": {
+          "power": {
+            "value": 0.125,
+            "unit": "W"
+          }
+        },
+        "origin": {
+          "catalogPartId": "f15843c9-1345-49ba-a90b-9c68be863f55",
+          "source": "вручную",
+          "checkedAt": null
+        }
+      }
+    ]
+  },
+  "pcb": {
+    "board": {
+      "id": "c9c6b4ec-ad5f-44f0-8840-fc32ab1ba3e5",
+      "widthMm": 50,
+      "heightMm": 30,
+      "layers": 1
+    },
+    "placements": [
+      {
+        "id": "43aa8c31-7529-4e78-b67c-dbb2b79cf932",
+        "instanceId": "33c60c16-1c5e-49e7-87f9-49d915bb1a9f",
+        "packageId": "e3a8b247-5752-416e-b254-0bce7ef6ae3b",
+        "position": {
+          "x": 10,
+          "y": 10
+        },
+        "rotation": 0,
+        "side": "top"
+      },
+      {
+        "id": "04d0242f-099e-45c3-90ba-e8711c0f7d23",
+        "instanceId": "875cd482-0d17-46a1-85aa-c163188d1a99",
+        "packageId": "e9092b09-0350-4f5d-8d66-862db3438c50",
+        "position": {
+          "x": 30,
+          "y": 10
+        },
+        "rotation": 90,
+        "side": "bottom"
+      }
+    ],
+    "tracks": [
+      {
+        "id": "091eb631-7d0d-4448-ab4f-59b0670ccd31",
+        "netId": "457028dd-e130-47a8-b49a-ed554decd02a",
+        "layer": "bottom",
+        "widthMm": 0.8,
+        "points": [
+          {
+            "x": 20.16,
+            "y": 10
+          },
+          {
+            "x": 30,
+            "y": 9.05
+          }
+        ]
+      }
+    ],
+    "vias": []
+  },
+  "instruments": {
+    "settings": {}
+  },
+  "tests": [
+    {
+      "id": "4ebb3b12-d0fa-4b11-8d76-bb2b030bf426",
+      "createdAt": "2026-10-10T19:13:52.778Z",
+      "revision": 0,
+      "conditions": "5 В",
+      "notes": "",
+      "measurements": [
+        {
+          "id": "ab154810-06c0-4224-afa1-1150da417492",
+          "target": "OUT",
+          "quantity": {
+            "value": 1.6,
+            "unit": "V"
+          },
+          "instrument": "мультиметр"
+        }
+      ]
+    }
+  ],
+  "attachments": [],
+  "changelog": [
+    {
+      "id": "2742f0de-6adb-432b-8392-8f7b3772a3d2",
+      "at": "2026-10-10T19:13:52.777Z",
+      "revision": 0,
+      "action": "create",
+      "summary": "Проект «Делитель v1» создан"
+    }
+  ]
+}

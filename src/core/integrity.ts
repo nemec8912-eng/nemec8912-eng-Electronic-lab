@@ -121,7 +121,17 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
       pinOwner.set(key, net.id);
     }
   }
-  for (const w of doc.schematic.wires) if (!nets.has(w.netId)) dangling(w.id, 'netId', w.netId);
+  const netById = new Map(doc.schematic.nets.map((n) => [n.id, n]));
+  for (const w of doc.schematic.wires) {
+    const net = netById.get(w.netId);
+    if (!net) { dangling(w.id, 'netId', w.netId); continue; }
+    for (const end of [w.from, w.to]) {
+      if (!end) continue;
+      if (!net.connections.some((c) => c.instanceId === end.instanceId && c.pin === end.pin)) {
+        issues.push({ code: 'dangling-ref', message: `Провод ${w.id}: вывод ${instances.get(end.instanceId)?.refDes ?? end.instanceId}.${end.pin} не входит в его сеть`, ids: [w.id] });
+      }
+    }
+  }
   for (const a of doc.schematic.annotations) {
     if (a.targetId !== null && !seen.has(a.targetId)) dangling(a.id, 'targetId', a.targetId);
   }
@@ -135,7 +145,19 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
       dangling(pl.id, 'packageId (не входит в корпуса детали)', pl.packageId);
     }
   }
-  for (const t of doc.pcb.tracks) if (!nets.has(t.netId)) dangling(t.id, 'netId', t.netId);
+  const placements = new Map(doc.pcb.placements.map((p) => [p.id, p]));
+  for (const t of doc.pcb.tracks) {
+    if (!nets.has(t.netId)) dangling(t.id, 'netId', t.netId);
+    for (const end of [t.from, t.to]) {
+      if (!end) continue;
+      const pl = placements.get(end.placementId);
+      if (!pl) { dangling(t.id, 'from/to.placementId', end.placementId); continue; }
+      const pkg = packages.get(pl.packageId);
+      if (pkg && !pkg.pads.some((p) => p.number === end.pad)) {
+        issues.push({ code: 'unknown-pin', message: `Дорожка ${t.id}: площадки «${end.pad}» нет в корпусе ${pkg.name}`, ids: [t.id] });
+      }
+    }
+  }
   for (const v of doc.pcb.vias) if (!nets.has(v.netId)) dangling(v.id, 'netId', v.netId);
 
   return issues;

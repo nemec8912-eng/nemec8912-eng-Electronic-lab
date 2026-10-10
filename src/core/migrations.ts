@@ -1,7 +1,7 @@
 /**
  * Миграции документа проекта и единая точка загрузки: миграция → проверка структуры → проверка целостности.
  */
-import { CURRENT_SCHEMA_VERSION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
 import { checkIntegrity, type IntegrityIssue } from './integrity';
 import { emptyCollections } from './factory';
 
@@ -39,6 +39,47 @@ const migrations: Migration[] = [
             targetId: null,
           })),
         },
+      };
+    },
+  },
+  {
+    /**
+     * v1 → v2. Провода и дорожки v1 не знали своих концов (null — «только графика»).
+     * Площадкам v1 не было координат: они расставляются в ряд с шагом 2,54 мм как типовые
+     * выводные (∅1,8 мм, отверстие 0,9 мм) — такие корпуса нужно проверить перед изготовлением платы.
+     */
+    from: 1,
+    to: 2,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      const lib = r.library ?? {};
+      const pcb = r.pcb ?? {};
+      return {
+        ...r,
+        schemaVersion: 2,
+        schematic: {
+          ...r.schematic,
+          wires: (r.schematic?.wires ?? []).map((w: Record<string, unknown>) => ({ ...w, from: w.from ?? null, to: w.to ?? null })),
+        },
+        library: {
+          ...lib,
+          symbols: (lib.symbols ?? []).map((s: Record<string, any>) => ({
+            ...s,
+            graphic: s.graphic ?? 'box',
+            pins: (s.pins ?? []).map((pin: Record<string, unknown>, i: number) => ('x' in pin ? pin : { ...pin, x: i * 20, y: 0 })),
+          })),
+          packages: (lib.packages ?? []).map((p: Record<string, any>) => ({
+            ...p,
+            body: p.body ?? null,
+            pads: (p.pads ?? []).map((pad: Record<string, unknown>, i: number) =>
+              'x' in pad ? pad : { ...pad, x: Math.round(i * 2.54 * 100) / 100, y: 0, shape: 'round', w: 1.8, h: 1.8, drill: 0.9 }),
+          })),
+        },
+        pcb: {
+          ...pcb,
+          tracks: (pcb.tracks ?? []).map((t: Record<string, unknown>) => ({ ...t, from: t.from ?? null, to: t.to ?? null })),
+        },
+        simulation: r.simulation ?? structuredClone(DEFAULT_SIMULATION),
       };
     },
   },

@@ -1,15 +1,16 @@
 /** Создание документа и базовые операции изменения (без побочных эффектов). */
 import { newId } from './ids';
-import { CURRENT_SCHEMA_VERSION, type Annotation, type ProjectDoc, type Point } from './model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_SIMULATION, type Annotation, type ProjectDoc, type Point } from './model';
 
 export const CHANGELOG_LIMIT = 2000;
 
-export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | 'pcb' | 'instruments' | 'tests' | 'attachments' | 'changelog'> {
+export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | 'pcb' | 'instruments' | 'simulation' | 'tests' | 'attachments' | 'changelog'> {
   return {
     schematic: { instances: [], nets: [], wires: [], annotations: [] },
     library: { symbols: [], parts: [], packages: [], models: [] },
     pcb: { board: null, placements: [], tracks: [], vias: [] },
     instruments: { settings: {} },
+    simulation: structuredClone(DEFAULT_SIMULATION),
     tests: [],
     attachments: [],
     changelog: [],

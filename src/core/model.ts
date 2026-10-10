@@ -1,12 +1,13 @@
 /**
- * Модель документа проекта, schemaVersion 1.
+ * Модель документа проекта, schemaVersion 2 (v1 → v2: геометрия площадок, концы проводов и дорожек,
+ * модель «земля», настройки расчёта).
  * Единственный источник истины для схемы, библиотеки, платы, испытаний и истории.
  * Описание полей и инвариантов — docs/ARCHITECTURE.md, раздел 2.
  */
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -43,7 +44,17 @@ export const NetSchema = z.object({
   connections: z.array(PinRefSchema),
 }).strict();
 
-export const WireSchema = z.object({ id: Id, netId: Id, points: z.array(PointSchema).min(2) }).strict();
+/**
+ * Провод — графика соединения двух выводов. Электрическая связность — в сетях (nets);
+ * концы from/to говорят, какое соединение провод изображает. null — провод из формата v1 без концов.
+ */
+export const WireSchema = z.object({
+  id: Id,
+  netId: Id,
+  from: PinRefSchema.nullable(),
+  to: PinRefSchema.nullable(),
+  points: z.array(PointSchema).min(2),
+}).strict();
 
 export const AnnotationSchema = z.object({
   id: Id,
@@ -59,10 +70,15 @@ export const SymbolDefSchema = z.object({
   id: Id,
   name: z.string().min(1).max(128),
   standard: z.string().max(64),
+  /** Как рисовать: ключ встроенного изображения (iec-resistor, iec-capacitor, iec-dc-source, ground, box). */
+  graphic: z.string().min(1).max(64),
+  /** x, y — точка подключения вывода в единицах полотна относительно начала символа (до поворота). */
   pins: z.array(z.object({
     number: z.string().min(1).max(16),
     name: z.string().max(64),
     electricalType: PinElectricalType,
+    x: Finite,
+    y: Finite,
   }).strict()),
 }).strict();
 
@@ -70,14 +86,26 @@ export const PackageDefSchema = z.object({
   id: Id,
   name: z.string().min(1).max(128),
   family: z.string().max(32),
-  pads: z.array(z.object({ number: z.string().min(1).max(16) }).strict()),
+  /** Площадки в мм относительно начала координат корпуса; drill = null — SMD. */
+  pads: z.array(z.object({
+    number: z.string().min(1).max(16),
+    x: Finite,
+    y: Finite,
+    shape: z.enum(['round', 'rect', 'oval']),
+    w: Finite.positive(),
+    h: Finite.positive(),
+    drill: Finite.positive().nullable(),
+  }).strict()),
+  /** Контур корпуса для шелкографии, мм (прямоугольник вокруг начала координат). */
+  body: z.object({ x: Finite, y: Finite, w: Finite.positive(), h: Finite.positive() }).strict().nullable(),
   pin1Marker: z.string().max(64).nullable(),
 }).strict();
 
 export const SimModelSchema = z.object({
   id: Id,
   name: z.string().min(1).max(128),
-  kind: z.enum(['spice-primitive', 'spice-subckt']),
+  /** spice-primitive: шаблон строки netlist; ground: вывод — опорный узел 0. */
+  kind: z.enum(['spice-primitive', 'spice-subckt', 'ground']),
   text: z.string().max(1_000_000),
   source: z.string().max(1024).nullable(),
   verified: z.boolean(),
@@ -105,6 +133,8 @@ export const PartDefSchema = z.object({
 
 // ---------- Плата ----------
 
+export const PadRefSchema = z.object({ placementId: Id, pad: z.string().min(1).max(16) }).strict();
+
 export const PcbSchema = z.object({
   board: z.object({
     id: Id,
@@ -118,6 +148,8 @@ export const PcbSchema = z.object({
   }).strict()),
   tracks: z.array(z.object({
     id: Id, netId: Id, layer: z.enum(['top', 'bottom']), widthMm: Finite.positive(),
+    from: PadRefSchema.nullable(),
+    to: PadRefSchema.nullable(),
     points: z.array(PointSchema).min(2),
   }).strict()),
   vias: z.array(z.object({
@@ -155,6 +187,18 @@ export const ChangeEntrySchema = z.object({
   summary: z.string().max(1000),
 }).strict();
 
+// ---------- Настройки расчёта ----------
+
+export const SimulationSettingsSchema = z.object({
+  /**
+   * Переходный процесс: время моделирования и шаг вывода, секунды.
+   * startFromZero — «включение питания при t = 0»: конденсаторы разряжены (ngspice: uic);
+   * иначе расчёт начинается из установившейся рабочей точки.
+   */
+  tran: z.object({ stopS: Finite.positive(), stepS: Finite.positive(), startFromZero: z.boolean() }).strict(),
+}).strict();
+export const DEFAULT_SIMULATION = { tran: { stopS: 0.01, stepS: 1e-5, startFromZero: true } };
+
 // ---------- Документ ----------
 
 export const ProjectDocSchema = z.object({
@@ -179,6 +223,7 @@ export const ProjectDocSchema = z.object({
   }).strict(),
   pcb: PcbSchema,
   instruments: z.object({ settings: z.record(z.string(), z.unknown()) }).strict(),
+  simulation: SimulationSettingsSchema,
   tests: z.array(TestRecordSchema),
   attachments: z.array(AttachmentRefSchema),
   changelog: z.array(ChangeEntrySchema),
@@ -187,6 +232,19 @@ export const ProjectDocSchema = z.object({
 export type Point = z.infer<typeof PointSchema>;
 export type Quantity = z.infer<typeof QuantitySchema>;
 export type Annotation = z.infer<typeof AnnotationSchema>;
+export type PinRef = z.infer<typeof PinRefSchema>;
+export type PadRef = z.infer<typeof PadRefSchema>;
+export type ComponentInstance = z.infer<typeof ComponentInstanceSchema>;
+export type Net = z.infer<typeof NetSchema>;
+export type Wire = z.infer<typeof WireSchema>;
+export type SymbolDef = z.infer<typeof SymbolDefSchema>;
+export type PackageDef = z.infer<typeof PackageDefSchema>;
+export type SimModel = z.infer<typeof SimModelSchema>;
+export type PartDef = z.infer<typeof PartDefSchema>;
+export type Pcb = z.infer<typeof PcbSchema>;
+export type Placement = Pcb['placements'][number];
+export type Track = Pcb['tracks'][number];
+export type SimulationSettings = z.infer<typeof SimulationSettingsSchema>;
 export type ChangeEntry = z.infer<typeof ChangeEntrySchema>;
 export type ProjectDoc = z.infer<typeof ProjectDocSchema>;
 

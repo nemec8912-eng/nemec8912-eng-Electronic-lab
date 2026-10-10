@@ -18,17 +18,23 @@ export async function tempDir(prefix = 'elab-test-'): Promise<{ dir: string; cle
 export function makeRichDoc(name = 'Делитель'): ProjectDoc {
   let doc = createProject(name);
   const symR = newId(), pkg0805 = newId(), pkgAxial = newId(), modelR = newId(), partR = newId();
-  const r1 = newId(), r2 = newId(), netIn = newId(), netMid = newId(), netGnd = newId();
+  const r1 = newId(), r2 = newId(), netIn = newId(), netMid = newId(), netGnd = newId(), pl1 = newId(), pl2 = newId();
   doc = {
     ...doc,
     library: {
-      symbols: [{ id: symR, name: 'Резистор', standard: 'IEC 60617', pins: [
-        { number: '1', name: '1', electricalType: 'passive' },
-        { number: '2', name: '2', electricalType: 'passive' },
+      symbols: [{ id: symR, name: 'Резистор', standard: 'IEC 60617', graphic: 'iec-resistor', pins: [
+        { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0 },
+        { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0 },
       ] }],
       packages: [
-        { id: pkg0805, name: '0805', family: 'SMD', pads: [{ number: '1' }, { number: '2' }], pin1Marker: null },
-        { id: pkgAxial, name: 'Выводной 0.4"', family: 'THT', pads: [{ number: 'A' }, { number: 'B' }], pin1Marker: null },
+        { id: pkg0805, name: '0805', family: 'SMD', pin1Marker: null, body: { x: -1, y: -0.625, w: 2, h: 1.25 }, pads: [
+          { number: '1', x: -0.95, y: 0, shape: 'rect', w: 0.9, h: 1.3, drill: null },
+          { number: '2', x: 0.95, y: 0, shape: 'rect', w: 0.9, h: 1.3, drill: null },
+        ] },
+        { id: pkgAxial, name: 'Выводной 0.4"', family: 'THT', pin1Marker: null, body: { x: 2, y: -1.2, w: 6.16, h: 2.4 }, pads: [
+          { number: 'A', x: 0, y: 0, shape: 'round', w: 1.8, h: 1.8, drill: 0.9 },
+          { number: 'B', x: 10.16, y: 0, shape: 'round', w: 1.8, h: 1.8, drill: 0.9 },
+        ] },
       ],
       models: [{ id: modelR, name: 'R', kind: 'spice-primitive', text: 'R {n1} {n2} {value}', source: null, verified: true }],
       parts: [{
@@ -51,16 +57,16 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
         { id: netMid, name: 'OUT', connections: [{ instanceId: r1, pin: '2' }, { instanceId: r2, pin: '1' }] },
         { id: netGnd, name: 'GND', connections: [{ instanceId: r2, pin: '2' }] },
       ],
-      wires: [{ id: newId(), netId: netMid, points: [{ x: 100, y: 130 }, { x: 100, y: 170 }] }],
+      wires: [{ id: newId(), netId: netMid, from: { instanceId: r1, pin: '2' }, to: { instanceId: r2, pin: '1' }, points: [{ x: 100, y: 130 }, { x: 100, y: 170 }] }],
       annotations: [],
     },
     pcb: {
       board: { id: newId(), widthMm: 50, heightMm: 30, layers: 1 },
       placements: [
-        { id: newId(), instanceId: r1, packageId: pkgAxial, position: { x: 10, y: 10 }, rotation: 0, side: 'top' },
-        { id: newId(), instanceId: r2, packageId: pkg0805, position: { x: 20, y: 10 }, rotation: 90, side: 'bottom' },
+        { id: pl1, instanceId: r1, packageId: pkgAxial, position: { x: 10, y: 10 }, rotation: 0, side: 'top' },
+        { id: pl2, instanceId: r2, packageId: pkg0805, position: { x: 30, y: 10 }, rotation: 90, side: 'bottom' },
       ],
-      tracks: [{ id: newId(), netId: netMid, layer: 'bottom', widthMm: 0.8, points: [{ x: 12, y: 10 }, { x: 20, y: 10 }] }],
+      tracks: [{ id: newId(), netId: netMid, layer: 'bottom', widthMm: 0.8, from: { placementId: pl1, pad: 'B' }, to: { placementId: pl2, pad: '1' }, points: [{ x: 20.16, y: 10 }, { x: 30, y: 9.05 }] }],
       vias: [],
     },
     tests: [{ id: newId(), createdAt: new Date().toISOString(), revision: 0, conditions: '5 В', notes: '', measurements: [

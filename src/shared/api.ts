@@ -3,8 +3,9 @@ import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
 import type { SimResult } from '../sim/results';
+import type { PartBundle } from '../core/catalog';
 
-export type { ProjectSummary, SimResult };
+export type { ProjectSummary, SimResult, PartBundle };
 
 export interface AppInfo {
   version: string;
@@ -60,6 +61,14 @@ export interface ElabApi {
     /** Возвращает документ контрольной версии; перед этим сохраняет текущее состояние как контрольную версию. */
     restore(current: ProjectDoc, checkpointId: string): Promise<Result<ProjectDoc>>;
   };
+  catalog: {
+    /** Личный каталог (встроенный справочник окно берёт из src/catalog/builtin). */
+    list(): Promise<Result<PartBundle[]>>;
+    save(bundle: PartBundle): Promise<Result<PartBundle>>;
+    remove(partId: string): Promise<Result<void>>;
+    /** Добавить деталь из библиотеки проекта в личный каталог (новая запись). */
+    fromProject(doc: ProjectDoc, projectPartId: string): Promise<Result<PartBundle>>;
+  };
   sim: {
     /** Расчёт текущего состояния документа (рабочая точка и переходный процесс). */
     run(doc: ProjectDoc, opts: { tran: boolean }): Promise<Result<SimResult>>;
@@ -99,5 +108,9 @@ export const IPC = {
   backupAll: 'files:backup-all',
   restoreBackup: 'files:restore-backup',
   simRun: 'sim:run',
+  catList: 'catalog:list',
+  catSave: 'catalog:save',
+  catRemove: 'catalog:remove',
+  catFromProject: 'catalog:from-project',
   saveSvg: 'files:save-svg',
 } as const;

@@ -14,6 +14,7 @@ import { describeLoadError, loadDocument } from '../core/migrations';
 import { CheckpointSchema, type Checkpoint, type CheckpointInfo, type ProjectDoc } from '../core/model';
 import { remapDocs } from '../core/remap';
 import { AppError } from '../core/result';
+import { bundleOf, checkLibrary, emptyCatalog, lintBundle, loadCatalog, removePart, upsertBundle, type CatalogFile, type PartBundle } from '../core/catalog';
 import { attachmentPath, readElab, writeElab, type ElabReadResult, type ProjectBundle } from './elab';
 import { ensureDir, exists, readJson, timestampForFile, writeFileAtomic, writeJsonAtomic } from './fsutil';
 
@@ -46,7 +47,7 @@ export interface ImportPreview {
 
 const AutosaveSchema = z.object({ autosavedAt: z.string(), doc: z.unknown() }).strict();
 
-const EMPTY_CATALOG = { schemaVersion: 1, symbols: [], parts: [], packages: [], models: [] };
+const EMPTY_CATALOG = emptyCatalog();
 const DEFAULT_SETTINGS = { schemaVersion: 1, autosaveDelayMs: 1500 };
 
 export interface StoreOptions {
@@ -296,6 +297,77 @@ export class DataStore {
       await this.journal('project-delete', { projectId: id, trashedTo: path.relative(this.root, target) });
       return { trashedTo: target };
     });
+  }
+
+  // ---------- Личный каталог деталей ----------
+
+  get catalogFile() { return path.join(this.libraryDir, 'catalog.json'); }
+
+  /** Чтение личного каталога. Повреждённый файл не перезаписывается — пользователь получает ошибку. */
+  async readCatalog(): Promise<CatalogFile> {
+    if (!(await exists(this.catalogFile))) return emptyCatalog();
+    let raw: unknown;
+    try {
+      raw = await readJson(this.catalogFile);
+    } catch (e) {
+      throw new AppError('catalog-invalid', `Файл личного каталога повреждён и не изменён: ${(e as Error).message}. Восстановите его из резервной копии или library/catalog.json.bak.`);
+    }
+    const r = loadCatalog(raw);
+    if (!r.ok) throw new AppError('catalog-invalid', `${r.message}. Файл ${this.catalogFile} не изменён; восстановите его из резервной копии или library/catalog.json.bak.`, r.details);
+    return r.catalog;
+  }
+
+  private async writeCatalog(cat: CatalogFile): Promise<void> {
+    const issues = checkLibrary(cat);
+    if (issues.length) throw new AppError('catalog-integrity', 'Запись каталога отменена: нарушена целостность', issues.slice(0, 10).map((i) => i.message));
+    await fs.copyFile(this.catalogFile, `${this.catalogFile}.bak`).catch(() => undefined);
+    await writeJsonAtomic(this.catalogFile, cat);
+  }
+
+  /** Сохранить деталь в личный каталог (новую или изменённую). Ошибки проверок не дают сохранить. */
+  async saveCatalogPart(bundle: PartBundle, builtinParts: PartBundle[] = []): Promise<PartBundle> {
+    return this.serial(async () => {
+      const cat = await this.readCatalog();
+      const errors = lintBundle(bundle, cat.parts, builtinParts.map((b) => b.part)).filter((l) => l.severity === 'error');
+      if (errors.length) throw new AppError('part-invalid', 'Деталь не сохранена: есть ошибки', errors.map((e) => e.message));
+      const b: PartBundle = { ...bundle, part: { ...bundle.part, origin: { ...bundle.part.origin, catalogPartId: bundle.part.id } } };
+      await this.writeCatalog(upsertBundle(cat, b));
+      await this.journal('catalog-save', { partId: b.part.id, name: b.part.name });
+      return b;
+    });
+  }
+
+  async deleteCatalogPart(partId: string): Promise<void> {
+    return this.serial(async () => {
+      const cat = await this.readCatalog();
+      if (!cat.parts.some((p) => p.id === partId)) throw new AppError('not-found', 'Детали нет в личном каталоге');
+      await this.writeCatalog(removePart(cat, partId));
+      await this.journal('catalog-delete', { partId });
+    });
+  }
+
+  /**
+   * Добавить в личный каталог деталь из проекта (например, полученного с другого ПК). Создаётся новая
+   * запись каталога с новыми id; проект не меняется.
+   */
+  async addProjectPartToCatalog(doc: ProjectDoc, projectPartId: string, builtinParts: PartBundle[] = []): Promise<PartBundle> {
+    const src = bundleOf(doc.library, projectPartId);
+    if (!src) throw new AppError('not-found', 'Деталь не найдена в проекте');
+    const pkgIds = new Map(src.packages.map((p) => [p.id, newId()]));
+    const partId = newId();
+    const b: PartBundle = {
+      part: {
+        ...structuredClone(src.part), id: partId, symbolId: newId(), modelId: src.model ? newId() : null,
+        packages: src.part.packages.map((p) => ({ packageId: pkgIds.get(p.packageId)!, pinMap: structuredClone(p.pinMap) })),
+        origin: { ...src.part.origin, catalogPartId: partId, notes: [src.part.origin.notes, `Добавлена из проекта «${doc.name}».`].filter(Boolean).join(' ') },
+      },
+      symbol: { ...structuredClone(src.symbol), id: '' },
+      packages: src.packages.map((p) => ({ ...structuredClone(p), id: pkgIds.get(p.id)! })),
+      model: src.model ? { ...structuredClone(src.model), id: '' } : null,
+    };
+    b.symbol.id = b.part.symbolId;
+    if (b.model) b.model.id = b.part.modelId!;
+    return this.saveCatalogPart(b, builtinParts);
   }
 
   // ---------- Контрольные версии ----------

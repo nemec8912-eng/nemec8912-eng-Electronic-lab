@@ -12,6 +12,8 @@ import type { ElabReadResult } from '../storage/elab';
 import { safeFileName, timestampForFile, writeFileAtomic } from '../storage/fsutil';
 import { DataStore } from '../storage/store';
 import { simulate } from '../sim/simulate';
+import { builtinCatalog } from '../catalog/builtin';
+import type { PartBundle } from '../core/catalog';
 import { locateNgspice } from '../sim/runner';
 import { app } from 'electron';
 
@@ -91,6 +93,19 @@ export function registerIpc(ctx: MainContext): void {
     platform: process.platform,
     ngspice: findNgspice(),
   })));
+
+  ipcMain.handle(IPC.catList, wrap(async () => {
+    const cat = await store().readCatalog();
+    return cat.parts.map((p) => {
+      const symbol = cat.symbols.find((s) => s.id === p.symbolId)!;
+      const packages = p.packages.map((x) => cat.packages.find((k) => k.id === x.packageId)!).filter(Boolean);
+      const model = p.modelId ? cat.models.find((m) => m.id === p.modelId) ?? null : null;
+      return { part: p, symbol, packages, model } satisfies PartBundle;
+    });
+  }));
+  ipcMain.handle(IPC.catSave, wrap((b: PartBundle) => store().saveCatalogPart(b, builtinCatalog())));
+  ipcMain.handle(IPC.catRemove, wrap((id: string) => store().deleteCatalogPart(id)));
+  ipcMain.handle(IPC.catFromProject, wrap((doc: ProjectDoc, id: string) => store().addProjectPartToCatalog(doc, id, builtinCatalog())));
 
   ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { tran: boolean }) => simulate(doc, findNgspice(), { tran: Boolean(opts?.tran) })));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));

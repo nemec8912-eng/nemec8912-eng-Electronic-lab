@@ -149,7 +149,7 @@ export interface PartLint { severity: 'error' | 'warning'; field: string; messag
  * Проверки, которые показываются в редакторе детали. Ошибки не дают сохранить деталь; предупреждения —
  * честные оговорки (нет модели, сведения не проверены, нет ключа первого вывода).
  */
-export function lintBundle(b: PartBundle, others: PartDef[] = []): PartLint[] {
+export function lintBundle(b: PartBundle, others: PartDef[] = [], builtin: PartDef[] = []): PartLint[] {
   const out: PartLint[] = [];
   const err = (field: string, message: string) => out.push({ severity: 'error', field, message });
   const warn = (field: string, message: string) => out.push({ severity: 'warning', field, message });
@@ -159,6 +159,8 @@ export function lintBundle(b: PartBundle, others: PartDef[] = []): PartLint[] {
     const dup = others.find((o) => o.id !== p.id && o.partNumber && o.partNumber.toUpperCase() === p.partNumber!.toUpperCase()
       && (o.manufacturer ?? '').toUpperCase() === (p.manufacturer ?? '').toUpperCase());
     if (dup) err('partNumber', `Деталь ${p.partNumber}${p.manufacturer ? ` (${p.manufacturer})` : ''} уже есть в каталоге: «${dup.name}»`);
+    const inBuiltin = builtin.find((o) => o.id !== p.id && o.partNumber?.toUpperCase() === p.partNumber!.toUpperCase());
+    if (inBuiltin) warn('partNumber', `Во встроенном справочнике есть «${inBuiltin.name}» с тем же партномером — ваша деталь будет показана рядом с ней`);
   }
   // Выводы символа
   const nums = new Map<string, number>();

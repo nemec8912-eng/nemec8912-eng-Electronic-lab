@@ -381,3 +381,54 @@ test('кириллица и пробелы в пути к папке данны�
   assert.equal((await s.previewImport(exported)).existing?.id, d.id);
   await s.close();
 });
+
+describe('Личный каталог в хранилище', () => {
+  test('сохранить, изменить, удалить деталь; каталог переживает перезапуск и входит в бэкап', async () => {
+    const { builtinCatalog } = await import('../../src/catalog/builtin');
+    const ne = builtinCatalog().find((b) => b.part.partNumber === 'NE555')!;
+    const { root, store } = await freshStore('cat');
+    const mine = structuredClone(ne);
+    mine.part.id = newId();
+    mine.part.name = 'NE555 из моей коробки';
+    const saved = await store.saveCatalogPart(mine, builtinCatalog());
+    assert.equal(saved.part.origin.catalogPartId, mine.part.id);
+    // дубль внутри личного каталога — ошибка
+    const dup = structuredClone(mine);
+    dup.part.id = newId();
+    await assert.rejects(store.saveCatalogPart(dup, builtinCatalog()), (e: unknown) => e instanceof AppError && e.code === 'part-invalid');
+    await store.close();
+    const again = await DataStore.open(root);
+    assert.equal((await again.readCatalog()).parts[0]!.name, 'NE555 из моей коробки');
+    const bk = await createBackup(again);
+    const other = await freshStore('cat2');
+    await restoreBackup(other.store, await verifyBackup(bk.buffer));
+    await other.store.close();
+    const s2 = await DataStore.open(other.root);
+    assert.equal((await s2.readCatalog()).parts.length, 1, 'каталог перенесён бэкапом');
+    await s2.close();
+    await again.deleteCatalogPart(mine.part.id);
+    assert.equal((await again.readCatalog()).parts.length, 0);
+    await again.close();
+  });
+
+  test('деталь из полученного проекта добавляется в каталог; повреждённый каталог не перезаписывается', async () => {
+    const { builtinCatalog } = await import('../../src/catalog/builtin');
+    const { placeBundle } = await import('../../src/core/schematic');
+    const { createProject } = await import('../../src/core/factory');
+    const lm = builtinCatalog().find((b) => b.part.partNumber === 'LM358')!;
+    const custom = structuredClone(lm);
+    custom.part.id = newId(); custom.part.partNumber = 'LM358-МОЙ'; custom.part.name = 'Мой ОУ';
+    const doc = placeBundle(createProject('С другого ПК'), custom, { x: 0, y: 0 }).doc;
+    const { root, store } = await freshStore('cat3');
+    const added = await store.addProjectPartToCatalog(doc, doc.library.parts[0]!.id, builtinCatalog());
+    assert.equal(added.part.name, 'Мой ОУ');
+    assert.match(added.part.origin.notes, /Добавлена из проекта/);
+    assert.notEqual(added.part.id, doc.library.parts[0]!.id);
+    const file = path.join(root, 'library', 'catalog.json');
+    await fs.writeFile(file, '{ сломано');
+    await assert.rejects(store.readCatalog(), (e: unknown) => e instanceof AppError && e.code === 'catalog-invalid');
+    await assert.rejects(store.saveCatalogPart(added, builtinCatalog()), AppError);
+    assert.equal(readFileSync(file, 'utf8'), '{ сломано', 'повреждённый файл не перезаписан');
+    await store.close();
+  });
+});

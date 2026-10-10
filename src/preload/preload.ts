@@ -32,6 +32,12 @@ const api: ElabApi = {
     create: (doc, label) => call(IPC.cpCreate, doc, label),
     restore: (current, checkpointId) => call(IPC.cpRestore, current, checkpointId),
   },
+  catalog: {
+    list: () => call(IPC.catList),
+    save: (b) => call(IPC.catSave, b),
+    remove: (id) => call(IPC.catRemove, id),
+    fromProject: (doc, id) => call(IPC.catFromProject, doc, id),
+  },
   sim: {
     run: (doc, opts) => call(IPC.simRun, doc, opts),
   },

@@ -22,29 +22,29 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
   doc = {
     ...doc,
     library: {
-      symbols: [{ id: symR, name: 'Резистор', standard: 'IEC 60617', graphic: 'iec-resistor', pins: [
-        { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0 },
-        { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0 },
+      symbols: [{ id: symR, name: 'Резистор', standard: 'IEC 60617', graphic: 'iec-resistor', box: null, pins: [
+        { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0, description: '' },
+        { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0, description: '' },
       ] }],
       packages: [
-        { id: pkg0805, name: '0805', family: 'SMD', pin1Marker: null, body: { x: -1, y: -0.625, w: 2, h: 1.25 }, pads: [
+        { id: pkg0805, name: '0805', family: 'SMD', pin1Marker: null, mount: 'SMD', pitchMm: null, numbering: null, generator: null, body: { x: -1, y: -0.625, w: 2, h: 1.25 }, pads: [
           { number: '1', x: -0.95, y: 0, shape: 'rect', w: 0.9, h: 1.3, drill: null },
           { number: '2', x: 0.95, y: 0, shape: 'rect', w: 0.9, h: 1.3, drill: null },
         ] },
-        { id: pkgAxial, name: 'Выводной 0.4"', family: 'THT', pin1Marker: null, body: { x: 2, y: -1.2, w: 6.16, h: 2.4 }, pads: [
+        { id: pkgAxial, name: 'Выводной 0.4"', family: 'THT', pin1Marker: null, mount: 'THT', pitchMm: 10.16, numbering: null, generator: null, body: { x: 2, y: -1.2, w: 6.16, h: 2.4 }, pads: [
           { number: 'A', x: 0, y: 0, shape: 'round', w: 1.8, h: 1.8, drill: 0.9 },
           { number: 'B', x: 10.16, y: 0, shape: 'round', w: 1.8, h: 1.8, drill: 0.9 },
         ] },
       ],
       models: [{ id: modelR, name: 'R', kind: 'spice-primitive', text: 'R {n1} {n2} {value}', source: null, verified: true }],
       parts: [{
-        id: partR, name: 'Резистор 0.125 Вт', category: 'resistor', manufacturer: null, partNumber: null, symbolId: symR,
+        id: partR, name: 'Резистор 0.125 Вт', category: 'resistor', refPrefix: 'R', description: '', marking: null, values: {}, tolerancePct: 5, temperature: null, polarized: false, datasheetUrl: null, manufacturer: null, partNumber: null, symbolId: symR,
         packages: [
           { packageId: pkg0805, pinMap: [{ symbolPin: '1', pad: '1' }, { symbolPin: '2', pad: '2' }] },
           { packageId: pkgAxial, pinMap: [{ symbolPin: '1', pad: 'B' }, { symbolPin: '2', pad: 'A' }] },
         ],
         modelId: modelR, ratings: { power: { value: 0.125, unit: 'W' } },
-        origin: { catalogPartId: newId(), source: 'вручную', checkedAt: null },
+        origin: { catalogPartId: newId(), source: 'вручную', license: null, verified: false, checkedAt: null, notes: '' },
       }],
     },
     schematic: {

@@ -187,3 +187,22 @@ test('версия в appinfo совпадает с package.json', () => {
   const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   assert.equal(APP_VERSION, pkg.version);
 });
+
+describe('Миграция v2 → v3 (сведения каталога)', () => {
+  test('файл v2 открывается: связи целы, новые поля заполнены нейтрально, ничего не придумано', () => {
+    const raw = fixture('project-v2.json');
+    const r = loadDocument(raw);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    assert.equal(r.migratedFrom, 2);
+    assert.equal(r.doc.schemaVersion, 3);
+    const part = r.doc.library.parts[0]!;
+    assert.equal(part.refPrefix, 'R');
+    assert.equal(part.origin.verified, false, 'старые сведения не считаются проверенными');
+    assert.equal(part.datasheetUrl, null);
+    assert.deepEqual(part.values, {});
+    assert.equal(r.doc.library.packages.find((p) => p.name === '0805')!.mount, 'SMD');
+    assert.equal(r.doc.library.packages.find((p) => p.name.startsWith('Выводной'))!.mount, 'THT');
+    assert.equal(r.doc.library.symbols[0]!.pins[0]!.description, '');
+    assert.equal(r.doc.schematic.nets.length, raw.schematic.nets.length);
+  });
+});

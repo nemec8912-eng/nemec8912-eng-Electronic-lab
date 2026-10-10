@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -79,7 +79,11 @@ export const SymbolDefSchema = z.object({
     electricalType: PinElectricalType,
     x: Finite,
     y: Finite,
+    /** Функция вывода (для микросхем): «вход запуска», «питание +5…15 В» и т. п. */
+    description: z.string().max(500),
   }).strict()),
+  /** Корпус обобщённого символа (graphic = 'box') в единицах полотна; null — по выводам. */
+  box: z.object({ x: Finite, y: Finite, w: Finite.positive(), h: Finite.positive() }).strict().nullable(),
 }).strict();
 
 export const PackageDefSchema = z.object({
@@ -98,7 +102,15 @@ export const PackageDefSchema = z.object({
   }).strict()),
   /** Контур корпуса для шелкографии, мм (прямоугольник вокруг начала координат). */
   body: z.object({ x: Finite, y: Finite, w: Finite.positive(), h: Finite.positive() }).strict().nullable(),
+  /** Как найти первый вывод: «выемка слева», «точка у вывода 1», «скос корпуса» и т. п. */
   pin1Marker: z.string().max(64).nullable(),
+  mount: z.enum(['THT', 'SMD']),
+  /** Шаг выводов, мм (null — нерегулярный). */
+  pitchMm: Finite.positive().nullable(),
+  /** Порядок нумерации выводов словами: «против часовой стрелки от ключа, вид сверху». */
+  numbering: z.string().max(200).nullable(),
+  /** Параметры генератора, из которых построен корпус (для повторного редактирования); null — задан вручную. */
+  generator: z.object({ family: z.string().min(1).max(32), params: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])) }).strict().nullable(),
 }).strict();
 
 export const SimModelSchema = z.object({
@@ -123,11 +135,31 @@ export const PartDefSchema = z.object({
     pinMap: z.array(z.object({ symbolPin: z.string().min(1), pad: z.string().min(1) }).strict()),
   }).strict()),
   modelId: Id.nullable(),
+  /** Префикс позиционного обозначения (ГОСТ 2.710): R, C, L, VD, VT, DA, DD, FU, K, T, X, SA… */
+  refPrefix: z.string().regex(/^[A-Za-zА-Яа-яЁё]{1,4}$/),
+  /** Краткое назначение: «таймер», «выпрямительный диод 1 А». */
+  description: z.string().max(2000),
+  /** Маркировка на корпусе (может отличаться от партномера). */
+  marking: z.string().max(64).nullable(),
+  /** Номинальные значения детали (сопротивление, ёмкость…); экземпляр на схеме получает их при размещении. */
+  values: z.record(z.string(), QuantitySchema),
+  /** Предельные параметры: power (Вт), voltage (В), current (А), reverseVoltage (В)… */
   ratings: z.record(z.string(), QuantitySchema),
+  /** Допуск номинала, ± %. */
+  tolerancePct: Finite.nonnegative().nullable(),
+  /** Рабочая температура, °C. */
+  temperature: z.object({ minC: Finite, maxC: Finite }).strict().nullable(),
+  polarized: z.boolean(),
+  datasheetUrl: z.string().max(2048).regex(/^https?:\/\/\S+$/, 'ссылка должна начинаться с http:// или https://').nullable(),
   origin: z.object({
     catalogPartId: Id.nullable(),
     source: z.string().max(1024).nullable(),
+    /** Лицензия источника данных (для импортированных сведений). */
+    license: z.string().max(256).nullable(),
+    /** Пользователь сверил сведения с даташитом. Импортированное и встроенное по умолчанию не проверено. */
+    verified: z.boolean(),
     checkedAt: IsoDate.nullable(),
+    notes: z.string().max(4000),
   }).strict(),
 }).strict();
 

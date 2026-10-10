@@ -83,7 +83,47 @@ const migrations: Migration[] = [
       };
     },
   },
+  {
+    /** v2 → v3: сведения каталога (этап 2). Новые поля заполняются нейтрально; ничего не придумывается. */
+    from: 2,
+    to: 3,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      return { ...r, schemaVersion: 3, library: upgradeLibraryV2toV3(r.library ?? {}) };
+    },
+  },
 ];
+
+/** Перевод библиотечных сущностей v2 → v3 (общий для проекта и личного каталога). */
+export function upgradeLibraryV2toV3(lib: Record<string, any>): Record<string, any> {
+  return {
+    ...lib,
+    symbols: (lib.symbols ?? []).map((s: Record<string, any>) => ({
+      ...s,
+      box: s.box ?? null,
+      pins: (s.pins ?? []).map((pin: Record<string, unknown>) => ({ ...pin, description: pin.description ?? '' })),
+    })),
+    packages: (lib.packages ?? []).map((p: Record<string, any>) => ({
+      ...p,
+      mount: p.mount ?? ((p.pads ?? []).some((x: Record<string, unknown>) => x.drill) ? 'THT' : 'SMD'),
+      pitchMm: p.pitchMm ?? null,
+      numbering: p.numbering ?? null,
+      generator: p.generator ?? null,
+    })),
+    parts: (lib.parts ?? []).map((p: Record<string, any>) => ({
+      ...p,
+      refPrefix: p.refPrefix ?? ({ resistor: 'R', capacitor: 'C', source: 'V', reference: 'GND' } as Record<string, string>)[p.category] ?? 'U',
+      description: p.description ?? '',
+      marking: p.marking ?? null,
+      values: p.values ?? {},
+      tolerancePct: p.tolerancePct ?? null,
+      temperature: p.temperature ?? null,
+      polarized: p.polarized ?? false,
+      datasheetUrl: p.datasheetUrl ?? null,
+      origin: { license: null, verified: false, notes: '', ...p.origin },
+    })),
+  };
+}
 
 export function detectSchemaVersion(raw: unknown): number | null {
   if (!raw || typeof raw !== 'object') return null;

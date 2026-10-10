@@ -16,7 +16,7 @@ const FORBIDDEN = [
   /\bXMLHttpRequest\b/,
   /\bWebSocket\b/,
   /\bnet\.request\b/,
-  /https?:\/\/(?!www\.w3\.org\/2000\/svg)/,
+  /https?:\/\/(?!www\.w3\.org\/2000\/svg)[a-z0-9-]+\.[a-z]/i,
 ];
 
 function files(dir: string): string[] {

@@ -6,7 +6,8 @@
  */
 import { touch } from './factory';
 import { newId } from './ids';
-import { builtinByCatalogId, type BuiltinPart } from './library';
+import { builtinBundle, type PartBundle } from './catalog';
+import { builtinByCatalogId } from './library';
 import type { ComponentInstance, Net, PinRef, Point, ProjectDoc, Quantity, SymbolDef, Wire } from './model';
 
 export const GRID = 10;
@@ -117,24 +118,30 @@ function rerouteWires(doc: ProjectDoc, instanceIds: Set<string>): ProjectDoc {
 
 // ---------- Размещение деталей ----------
 
-/** Копирует определения встроенной детали в библиотеку проекта (один раз) и возвращает id детали проекта. */
-function ensurePart(doc: ProjectDoc, b: BuiltinPart): { doc: ProjectDoc; partId: string } {
-  const existing = doc.library.parts.find((p) => p.origin.catalogPartId === b.catalogId);
+/**
+ * Встраивает комплект детали каталога в библиотеку проекта (один раз на деталь каталога) и возвращает
+ * id детали проекта. Копия получает новые id; связь с каталогом — origin.catalogPartId. Если деталь уже
+ * встроена, используется копия проекта: правка каталога не меняет проект молча.
+ */
+export function embedBundle(doc: ProjectDoc, b: PartBundle): { doc: ProjectDoc; partId: string } {
+  const catalogPartId = b.part.origin.catalogPartId ?? b.part.id;
+  const existing = doc.library.parts.find((p) => p.origin.catalogPartId === catalogPartId);
   if (existing) return { doc, partId: existing.id };
   const symbolId = newId();
-  const modelId = newId();
-  const pkgs = b.packages.map((p) => ({ ...structuredClone(p.pkg), id: newId(), pinMap: p.pinMap }));
+  const modelId = b.model ? newId() : null;
+  const pkgIds = new Map(b.packages.map((p) => [p.id, newId()]));
   const partId = newId();
   const library = {
     symbols: [...doc.library.symbols, { ...structuredClone(b.symbol), id: symbolId }],
-    packages: [...doc.library.packages, ...pkgs.map(({ pinMap: _pm, ...pkg }) => pkg)],
-    models: [...doc.library.models, { ...structuredClone(b.model), id: modelId }],
+    packages: [...doc.library.packages, ...b.packages.map((p) => ({ ...structuredClone(p), id: pkgIds.get(p.id)! }))],
+    models: b.model && modelId ? [...doc.library.models, { ...structuredClone(b.model), id: modelId }] : doc.library.models,
     parts: [...doc.library.parts, {
       ...structuredClone(b.part),
       id: partId,
       symbolId,
       modelId,
-      packages: pkgs.map((p) => ({ packageId: p.id, pinMap: structuredClone(p.pinMap) })),
+      packages: b.part.packages.filter((p) => pkgIds.has(p.packageId)).map((p) => ({ packageId: pkgIds.get(p.packageId)!, pinMap: structuredClone(p.pinMap) })),
+      origin: { ...b.part.origin, catalogPartId },
     }],
   };
   return { doc: { ...doc, library }, partId };
@@ -148,17 +155,23 @@ export function nextRefDes(doc: ProjectDoc, prefix: string): string {
 export function placeBuiltin(doc: ProjectDoc, catalogId: string, position: Point, id: string = newId()): { doc: ProjectDoc; id: string } {
   const b = builtinByCatalogId(catalogId);
   if (!b) throw new Error(`Неизвестная деталь ${catalogId}`);
-  const ensured = ensurePart(doc, b);
+  return placeBundle(doc, builtinBundle(b), position, id);
+}
+
+/** Разместить деталь каталога на схеме. Номиналы экземпляра берутся из номиналов детали. */
+export function placeBundle(doc: ProjectDoc, bundle: PartBundle, position: Point, id: string = newId()): { doc: ProjectDoc; id: string } {
+  const embedded = embedBundle(doc, bundle);
+  const d = embedded.doc;
+  const part = d.library.parts.find((p) => p.id === embedded.partId)!;
   const inst: ComponentInstance = {
     id,
-    partId: ensured.partId,
-    refDes: nextRefDes(ensured.doc, b.refPrefix),
+    partId: embedded.partId,
+    refDes: nextRefDes(d, part.refPrefix),
     position: { x: snap(position.x), y: snap(position.y) },
     rotation: 0,
     mirrored: false,
-    values: structuredClone(b.defaults),
+    values: structuredClone(part.values),
   };
-  const d = ensured.doc;
   return { doc: touch({ ...d, schematic: { ...d.schematic, instances: [...d.schematic.instances, inst] } }), id };
 }
 

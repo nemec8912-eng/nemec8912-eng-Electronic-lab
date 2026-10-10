@@ -35,7 +35,7 @@ export interface BuiltinPart {
   part: Omit<PartDef, 'id' | 'symbolId' | 'modelId' | 'packages'>;
   symbol: Omit<SymbolDef, 'id'>;
   packages: Array<{ pkg: Omit<PackageDef, 'id'>; pinMap: Array<{ symbolPin: string; pad: string }> }>;
-  model: Omit<SimModel, 'id'>;
+  model: Omit<SimModel, 'id'> | null;
   defaults: Record<string, Quantity>;
 }
 
@@ -43,6 +43,10 @@ const TWO_PIN_THT = (name: string, pitch: number, body: PackageDef['body']): Omi
   name,
   family: 'THT',
   pin1Marker: null,
+  mount: 'THT',
+  pitchMm: pitch,
+  numbering: null,
+  generator: null,
   body,
   pads: [
     { number: '1', x: 0, y: 0, shape: 'round', w: 1.8, h: 1.8, drill: 0.9 },
@@ -50,16 +54,19 @@ const TWO_PIN_THT = (name: string, pitch: number, body: PackageDef['body']): Omi
   ],
 });
 
-const origin = (catalogId: string) => ({ catalogPartId: catalogId, source: 'встроенная деталь прототипа', checkedAt: null });
+const origin = (catalogId: string) => ({ catalogPartId: catalogId, source: 'встроенная идеальная деталь', license: null, verified: true, checkedAt: null, notes: 'Идеальная модель: без допусков, паразитных параметров и нагрева.' });
+
+/** Нейтральные значения полей сведений о детали. */
+export const PART_INFO_DEFAULTS = { marking: null, tolerancePct: null, temperature: null, polarized: false, datasheetUrl: null } as const;
 
 export const BUILTIN_PARTS: BuiltinPart[] = [
   {
     catalogId: '0b6a9f1e-1c2d-4e3f-8a5b-6c7d8e9f0a11',
     refPrefix: 'R',
-    part: { name: 'Резистор', category: 'resistor', manufacturer: null, partNumber: null, ratings: { power: { value: 0.25, unit: 'W' } }, origin: origin('0b6a9f1e-1c2d-4e3f-8a5b-6c7d8e9f0a11') },
-    symbol: { name: 'Резистор', standard: 'IEC 60617 / ГОСТ 2.728', graphic: 'iec-resistor', pins: [
-      { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0 },
-      { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0 },
+    part: { name: 'Резистор', category: 'resistor', refPrefix: 'R', description: 'Идеальный резистор', ...PART_INFO_DEFAULTS, values: { resistance: { value: 10_000, unit: 'Ω' } }, manufacturer: null, partNumber: null, ratings: { power: { value: 0.25, unit: 'W' } }, origin: origin('0b6a9f1e-1c2d-4e3f-8a5b-6c7d8e9f0a11') },
+    symbol: { name: 'Резистор', standard: 'IEC 60617 / ГОСТ 2.728', graphic: 'iec-resistor', box: null, pins: [
+      { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0, description: '' },
+      { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0, description: '' },
     ] },
     packages: [{ pkg: TWO_PIN_THT('Выводной, шаг 10,16 мм (0,4")', 10.16, { x: 2.2, y: -1.25, w: 5.76, h: 2.5 }), pinMap: [{ symbolPin: '1', pad: '1' }, { symbolPin: '2', pad: '2' }] }],
     model: { name: 'Идеальный резистор', kind: 'spice-primitive', text: 'R {n:1} {n:2} {v:resistance}', source: 'ngspice: элемент R', verified: true },
@@ -68,10 +75,10 @@ export const BUILTIN_PARTS: BuiltinPart[] = [
   {
     catalogId: '1c7b0a2f-2d3e-4f40-9b6c-7d8e9f0a1b22',
     refPrefix: 'C',
-    part: { name: 'Конденсатор неполярный', category: 'capacitor', manufacturer: null, partNumber: null, ratings: { voltage: { value: 50, unit: 'V' } }, origin: origin('1c7b0a2f-2d3e-4f40-9b6c-7d8e9f0a1b22') },
-    symbol: { name: 'Конденсатор', standard: 'IEC 60617 / ГОСТ 2.728', graphic: 'iec-capacitor', pins: [
-      { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0 },
-      { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0 },
+    part: { name: 'Конденсатор неполярный', category: 'capacitor', refPrefix: 'C', description: 'Идеальный конденсатор', ...PART_INFO_DEFAULTS, values: { capacitance: { value: 100e-9, unit: 'F' } }, manufacturer: null, partNumber: null, ratings: { voltage: { value: 50, unit: 'V' } }, origin: origin('1c7b0a2f-2d3e-4f40-9b6c-7d8e9f0a1b22') },
+    symbol: { name: 'Конденсатор', standard: 'IEC 60617 / ГОСТ 2.728', graphic: 'iec-capacitor', box: null, pins: [
+      { number: '1', name: '1', electricalType: 'passive', x: -30, y: 0, description: '' },
+      { number: '2', name: '2', electricalType: 'passive', x: 30, y: 0, description: '' },
     ] },
     packages: [{ pkg: TWO_PIN_THT('Радиальный, шаг 5,08 мм', 5.08, { x: -1, y: -3, w: 7.08, h: 6 }), pinMap: [{ symbolPin: '1', pad: '1' }, { symbolPin: '2', pad: '2' }] }],
     model: { name: 'Идеальный конденсатор', kind: 'spice-primitive', text: 'C {n:1} {n:2} {v:capacitance}', source: 'ngspice: элемент C', verified: true },
@@ -80,10 +87,10 @@ export const BUILTIN_PARTS: BuiltinPart[] = [
   {
     catalogId: '2d8c1b30-3e4f-4051-8c7d-8e9f0a1b2c33',
     refPrefix: 'V',
-    part: { name: 'Источник постоянного напряжения', category: 'source', manufacturer: null, partNumber: null, ratings: {}, origin: origin('2d8c1b30-3e4f-4051-8c7d-8e9f0a1b2c33') },
-    symbol: { name: 'Источник ЭДС', standard: 'IEC 60617 / ГОСТ 2.728', graphic: 'iec-dc-source', pins: [
-      { number: '+', name: '+', electricalType: 'power-out', x: 0, y: -30 },
-      { number: '-', name: '−', electricalType: 'power-out', x: 0, y: 30 },
+    part: { name: 'Источник постоянного напряжения', category: 'source', refPrefix: 'V', description: 'Идеальный источник ЭДС', ...PART_INFO_DEFAULTS, values: { voltage: { value: 5, unit: 'V' } }, manufacturer: null, partNumber: null, ratings: {}, origin: origin('2d8c1b30-3e4f-4051-8c7d-8e9f0a1b2c33') },
+    symbol: { name: 'Источник ЭДС', standard: 'IEC 60617 / ГОСТ 2.728', graphic: 'iec-dc-source', box: null, pins: [
+      { number: '+', name: '+', electricalType: 'power-out', x: 0, y: -30, description: '' },
+      { number: '-', name: '−', electricalType: 'power-out', x: 0, y: 30, description: '' },
     ] },
     // На плате источник — внешний блок питания, подключаемый к клеммнику.
     packages: [{ pkg: TWO_PIN_THT('Клеммник 2 конт., шаг 5,08 мм', 5.08, { x: -2.5, y: -4, w: 10.08, h: 8 }), pinMap: [{ symbolPin: '+', pad: '1' }, { symbolPin: '-', pad: '2' }] }],
@@ -93,9 +100,9 @@ export const BUILTIN_PARTS: BuiltinPart[] = [
   {
     catalogId: '3e9d2c41-4f50-4162-9d8e-9f0a1b2c3d44',
     refPrefix: 'GND',
-    part: { name: 'Земля (общий провод)', category: 'reference', manufacturer: null, partNumber: null, ratings: {}, origin: origin('3e9d2c41-4f50-4162-9d8e-9f0a1b2c3d44') },
-    symbol: { name: 'Земля', standard: 'IEC 60617 / ГОСТ 2.721', graphic: 'ground', pins: [
-      { number: '1', name: 'GND', electricalType: 'ground', x: 0, y: -10 },
+    part: { name: 'Земля (общий провод)', category: 'reference', refPrefix: 'GND', description: 'Опорный узел схемы (0 В)', ...PART_INFO_DEFAULTS, values: {}, manufacturer: null, partNumber: null, ratings: {}, origin: origin('3e9d2c41-4f50-4162-9d8e-9f0a1b2c3d44') },
+    symbol: { name: 'Земля', standard: 'IEC 60617 / ГОСТ 2.721', graphic: 'ground', box: null, pins: [
+      { number: '1', name: 'GND', electricalType: 'ground', x: 0, y: -10, description: '' },
     ] },
     packages: [], // на плате не размещается
     model: { name: 'Опорный узел 0', kind: 'ground', text: '', source: 'ngspice: узел 0', verified: true },

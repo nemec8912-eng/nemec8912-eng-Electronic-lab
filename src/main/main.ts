@@ -11,6 +11,12 @@ import { resolveDataRoot } from './paths';
 
 app.setName(APP_NAME);
 
+/** Диагностика запуска (ELAB_DEBUG=1): пишет в stderr ход старта — видно в логах тестов и при запуске из консоли. */
+const debug = (...args: unknown[]) => { if (process.env.ELAB_DEBUG) console.error('[elab]', ...args); };
+debug('старт', { exe: app.getPath('exe'), userData: app.getPath('userData'), argv: process.argv });
+process.on('uncaughtException', (e) => { console.error('[elab] uncaughtException', e); });
+process.on('unhandledRejection', (e) => { console.error('[elab] unhandledRejection', e); });
+
 let mainWindow: BrowserWindow | null = null;
 let store: DataStore | null = null;
 let dirty = false;
@@ -23,7 +29,10 @@ const choice = resolveDataRoot({
   exists: existsSync,
 });
 
-if (!app.requestSingleInstanceLock()) {
+debug('папка данных', choice);
+const gotLock = app.requestSingleInstanceLock();
+debug('единственный экземпляр', gotLock);
+if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -47,8 +56,10 @@ async function start() {
   });
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
 
+  debug('ready');
   try {
     store = await DataStore.open(choice.root);
+    debug('хранилище открыто', store.root);
   } catch (e) {
     const msg = e instanceof AppError ? e.message : `Не удалось открыть папку данных ${choice.root}:\n${(e as Error).message}`;
     dialog.showErrorBox(APP_NAME, msg);
@@ -95,7 +106,10 @@ function createWindow() {
       spellcheck: false,
     },
   });
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => { debug('ready-to-show'); mainWindow?.show(); });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => debug('did-fail-load', code, desc, url));
+  mainWindow.webContents.on('render-process-gone', (_e, d) => debug('render-process-gone', d));
+  mainWindow.webContents.on('preload-error', (_e, p, err) => debug('preload-error', p, err));
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -116,10 +130,12 @@ function createWindow() {
     if (r.response === 2) return;
     mainWindow?.webContents.send(IPC.closeRequest, r.response === 0 ? 'save' : 'discard');
   });
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => { debug('окно закрыто'); mainWindow = null; });
 }
 
+app.on('will-quit', () => debug('will-quit'));
 app.on('window-all-closed', async () => {
+  debug('window-all-closed');
   try {
     await store?.close();
   } finally {

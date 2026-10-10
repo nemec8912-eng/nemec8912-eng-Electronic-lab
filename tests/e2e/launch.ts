@@ -16,6 +16,7 @@ export interface Launched { app: ElectronApplication; page: Page }
 export async function launch(opts: { dataDir?: string; appDir?: string; executable?: string } = {}): Promise<Launched> {
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   delete env.ELECTRON_RUN_AS_NODE;
+  env.ELAB_DEBUG = '1';
   if (opts.dataDir) env.ELAB_DATA_DIR = opts.dataDir; else delete env.ELAB_DATA_DIR;
   const args = opts.executable ? ['--no-sandbox'] : [opts.appDir ?? APP_DIR, '--no-sandbox'];
   const app = await electron.launch({ executablePath: opts.executable ?? electronPath(), args, env, timeout: 60_000 });

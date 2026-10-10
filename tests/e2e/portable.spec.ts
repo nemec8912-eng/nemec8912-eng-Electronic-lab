@@ -7,20 +7,23 @@ import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { expect, test } from 'playwright/test';
-import { launch, APP_DIR } from './launch';
+import { launch, reportAndCleanup, APP_DIR } from './launch';
 
 const pkg = require(path.join(APP_DIR, 'package.json')) as { version: string };
 const isWin = process.platform === 'win32';
 const built = path.join(APP_DIR, 'release', `ElectronLab-${pkg.version}-${isWin ? 'win' : 'linux'}-x64-portable`);
 const exeName = isWin ? 'ElectronLab.exe' : 'ElectronLab';
 
+test.afterEach(async ({}, info) => { await reportAndCleanup(info.status !== info.expectedStatus, info.title); });
+
 test.skip(!existsSync(built), `нет портативной сборки (npm run package:${isWin ? 'win' : 'linux'})`);
 
 test('портативный режим: данные рядом с программой, перенос папки целиком', async () => {
   const flash = mkdtempSync(path.join(tmpdir(), 'e2e-portable-'));
   try {
-    const onFlash = path.join(flash, 'ElectronLab');
-    cpSync(built, onFlash, { recursive: true, verbatimSymlinks: true });
+    // Первый запуск — прямо из папки сборки («флешка»); затем папка целиком копируется на «другой ПК».
+    const onFlash = built;
+    rmSync(path.join(onFlash, 'data'), { recursive: true, force: true });
     const exe = path.join(onFlash, exeName);
 
     let l = await launch({ executable: exe });
@@ -39,7 +42,7 @@ test('портативный режим: данные рядом с програ
     // «Другой ПК»: папка скопирована в другое место, исходная удалена
     const otherPc = path.join(flash, 'другой-пк', 'ElectronLab');
     cpSync(onFlash, otherPc, { recursive: true, verbatimSymlinks: true });
-    rmSync(onFlash, { recursive: true, force: true });
+    rmSync(path.join(onFlash, 'data'), { recursive: true, force: true });
     l = await launch({ executable: path.join(otherPc, exeName) });
     await expect(l.page.locator('.statusbar')).toContainText(path.join(otherPc, 'data'));
     await l.page.getByRole('button', { name: /С флешки/ }).click();

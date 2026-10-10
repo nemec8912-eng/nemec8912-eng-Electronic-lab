@@ -14,6 +14,28 @@ export function electronPath(): string {
 
 export interface Launched { app: ElectronApplication; page: Page }
 
+/** Последнее запущенное приложение — для диагностики при падении теста. */
+export let lastLaunched: Launched | null = null;
+
+/** При падении: текст окна — в аннотацию GitHub (в CI логи недоступны), приложение — завершить. */
+export async function reportAndCleanup(failed: boolean, title: string): Promise<void> {
+  const l = lastLaunched;
+  lastLaunched = null;
+  if (!l) return;
+  if (failed) {
+    try {
+      const text = await l.page.evaluate(() => document.body.innerText);
+      const dialogs = await l.page.evaluate(() => Array.from(document.querySelectorAll('[role=dialog]')).map((d) => (d as HTMLElement).innerText).join(' || '));
+      process.stdout.write(`\n::warning title=e2e-окно ${title.slice(0, 60)}::${(text + ' ## ДИАЛОГИ: ' + dialogs).replace(/\s+/g, ' ').slice(0, 1500)}\n`);
+    } catch (e) {
+      process.stdout.write(`\n::warning title=e2e-окно ${title.slice(0, 60)}::окно недоступно: ${(e as Error).message.split('\n')[0]}\n`);
+    }
+  }
+  let alive = false;
+  try { const proc = l.app.process(); alive = !!proc && proc.exitCode === null && proc.signalCode === null; } catch { /* уже закрыто */ }
+  if (alive) await killHard(l.app).catch(() => undefined);
+}
+
 export async function launch(opts: { dataDir?: string; appDir?: string; executable?: string } = {}): Promise<Launched> {
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -28,13 +50,14 @@ export async function launch(opts: { dataDir?: string; appDir?: string; executab
       break;
     } catch (e) {
       if (attempt >= 3) throw e;
-      console.error(`запуск не удался (попытка ${attempt}): ${(e as Error).message.split('\n')[0]}`);
+      process.stdout.write(`\n::warning title=e2e-запуск::попытка ${attempt}: ${(e as Error).message.split('\n').slice(0, 3).join(' ')}\n`);
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  return { app, page };
+  lastLaunched = { app, page };
+  return lastLaunched;
 }
 
 /** Подменяет системные диалоги выбора файла: следующий вызов вернёт указанный путь. */

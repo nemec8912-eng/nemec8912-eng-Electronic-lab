@@ -8,7 +8,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { expect, test, type Page } from 'playwright/test';
-import { killHard, launch, stubMessageBox, stubOpenDialog, stubSaveDialog, type Launched } from './launch';
+import { killHard, launch, reportAndCleanup, stubMessageBox, stubOpenDialog, stubSaveDialog, type Launched } from './launch';
 
 const temps: string[] = [];
 function temp(prefix: string) {
@@ -16,6 +16,7 @@ function temp(prefix: string) {
   temps.push(d);
   return d;
 }
+test.afterEach(async ({}, info) => { await reportAndCleanup(info.status !== info.expectedStatus, info.title); });
 test.afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 
 const dialog = (page: Page) => page.getByRole('dialog');

@@ -17,7 +17,7 @@
     "test": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:e2e",
     "package:win": "npm run build && node scripts/package.mjs win32",
     "package:linux": "npm run build && node scripts/package.mjs linux",
-    "examples": "node --import tsx scripts/make-examples.ts",
+    "examples": "node --import tsx scripts/make-examples.mts",
     "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
     "typecheck:core": "tsc -p tsconfig.core.json --noEmit"
   },

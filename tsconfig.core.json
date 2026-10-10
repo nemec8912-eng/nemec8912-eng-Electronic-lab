@@ -6,6 +6,7 @@
     "src/storage",
     "src/sim",
     "src/catalog",
+    "src/catalog-import",
     "src/shared",
     "src/main/paths.ts",
     "tests/unit",

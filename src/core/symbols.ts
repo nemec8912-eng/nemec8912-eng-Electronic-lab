@@ -82,15 +82,19 @@ export function icSymbol(name: string, pins: IcPinInput[]): SymbolTemplate {
   for (const p of pins) groups[sideOf(p)].push(p);
   const rows = Math.max(groups.left.length, groups.right.length, 1);
   const cols = Math.max(groups.top.length, groups.bottom.length, 1);
+  // Выводы сверху/снизу разносятся так, чтобы их имена не наезжали друг на друга.
+  const tbName = Math.max(0, ...groups.top.map((p) => p.name.length), ...groups.bottom.map((p) => p.name.length));
+  const tbStep = Math.max(1, Math.ceil((tbName * 6.5 + 8) / PIN_STEP)) * PIN_STEP;
   const h = Math.max(2, rows + 1) * PIN_STEP;
-  const w = Math.max(4, cols + 1, longestName(groups) ) * PIN_STEP;
+  const w = Math.max(4 * PIN_STEP, (cols + 1) * tbStep, longestName(groups) * PIN_STEP);
   const x0 = -Math.round(w / 2 / PIN_STEP) * PIN_STEP, y0 = -Math.round(h / 2 / PIN_STEP) * PIN_STEP;
   const box = { x: x0, y: y0, w: Math.round(w / PIN_STEP) * PIN_STEP, h: Math.round(h / PIN_STEP) * PIN_STEP };
   const out: Pin[] = [];
   groups.left.forEach((p, i) => out.push(pinOf(p, box.x - STUB, box.y + (i + 1) * PIN_STEP)));
   groups.right.forEach((p, i) => out.push(pinOf(p, box.x + box.w + STUB, box.y + (i + 1) * PIN_STEP)));
-  groups.top.forEach((p, i) => out.push(pinOf(p, box.x + (i + 1) * PIN_STEP, box.y - STUB)));
-  groups.bottom.forEach((p, i) => out.push(pinOf(p, box.x + (i + 1) * PIN_STEP, box.y + box.h + STUB)));
+  const tbX = (i: number, n: number) => box.x + Math.round((box.w / 2 + (i - (n - 1) / 2) * tbStep) / PIN_STEP) * PIN_STEP;
+  groups.top.forEach((p, i) => out.push(pinOf(p, tbX(i, groups.top.length), box.y - STUB)));
+  groups.bottom.forEach((p, i) => out.push(pinOf(p, tbX(i, groups.bottom.length), box.y + box.h + STUB)));
   return { name, standard: 'ГОСТ 2.743-подобный (прямоугольник)', graphic: 'box', box, pins: out };
 }
 

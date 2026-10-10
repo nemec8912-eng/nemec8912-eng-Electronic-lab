@@ -151,7 +151,9 @@ function BoxSymbol({ symbol }: { symbol: SymbolDef }) {
         return (
           <g key={p.number}>
             <line x1={p.x} y1={p.y} x2={ex} y2={ey} />
-            <text x={(p.x + ex) / 2} y={(p.y + ey) / 2 - 2} className="pin-num" textAnchor="middle">{p.number}</text>
+            {top || bottom
+              ? <text x={p.x + 3} y={(p.y + ey) / 2 + 3} className="pin-num" textAnchor="start">{p.number}</text>
+              : <text x={(p.x + ex) / 2} y={(p.y + ey) / 2 - 2} className="pin-num" textAnchor="middle">{p.number}</text>}
             <text x={nameX} y={nameY} className="pin-label" textAnchor={anchor}>{p.name}</text>
           </g>
         );

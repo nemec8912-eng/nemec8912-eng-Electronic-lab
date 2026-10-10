@@ -67,12 +67,15 @@ export function copyBundle(src: PartBundle, nameSuffix = ' (копия)'): PartB
   };
 }
 
-/** Смена категории: стандартный символ и идеальная модель — по новой категории; соответствия выводов пересобираются. */
+/** Смена категории: префикс, идеальная модель и (у детали без корпусов) стандартное обозначение — по новой категории. */
 export function setCategory(b: PartBundle, category: string): PartBundle {
   const cat = CATEGORIES.find((c) => c.id === category);
   if (!cat || cat.id === b.part.category) return b;
   let symbol = b.symbol;
-  if (!isIcLike(category)) symbol = { ...standardSymbol(SYMBOL_FOR_CATEGORY[category]!), id: b.symbol.id };
+  // Когда корпуса уже заданы, обозначение не заменяется: иначе номера выводов поменяли бы смысл и
+  // соответствие «вывод ↔ площадка» стало бы неверным молча. Обозначение меняется только у новой детали.
+  if (b.packages.length > 0) symbol = b.symbol;
+  else if (!isIcLike(category)) symbol = { ...standardSymbol(SYMBOL_FOR_CATEGORY[category]!), id: b.symbol.id };
   else if (!isIcLike(b.part.category)) symbol = { ...icSymbol(b.part.name || 'Микросхема', b.symbol.pins.map((p) => ({ number: p.number, name: p.name, electricalType: p.electricalType, description: p.description }))), id: b.symbol.id };
   const valueKey = VALUE_FOR_CATEGORY[category];
   const values = valueKey ? (b.part.values[valueKey] ? { [valueKey]: b.part.values[valueKey]! } : {}) : {};

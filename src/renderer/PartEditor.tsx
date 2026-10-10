@@ -152,7 +152,7 @@ function MainSection({ b, setB, setPart }: { b: PartBundle; setB: SetB; setPart(
           {CATEGORIES.filter((c) => c.id !== 'reference').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
       </label>
-      <Text label="Позиционное обозначение (префикс)" value={p.refPrefix} onChange={(v) => setPart({ refPrefix: v.toUpperCase().replace(/[^A-ZА-Я]/g, '').slice(0, 6) || p.refPrefix })} />
+      <Text label="Позиционное обозначение (префикс)" value={p.refPrefix} onChange={(v) => setPart({ refPrefix: v.toUpperCase().replace(/[^A-ZА-ЯЁ]/g, '').slice(0, 4) || p.refPrefix })} />
       <Text label="Партномер" value={p.partNumber ?? ''} onChange={(v) => setPart({ partNumber: v.trim() ? v : null })} placeholder="Например: NE555P" />
       <Text label="Производитель" value={p.manufacturer ?? ''} onChange={(v) => setPart({ manufacturer: v.trim() ? v : null })} />
       <Text label="Маркировка на корпусе" value={p.marking ?? ''} onChange={(v) => setPart({ marking: v.trim() ? v : null })} />

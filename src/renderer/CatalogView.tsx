@@ -1,5 +1,5 @@
 /** Экран «Каталог деталей»: поиск, фильтры, карточка детали, создание и правка своих деталей. */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { CATEGORIES, categoryLabel, lintBundle, searchBundles, type PartBundle } from '../core/catalog';
 import { formatQuantity, PARAMS, RATINGS } from '../core/library';
 import type { SymbolDef } from '../core/model';
@@ -7,6 +7,7 @@ import { copyBundle, newBundle } from '../core/partEditor';
 import { api, errorText, fmtDateTime, unwrap } from './api';
 import { PackagePreview, SymbolPreview } from './CatalogPreviews';
 import { useDialogs } from './Dialogs';
+import { KicadImport } from './KicadImport';
 import { PartEditor } from './PartEditor';
 import type { CatalogState } from './useCatalog';
 
@@ -19,13 +20,11 @@ export const PIN_TYPES = Object.keys(PIN_TYPE_LABEL) as Array<SymbolDef['pins'][
 type Source = 'all' | 'builtin' | 'personal';
 type Editing = { bundle: PartBundle; isNew: boolean } | null;
 
-export function CatalogView({ catalog, onClose, onPlace, extraActions, toast }: {
+export function CatalogView({ catalog, onClose, onPlace, toast }: {
   catalog: CatalogState;
   onClose(): void;
   /** Поставить деталь на схему (есть только при открытом проекте). */
   onPlace?(partId: string): void;
-  /** Дополнительные кнопки в шапке (импорт из KiCad). */
-  extraActions?: (startEdit: (b: PartBundle) => void) => ReactNode;
   toast(text: string, kind?: 'ok' | 'error'): void;
 }) {
   const dialogs = useDialogs();
@@ -34,6 +33,7 @@ export function CatalogView({ catalog, onClose, onPlace, extraActions, toast }: 
   const [source, setSource] = useState<Source>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
+  const [importing, setImporting] = useState(false);
 
   const pool = source === 'builtin' ? catalog.builtin : source === 'personal' ? catalog.personal : catalog.all;
   const found = useMemo(() => searchBundles(pool, query, category), [pool, query, category]);
@@ -49,6 +49,7 @@ export function CatalogView({ catalog, onClose, onPlace, extraActions, toast }: 
       const saved = await unwrap(api().catalog.save(b));
       await catalog.reload();
       setEditing(null);
+      setImporting(false);
       setSelectedId(saved.part.id);
       toast(`Деталь «${saved.part.name}» сохранена в мой каталог`);
       return true;
@@ -78,6 +79,10 @@ export function CatalogView({ catalog, onClose, onPlace, extraActions, toast }: 
     setEditing({ bundle: newBundle('ic-digital', pins), isNew: true });
   };
 
+  if (importing && !editing) {
+    return <KicadImport onCancel={() => setImporting(false)} onAccept={(b) => setEditing({ bundle: b, isNew: true })} />;
+  }
+
   if (editing) {
     return (
       <PartEditor
@@ -98,7 +103,7 @@ export function CatalogView({ catalog, onClose, onPlace, extraActions, toast }: 
         <h2>Каталог деталей</h2>
         <button className="btn" onClick={() => setEditing({ bundle: newBundle('resistor'), isNew: true })}>Новая деталь</button>
         <button className="btn" onClick={() => void newIc()}>Новая микросхема</button>
-        {extraActions?.((b) => setEditing({ bundle: b, isNew: true }))}
+        <button className="btn" onClick={() => setImporting(true)}>Импорт из KiCad…</button>
         <span className="grow" />
         <button className="btn" onClick={onClose}>{onPlace ? '← К схеме' : '← Проекты'}</button>
       </div>

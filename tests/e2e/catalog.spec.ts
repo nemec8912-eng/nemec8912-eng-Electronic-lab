@@ -173,3 +173,56 @@ test('каталог: карточка, своя микросхема (DIP-8 + S
   await page.locator('svg.canvas').click({ position: { x: 300, y: 400 } });
   await expect(page.locator('[data-refdes="DA2"]')).toHaveCount(1);
 });
+
+test('импорт из KiCad: официальная библиотека (тестовые файлы вместо gitlab.com) и файлы с компьютера', async () => {
+  test.setTimeout(120_000);
+  const FIX = path.join(APP_DIR, 'tests', 'fixtures', 'kicad');
+  process.env.ELAB_KICAD_FIXTURE_DIR = FIX;
+  let l: Launched;
+  try { l = await launch({ dataDir: temp('e2e-kicad-') }); } finally { delete process.env.ELAB_KICAD_FIXTURE_DIR; }
+  const { page } = l;
+  await page.getByRole('button', { name: 'Каталог деталей' }).click();
+  await page.getByRole('button', { name: 'Импорт из KiCad…' }).click();
+  const imp = page.locator('.kicad-import');
+
+  // Неизвестная библиотека — понятная ошибка
+  await imp.getByLabel('Библиотека KiCad').fill('NoSuchLib');
+  await imp.getByRole('button', { name: 'Загрузить из интернета' }).click();
+  await expect(imp.getByRole('alert')).toContainText('не найдена');
+
+  await imp.getByLabel('Библиотека KiCad').fill('Timer');
+  await imp.getByRole('button', { name: 'Загрузить из интернета' }).click();
+  await imp.getByRole('button', { name: 'NE555P', exact: true }).click();
+  await expect(imp.getByLabel('Посадочные места KiCad')).toHaveValue('Package_DIP:DIP-8_W7.62mm');
+  await imp.getByLabel('Посадочные места KiCad').fill('Package_DIP:DIP-8_W7.62mm, Package_SO:SOIC-8_3.9x4.9mm_P1.27mm');
+  await imp.getByRole('button', { name: 'Показать деталь' }).click();
+  const prev = imp.getByLabel('Предпросмотр импорта');
+  await expect(prev).toContainText('CC-BY-SA 4.0');
+  await expect(prev).toContainText('gitlab.com/kicad/libraries/kicad-symbols');
+  await expect(prev.locator('.package-preview')).toHaveCount(2);
+  await expect(prev.locator('.pins-table tbody tr')).toHaveCount(8);
+  await expect(prev.locator('.pins-table tbody tr').nth(7)).toContainText('VCC');
+  await shot(page, 'kicad-import-preview');
+  await imp.getByRole('button', { name: 'Проверить и сохранить…' }).click();
+  const editor = page.locator('.part-editor');
+  await expect(editor.locator('.editor-lint')).not.toContainText('Ошибка');
+  await editor.getByRole('button', { name: 'Сохранить в мой каталог' }).click();
+  const card = page.locator('.part-card');
+  await expect(card.locator('.part-title')).toHaveText('NE555P');
+  await expect(card).toContainText('CC-BY-SA 4.0');
+  await expect(card.locator('.badge', { hasText: 'не сверено' })).toBeVisible();
+
+  // Файлы с компьютера: символ BC547 (1=C, 2=B, 3=E) и посадочное место TO-92
+  await page.getByRole('button', { name: 'Импорт из KiCad…' }).click();
+  await stubOpenDialog(l.app, path.join(FIX, 'symbols', 'Transistor_BJT.kicad_sym'));
+  await imp.getByRole('button', { name: 'Файл с компьютера…' }).click();
+  await imp.getByRole('button', { name: 'BC547', exact: true }).click();
+  await imp.getByLabel('Посадочные места KiCad').fill('');
+  await stubOpenDialog(l.app, path.join(FIX, 'footprints', 'Package_TO_SOT_THT.pretty', 'TO-92_Inline.kicad_mod'));
+  await imp.getByRole('button', { name: '…и файлы .kicad_mod с компьютера' }).click();
+  await expect(prev).toContainText('не известна');
+  await expect(prev.locator('.pins-table tbody tr').nth(1)).toContainText('B');
+  await expect(prev.locator('.symbol-preview')).toHaveCount(1);
+  await imp.getByRole('button', { name: 'Отмена' }).click();
+  await expect(page.locator('.catalog-head h2')).toHaveText('Каталог деталей');
+});

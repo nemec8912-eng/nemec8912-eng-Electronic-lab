@@ -60,6 +60,16 @@ test('категория: стандартный символ и идеальн�
   assert.equal(b.symbol.pins.length, 2, 'выводы сохранены');
 });
 
+test('категория у детали с корпусами: обозначение и соответствие выводов не меняются', () => {
+  let b = addPackage(newBundle('ic-analog', 3), 'TO-92');
+  const before = structuredClone(b.symbol);
+  b = setCategory(b, 'bjt');
+  assert.equal(b.part.category, 'bjt');
+  assert.equal(b.part.refPrefix, 'VT');
+  assert.deepEqual(b.symbol, before);
+  assert.equal(b.part.packages[0]!.pinMap.length, 3);
+});
+
 test('копия встроенной детали: новые id, «не сверено», пометка об основе; отметка проверки ставит дату', () => {
   const c = copyBundle(ne());
   assert.notEqual(c.part.id, ne().part.id);

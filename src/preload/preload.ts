@@ -39,6 +39,11 @@ const api: ElabApi = {
     remove: (id) => call(IPC.catRemove, id),
     fromProject: (doc, id) => call(IPC.catFromProject, doc, id),
   },
+  kicad: {
+    openOnline: (library) => call(IPC.kicadOpenOnline, library),
+    openFile: () => call(IPC.kicadOpenFile),
+    build: (token, symbol, footprints) => call(IPC.kicadBuild, token, symbol, footprints),
+  },
   sim: {
     run: (doc, opts) => call(IPC.simRun, doc, opts),
   },

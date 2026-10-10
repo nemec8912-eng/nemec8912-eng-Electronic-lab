@@ -15,6 +15,9 @@ import { simulate } from '../sim/simulate';
 import { builtinCatalog } from '../catalog/builtin';
 import type { PartBundle } from '../core/catalog';
 import { locateNgspice } from '../sim/runner';
+import { kicadToBundle, KicadError, KICAD_LICENSE, type KicadFootprint } from '../catalog-import/kicad';
+import { fetchOnlineFootprint, openLibraryFile, openOnlineLibrary, readFootprintFile, type OpenedLibrary } from '../catalog-import/source';
+import type { KicadLibraryDto } from '../shared/api';
 import { app } from 'electron';
 
 export interface MainContext {
@@ -107,6 +110,45 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle(IPC.catRemove, wrap((id: string) => store().deleteCatalogPart(id)));
   ipcMain.handle(IPC.catFromProject, wrap((doc: ProjectDoc, id: string) => store().addProjectPartToCatalog(doc, id, builtinCatalog())));
 
+  // --- Импорт из KiCad ---
+  const kicadLibs = new Map<string, { lib: OpenedLibrary; online: boolean }>();
+  const remember = (lib: OpenedLibrary, online: boolean): KicadLibraryDto => {
+    const token = newId();
+    kicadLibs.set(token, { lib, online });
+    while (kicadLibs.size > 5) kicadLibs.delete(kicadLibs.keys().next().value!);
+    return { token, library: lib.library, origin: lib.origin, online, symbols: lib.summaries };
+  };
+  ipcMain.handle(IPC.kicadOpenOnline, wrap(async (library: string) => remember(await openOnlineLibrary(String(library ?? '').trim()), true)));
+  ipcMain.handle(IPC.kicadOpenFile, wrap(async () => {
+    const p = await askOpenPath('Библиотека символов KiCad', { name: 'Символы KiCad', extensions: ['kicad_sym'] });
+    return p ? remember(await openLibraryFile(p), false) : null;
+  }));
+  ipcMain.handle(IPC.kicadBuild, wrap(async (token: string, symbolName: string, fps: { online: string[]; files: boolean }) => {
+    const opened = kicadLibs.get(String(token));
+    if (!opened) throw new AppError('import-expired', 'Библиотека больше не открыта — откройте её снова');
+    const footprints: KicadFootprint[] = [];
+    const sources: string[] = [];
+    const { symbol, sources: symSources } = await opened.lib.loadSymbol(String(symbolName));
+    sources.push(...symSources);
+    for (const ref of (Array.isArray(fps?.online) ? fps.online : []).map(String).filter((x) => x.trim())) {
+      const r = await fetchOnlineFootprint(ref);
+      footprints.push(r.fp); sources.push(r.source);
+    }
+    if (fps?.files) {
+      const r = await dialog.showOpenDialog(win()!, { title: 'Посадочные места KiCad', defaultPath: lastDir, properties: ['openFile', 'multiSelections'], filters: [{ name: 'Посадочные места KiCad', extensions: ['kicad_mod'] }] });
+      if (r.canceled || !r.filePaths.length) return null;
+      lastDir = path.dirname(r.filePaths[0]!);
+      for (const f of r.filePaths) { const x = await readFootprintFile(f); footprints.push(x.fp); sources.push(x.source); }
+    }
+    const onlineFps = sources.some((x) => x.startsWith('https://')) && !opened.online;
+    const license = opened.online ? KICAD_LICENSE : onlineFps ? `${KICAD_LICENSE} (посадочные места); символ — из файла пользователя` : null;
+    try {
+      return kicadToBundle({ symbol, library: opened.lib.library, footprints, sources, license });
+    } catch (e) {
+      if (e instanceof KicadError) throw new AppError('import-format', e.message);
+      throw e;
+    }
+  }));
   ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { tran: boolean }) => simulate(doc, findNgspice(), { tran: Boolean(opts?.tran) })));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));
   ipcMain.handle(IPC.openExternal, wrap(async (url: string) => {

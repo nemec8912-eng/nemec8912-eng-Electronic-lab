@@ -4,8 +4,12 @@ import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
 import type { SimResult } from '../sim/results';
 import type { PartBundle } from '../core/catalog';
+import type { SymbolSummary } from '../catalog-import/kicad';
 
-export type { ProjectSummary, SimResult, PartBundle };
+export type { ProjectSummary, SimResult, PartBundle, SymbolSummary };
+
+export interface KicadLibraryDto { token: string; library: string; origin: string; online: boolean; symbols: SymbolSummary[] }
+export interface KicadPreviewDto { bundle: PartBundle; warnings: string[] }
 
 export interface AppInfo {
   version: string;
@@ -71,6 +75,13 @@ export interface ElabApi {
     /** Добавить деталь из библиотеки проекта в личный каталог (новая запись). */
     fromProject(doc: ProjectDoc, projectPartId: string): Promise<Result<PartBundle>>;
   };
+  /** Импорт деталей из библиотек KiCad. Сеть — только в openOnline/build с online-ссылками, по нажатию пользователя. */
+  kicad: {
+    openOnline(library: string): Promise<Result<KicadLibraryDto>>;
+    openFile(): Promise<Result<KicadLibraryDto | null>>;
+    /** Построить деталь для проверки; files = true — выбрать файлы .kicad_mod на компьютере. null — выбор файлов отменён. */
+    build(token: string, symbol: string, footprints: { online: string[]; files: boolean }): Promise<Result<KicadPreviewDto | null>>;
+  };
   sim: {
     /** Расчёт текущего состояния документа (рабочая точка и переходный процесс). */
     run(doc: ProjectDoc, opts: { tran: boolean }): Promise<Result<SimResult>>;
@@ -116,4 +127,7 @@ export const IPC = {
   catRemove: 'catalog:remove',
   catFromProject: 'catalog:from-project',
   saveSvg: 'files:save-svg',
+  kicadOpenOnline: 'kicad:open-online',
+  kicadOpenFile: 'kicad:open-file',
+  kicadBuild: 'kicad:build',
 } as const;

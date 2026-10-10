@@ -318,7 +318,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   /** Закрыть проект: при несохранённых изменениях спросить. */
   const close = useCallback(async (): Promise<boolean> => {
     const ed = editorRef.current;
-    if (ed.dirty) {
+    if (await ed.settle()) {
       const answer = await dialogs.choose('Несохранённые изменения', `Сохранить изменения в проекте «${ed.doc.name}»?`, [
         { label: 'Отмена', value: 'cancel' },
         { label: 'Не сохранять', value: 'discard', kind: 'danger' },

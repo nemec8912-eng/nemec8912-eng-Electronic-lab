@@ -12,6 +12,7 @@ const exeName = isWin ? 'ElectronLab.exe' : 'ElectronLab';
 
 async function probe(label, dir) {
   const note = (s) => console.log(`::warning title=portable-probe ${label}::${String(s).replace(/\r?\n/g, ' ')}`);
+  note(`exe существует: ${existsSync(join(dir, exeName))}; файлов в папке: ${existsSync(dir) ? readdirSync(dir).length : 'папки нет'}`);
   const child = spawn(join(dir, exeName), isWin ? [] : ['--no-sandbox'], { env: { ...process.env, ELAB_DEBUG: '1' } });
   child.on('error', (e) => note(`ошибка запуска: ${e.message}`));
   let ready = false;

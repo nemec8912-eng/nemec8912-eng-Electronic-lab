@@ -36,6 +36,8 @@ export interface Editor {
   /** Заменить документ после «Сохранить как» / импорта; история начинается заново. */
   replaceDoc(doc: ProjectDoc, savedRevision: number): void;
   flushAutosave(): Promise<void>;
+  /** Дождаться завершения идущего сохранения и вернуть актуальный признак несохранённых изменений. */
+  settle(): Promise<boolean>;
 }
 
 export function useEditor(initial: ProjectDoc, initialSavedRevision: number): Editor {
@@ -111,14 +113,25 @@ export function useEditor(initial: ProjectDoc, initialSavedRevision: number): Ed
     void api().projects.discardRecovery(doc.id);
   }, [dirty, savedRevision, doc.id]);
 
+  const pendingSave = useRef<Promise<void> | null>(null);
   const save = useCallback(async () => {
     const current = docRef.current;
     if (timer.current) clearTimeout(timer.current);
-    const r = await unwrap(api().projects.save(current));
-    setSavedRevision(current.revision);
-    autosavedRevision.current = current.revision;
-    setLastSavedAt(r.savedAt);
-    setAutosave({ kind: 'idle' });
+    const run = (async () => {
+      const r = await unwrap(api().projects.save(current));
+      savedRef.current = current.revision; // сразу, не дожидаясь перерисовки
+      setSavedRevision(current.revision);
+      autosavedRevision.current = current.revision;
+      setLastSavedAt(r.savedAt);
+      setAutosave({ kind: 'idle' });
+    })();
+    pendingSave.current = run;
+    try { await run; } finally { if (pendingSave.current === run) pendingSave.current = null; }
+  }, []);
+
+  const settle = useCallback(async () => {
+    try { await pendingSave.current; } catch { /* ошибку сохранения уже показали */ }
+    return docRef.current.revision !== savedRef.current;
   }, []);
 
   const replaceDoc = useCallback((next: ProjectDoc, nextSaved: number) => {
@@ -151,5 +164,6 @@ export function useEditor(initial: ProjectDoc, initialSavedRevision: number): Ed
     save,
     replaceDoc,
     flushAutosave,
+    settle,
   };
 }

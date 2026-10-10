@@ -49,11 +49,7 @@ jobs:
         if: runner.os == 'Linux' && (success() || failure())
         # Внешний сайт может быть недоступен — шаг не роняет сборку, результат виден в аннотациях.
         continue-on-error: true
-        shell: bash
-        run: |
-          ELAB_LIVE_KICAD=1 node --import tsx --test tests/integration/kicad-live.test.ts 2>&1 | tee out.txt; st=${PIPESTATUS[0]}
-          if [ "$st" != "0" ]; then grep -E "not ok|error:|expected|actual|Error|message" out.txt | head -40 | sed 's/^/::warning title=KiCad live::/'; fi
-          exit $st
+        run: node --import tsx scripts/kicad-live.mts
       - name: Сборка
         run: npm run build
       - name: Портативная сборка (Linux)

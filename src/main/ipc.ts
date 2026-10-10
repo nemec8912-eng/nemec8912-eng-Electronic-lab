@@ -11,6 +11,9 @@ import { createBackup, restoreBackup, verifyBackup } from '../storage/backup';
 import type { ElabReadResult } from '../storage/elab';
 import { safeFileName, timestampForFile, writeFileAtomic } from '../storage/fsutil';
 import { DataStore } from '../storage/store';
+import { simulate } from '../sim/simulate';
+import { locateNgspice } from '../sim/runner';
+import { app } from 'electron';
 
 export interface MainContext {
   getStore(): DataStore;
@@ -35,6 +38,11 @@ function wrap<A extends unknown[], T>(fn: (...args: A) => Promise<T>) {
 
 const ELAB_FILTER = { name: 'Проект «Электронной лаборатории»', extensions: ['elab'] };
 const BACKUP_FILTER = { name: 'Резервная копия «Электронной лаборатории»', extensions: ['elabbak'] };
+const SVG_FILTER = { name: 'Рисунок SVG', extensions: ['svg'] };
+
+function findNgspice(): string | null {
+  return locateNgspice({ env: process.env.ELAB_NGSPICE, resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath, appRoot: app.getAppPath() });
+}
 
 export function registerIpc(ctx: MainContext): void {
   const pendingImports = new Map<string, ElabReadResult>();
@@ -81,7 +89,10 @@ export function registerIpc(ctx: MainContext): void {
     crashedLastSession: store().crashedLastSession,
     restoreRecovered: store().restoreRecovered,
     platform: process.platform,
+    ngspice: findNgspice(),
   })));
+
+  ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { tran: boolean }) => simulate(doc, findNgspice(), { tran: Boolean(opts?.tran) })));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));
   ipcMain.handle(IPC.closeConfirmed, wrap(async () => { ctx.confirmClose(); }));
 
@@ -144,6 +155,14 @@ export function registerIpc(ctx: MainContext): void {
     if (!p) return null;
     await writeChecked(p, buffer);
     return { path: p, projects: manifest.projects.length, bytes: buffer.length };
+  }));
+
+  ipcMain.handle(IPC.saveSvg, wrap(async (name: string, svg: string) => {
+    if (typeof svg !== 'string' || !svg.startsWith('<?xml')) throw new AppError('bad-svg', 'Нечего сохранять');
+    const p = await askSavePath('Сохранить рисунок платы', `${safeFileName(String(name ?? 'плата'), 'плата')}.svg`, SVG_FILTER);
+    if (!p) return null;
+    await writeChecked(p, Buffer.from(svg, 'utf8'));
+    return { path: p };
   }));
 
   ipcMain.handle(IPC.restoreBackup, wrap(async () => {

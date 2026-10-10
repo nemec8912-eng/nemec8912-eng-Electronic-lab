@@ -32,12 +32,16 @@ const api: ElabApi = {
     create: (doc, label) => call(IPC.cpCreate, doc, label),
     restore: (current, checkpointId) => call(IPC.cpRestore, current, checkpointId),
   },
+  sim: {
+    run: (doc, opts) => call(IPC.simRun, doc, opts),
+  },
   files: {
     exportProject: (doc) => call(IPC.exportProject, doc),
     importProject: () => call(IPC.importProject),
     resolveImport: (token, mode) => call(IPC.resolveImport, token, mode),
     backupAll: () => call(IPC.backupAll),
     restoreBackup: () => call(IPC.restoreBackup),
+    saveSvg: (name, svg) => call(IPC.saveSvg, name, svg),
   },
 };
 

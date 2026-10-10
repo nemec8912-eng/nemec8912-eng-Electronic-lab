@@ -2,8 +2,9 @@
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
+import type { SimResult } from '../sim/results';
 
-export type { ProjectSummary };
+export type { ProjectSummary, SimResult };
 
 export interface AppInfo {
   version: string;
@@ -12,6 +13,8 @@ export interface AppInfo {
   crashedLastSession: boolean;
   restoreRecovered: string | null;
   platform: string;
+  /** Найденный ngspice (путь) или null — расчёт недоступен. */
+  ngspice: string | null;
 }
 
 export interface OpenedProjectDto {
@@ -57,12 +60,18 @@ export interface ElabApi {
     /** Возвращает документ контрольной версии; перед этим сохраняет текущее состояние как контрольную версию. */
     restore(current: ProjectDoc, checkpointId: string): Promise<Result<ProjectDoc>>;
   };
+  sim: {
+    /** Расчёт текущего состояния документа (рабочая точка и переходный процесс). */
+    run(doc: ProjectDoc, opts: { tran: boolean }): Promise<Result<SimResult>>;
+  };
   files: {
     exportProject(doc: ProjectDoc): Promise<Result<{ path: string; bytes: number } | null>>;
     importProject(): Promise<Result<ImportOutcome | null>>;
     resolveImport(token: string, mode: 'replace' | 'copy' | 'cancel'): Promise<Result<ProjectDoc | null>>;
     backupAll(): Promise<Result<{ path: string; projects: number; bytes: number } | null>>;
     restoreBackup(): Promise<Result<{ projects: number; safetyBackup: string | null } | null>>;
+    /** Сохранить SVG (печать платы 1:1) через диалог выбора файла. */
+    saveSvg(defaultName: string, svg: string): Promise<Result<{ path: string } | null>>;
   };
 }
 
@@ -89,4 +98,6 @@ export const IPC = {
   resolveImport: 'files:resolve-import',
   backupAll: 'files:backup-all',
   restoreBackup: 'files:restore-backup',
+  simRun: 'sim:run',
+  saveSvg: 'files:save-svg',
 } as const;

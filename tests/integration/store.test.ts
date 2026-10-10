@@ -309,7 +309,8 @@ describe('Полная резервная копия', () => {
     const pc4 = await freshStore('bk4');
     const mine = await pc4.store.createProject('Не трогать');
     const broken = Buffer.from(backup);
-    broken[Math.floor(broken.length / 2)] ^= 0xff;
+    const mid = Math.floor(broken.length / 2);
+    broken[mid] = broken[mid]! ^ 0xff;
     await assert.rejects(verifyBackup(broken), AppError);
     await assert.rejects(verifyBackup(await pc4.store.exportProject(mine)), (e: unknown) => e instanceof AppError && e.code === 'wrong-format');
     assert.deepEqual((await pc4.store.listProjects()).map((p) => p.id), [mine.id]);

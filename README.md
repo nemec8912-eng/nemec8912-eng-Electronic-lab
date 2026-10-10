@@ -6,7 +6,7 @@
 
 ## Как запустить (Windows, без установки)
 
-1. Скачать `ElectronLab-<версия>-win-x64-portable.zip` (артефакт сборки GitHub Actions «Тесты» или раздел Releases).
+1. Скачать `ElectronLab-<версия>-win-x64-portable.zip` — артефакт «ElectronLab-win-x64-portable» последнего успешного запуска GitHub Actions «Тесты» (вкладка Actions; нужен вход в GitHub, хранится 30 дней), либо собрать самому: `npm run package:win`.
 2. Распаковать в любую папку или на флешку.
 3. Запустить `ElectronLab.exe`. Данные хранятся в папке `data` рядом с программой.
 

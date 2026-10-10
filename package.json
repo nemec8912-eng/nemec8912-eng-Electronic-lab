@@ -18,7 +18,8 @@
     "package:win": "npm run build && node scripts/package.mjs win32",
     "package:linux": "npm run build && node scripts/package.mjs linux",
     "examples": "node --import tsx scripts/make-examples.ts",
-    "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit"
+    "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
+    "typecheck:core": "tsc -p tsconfig.core.json --noEmit"
   },
   "dependencies": {
     "jszip": "3.10.1",

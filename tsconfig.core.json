@@ -1,0 +1,13 @@
+{
+  "//": "Строгая проверка ядра, хранилища и тестов без зависимости от типов React/Electron.",
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/core",
+    "src/storage",
+    "src/shared",
+    "src/main/paths.ts",
+    "tests/unit",
+    "tests/integration",
+    "tests/helpers.ts"
+  ]
+}

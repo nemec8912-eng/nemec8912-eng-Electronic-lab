@@ -29,7 +29,8 @@
 
 ## Поставка
 
-- **Windows:** официальный архив ngspice-47 (64 бит) скачивается в CI с SourceForge; SHA-256 фиксируется в `scripts/ngspice-win.json` и сверяется при каждой сборке. Содержимое `Spice64` кладётся в `resources/ngspice`. Лицензия ngspice (модифицированная BSD) прилагается.
+- **Windows:** официальный архив `ngspice-47_64.7z` (13,8 МБ) скачивается в CI с SourceForge (`scripts/fetch-ngspice.mjs`); SHA-256 `59225971…518f5a` закреплена в `scripts/ngspice-win.json` после первой загрузки и сверяется при каждой сборке — подмена архива ломает сборку. Содержимое `Spice64` кладётся в `resources/ngspice`, источник, сумма и лицензия (модифицированная BSD) — в `resources/ngspice/SOURCE.txt`.
+- **Проверено в CI на `windows-latest`:** эталонные задачи и сквозной e2e-прототип проходят на этой сборке ngspice.
 - **Linux (разработка, CI):** сборка из исходников ngspice-47 в `vendor/ngspice/linux-x64` (в git не хранится) или системный пакет `ngspice` в CI.
 
 ## Последствия

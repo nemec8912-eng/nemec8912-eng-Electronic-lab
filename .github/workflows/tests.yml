@@ -30,8 +30,6 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q ngspice && ngspice -v | head -3
       - name: ngspice (Windows, официальная сборка с SourceForge)
         if: runner.os == 'Windows'
-        env:
-          ELAB_NGSPICE_PIN: '1'
         run: node scripts/fetch-ngspice.mjs
       - name: Unit-тесты
         if: success() || failure()

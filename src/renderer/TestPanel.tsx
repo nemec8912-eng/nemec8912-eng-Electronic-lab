@@ -224,7 +224,9 @@ function TraceChart({ t, v }: { t: number[]; v: number[] }) {
   if (!Number.isFinite(vmin) || !Number.isFinite(vmax)) return <p className="muted small">Нет данных</p>;
   if (vmax - vmin < 1e-12) { vmin -= 1; vmax += 1; }
   const pad = (vmax - vmin) * 0.08;
-  vmin -= pad; vmax += pad;
+  // Не показываем отрицательную область, если сигнал её не достигает (и наоборот).
+  vmin = vmin >= 0 ? Math.max(0, vmin - pad) : vmin - pad;
+  vmax = vmax <= 0 ? Math.min(0, vmax + pad) : vmax + pad;
   const x = (tt: number) => L + ((tt - t0) / (t1 - t0 || 1)) * (W - L - R);
   const y = (vv: number) => T + (1 - (vv - vmin) / (vmax - vmin)) * (H - T - B);
   const step = Math.max(1, Math.floor(t.length / 600));

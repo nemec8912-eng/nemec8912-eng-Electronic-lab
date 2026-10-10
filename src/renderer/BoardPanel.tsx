@@ -104,7 +104,7 @@ export function BoardPanel(p: Props) {
               const inst = doc.schematic.instances.find((i) => i.id === pl.instanceId);
               const sel = p.selectedPlacement === pl.id;
               return (
-                <g key={pl.id} data-placement-id={pl.id} data-refdes={inst?.refDes ?? '?'} className={`pl ${sel ? 'selected' : ''} ${inst ? '' : 'orphan'}`}>
+                <g key={pl.id} data-placement-id={pl.id} data-x={pl.position.x} data-y={pl.position.y} data-rot={pl.rotation} data-refdes={inst?.refDes ?? '?'} className={`pl ${sel ? 'selected' : ''} ${inst ? '' : 'orphan'}`}>
                   {b && <rect x={b.x} y={b.y} width={b.w} height={b.h} className="pl-body" />}
                   {b && <text x={b.x + 0.3} y={b.y - 0.5} className="pl-label">{inst?.refDes ?? 'удалена'}</text>}
                 </g>

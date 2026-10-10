@@ -40,7 +40,9 @@ test('портативный режим: данные рядом с програ
     expect(readdirSync(path.join(onFlash, 'data', 'projects')).length).toBe(1);
 
     // «Другой ПК»: папка скопирована в другое место, исходная удалена
-    const otherPc = path.join(flash, 'другой-пк', 'ElectronLab');
+    // Латиница в пути: Playwright в Windows не запускает .exe из папок с кириллицей. Запуск программы
+    // из кириллической папки проверяется напрямую, без Playwright: scripts/ci/run-portable.mjs.
+    const otherPc = path.join(flash, 'other-pc', 'ElectronLab');
     cpSync(onFlash, otherPc, { recursive: true, verbatimSymlinks: true });
     rmSync(path.join(onFlash, 'data'), { recursive: true, force: true });
     l = await launch({ executable: path.join(otherPc, exeName) });

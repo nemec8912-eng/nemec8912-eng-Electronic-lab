@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 99,
+  "id": "2d4f6a8c-1e3b-4d5f-a7c9-0b2d4f6a8c1e",
+  "name": "Из будущего",
+  "description": "",
+  "createdAt": "2026-10-01T00:00:00.000Z",
+  "updatedAt": "2026-10-01T00:00:00.000Z",
+  "revision": 3,
+  "schematic": {
+    "instances": [],
+    "nets": [],
+    "wires": [],
+    "annotations": []
+  },
+  "library": {
+    "symbols": [],
+    "parts": [],
+    "packages": [],
+    "models": []
+  },
+  "pcb": {
+    "board": null,
+    "placements": [],
+    "tracks": [],
+    "vias": []
+  },
+  "instruments": {
+    "settings": {}
+  },
+  "tests": [],
+  "attachments": [],
+  "changelog": []
+}

@@ -1,0 +1,173 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, test } from 'node:test';
+import { APP_VERSION } from '../../src/core/appinfo';
+import { addAnnotation, createProject, removeAnnotation, renameProject, updateAnnotation } from '../../src/core/factory';
+import { canRedo, canUndo, initHistory, pushState, redo, undo } from '../../src/core/history';
+import { isUuid, newId } from '../../src/core/ids';
+import { checkIntegrity } from '../../src/core/integrity';
+import { loadDocument } from '../../src/core/migrations';
+import { remapDocs, remapIds } from '../../src/core/remap';
+import { linkSignature, makeRichDoc } from '../helpers';
+
+const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8'));
+
+describe('UUID', () => {
+  test('новые ID уникальны и корректны', () => {
+    const ids = new Set(Array.from({ length: 2000 }, newId));
+    assert.equal(ids.size, 2000);
+    for (const id of ids) assert.ok(isUuid(id));
+  });
+});
+
+describe('Документ проекта', () => {
+  test('новый проект проходит проверку структуры и целостности', () => {
+    const r = loadDocument(createProject('Тест'));
+    assert.ok(r.ok);
+    assert.equal(r.doc.name, 'Тест');
+    assert.equal(r.doc.changelog.length, 1);
+  });
+
+  test('насыщенный документ со всеми видами связей целостен', () => {
+    assert.deepEqual(checkIntegrity(makeRichDoc()), []);
+  });
+
+  test('пустое имя заменяется на «Без названия», пробелы схлопываются', () => {
+    assert.equal(createProject('   ').name, 'Без названия');
+    assert.equal(createProject('  Мой   проект ').name, 'Мой проект');
+  });
+
+  test('изменения увеличивают ревизию, пустые изменения не создают новый документ', () => {
+    const d0 = createProject('А');
+    const { doc: d1, id } = addAnnotation(d0, { x: 1.234, y: 2 });
+    assert.equal(d1.revision, d0.revision + 1);
+    assert.deepEqual(d1.schematic.annotations[0]!.position, { x: 1.23, y: 2 });
+    assert.equal(updateAnnotation(d1, id, { text: 'Заметка' }), d1);
+    const d2 = updateAnnotation(d1, id, { text: 'Новый текст' });
+    assert.equal(d2.revision, d1.revision + 1);
+    const d3 = removeAnnotation(d2, id);
+    assert.equal(d3.schematic.annotations.length, 0);
+    assert.equal(renameProject(d3, 'А'), d3);
+    assert.equal(renameProject(d3, 'Б').changelog.at(-1)!.action, 'rename');
+  });
+});
+
+describe('Проверка целостности', () => {
+  test('повторяющиеся ID обнаруживаются', () => {
+    const doc = makeRichDoc();
+    doc.schematic.annotations.push({ ...doc.schematic.annotations[0]! });
+    const issues = checkIntegrity(doc);
+    assert.ok(issues.some((i) => i.code === 'duplicate-id'));
+  });
+
+  test('висячие ссылки, неизвестные выводы, повтор обозначений и вывод в двух сетях', () => {
+    const doc = makeRichDoc();
+    doc.schematic.instances[0]!.partId = newId();
+    doc.schematic.nets[0]!.connections.push({ instanceId: doc.schematic.instances[1]!.id, pin: '9' });
+    doc.schematic.instances[1]!.refDes = 'R1';
+    doc.schematic.nets[2]!.connections.push({ instanceId: doc.schematic.instances[1]!.id, pin: '1' });
+    const codes = new Set(checkIntegrity(doc).map((i) => i.code));
+    for (const c of ['dangling-ref', 'unknown-pin', 'duplicate-refdes', 'pin-in-several-nets']) assert.ok(codes.has(c as never), c);
+  });
+
+  test('ошибки соответствия «вывод символа ↔ площадка»', () => {
+    const doc = makeRichDoc();
+    doc.library.parts[0]!.packages[0]!.pinMap = [{ symbolPin: '1', pad: '1' }, { symbolPin: '1', pad: '7' }];
+    const codes = checkIntegrity(doc).map((i) => i.code);
+    assert.ok(codes.includes('duplicate-pin-map'));
+    assert.ok(codes.includes('unknown-pin'));
+  });
+
+  test('размещение с корпусом, которого нет у детали, — ошибка', () => {
+    const doc = makeRichDoc();
+    doc.pcb.placements[0]!.packageId = newId();
+    assert.ok(checkIntegrity(doc).some((i) => i.code === 'dangling-ref'));
+  });
+});
+
+describe('Загрузка и миграции', () => {
+  test('миграция версии 0 → 1 сохраняет ID и заметки', () => {
+    const v0 = fixture('project-v0.json');
+    const r = loadDocument(v0);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    assert.equal(r.migratedFrom, 0);
+    assert.equal(r.doc.schemaVersion, 1);
+    assert.equal(r.doc.id, v0.id);
+    assert.equal(r.doc.name, v0.title);
+    assert.deepEqual(r.doc.schematic.annotations.map((a) => [a.id, a.text, a.position]), v0.notes.map((n: { id: string; text: string; x: number; y: number }) => [n.id, n.text, { x: n.x, y: n.y }]));
+    assert.deepEqual(v0.version, 0, 'исходные данные не изменены');
+  });
+
+  test('файл более новой версии не открывается', () => {
+    const r = loadDocument(fixture('project-future-version.json'));
+    assert.ok(!r.ok);
+    assert.equal(r.error.code, 'newer-version');
+  });
+
+  test('файл с повторяющимися ID не загружается', () => {
+    const r = loadDocument(fixture('project-duplicate-ids.json'));
+    assert.ok(!r.ok);
+    assert.equal(r.error.code, 'integrity');
+  });
+
+  test('неверная структура и не-проект отклоняются с понятной ошибкой', () => {
+    const bad = { ...createProject('x'), revision: -1 };
+    const r = loadDocument(bad);
+    assert.ok(!r.ok && r.error.code === 'invalid-structure');
+    const r2 = loadDocument({ hello: 'world' });
+    assert.ok(!r2.ok && r2.error.code === 'not-a-project');
+    const r3 = loadDocument({ ...createProject('x'), extra: 1 });
+    assert.ok(!r3.ok && r3.error.code === 'invalid-structure', 'неизвестные поля не принимаются молча');
+  });
+});
+
+describe('Переназначение ID', () => {
+  test('все ID новые, связи выводов, сетей и корпусов сохранены, ссылки на каталог не тронуты', () => {
+    const doc = makeRichDoc();
+    const { doc: copy, map } = remapIds(doc);
+    assert.deepEqual(checkIntegrity(copy), []);
+    assert.deepEqual(linkSignature(copy), linkSignature(doc));
+    assert.notEqual(copy.id, doc.id);
+    const oldIds = new Set(map.keys());
+    const json = JSON.stringify(copy);
+    for (const id of oldIds) assert.ok(!json.includes(id), `старый ID ${id} остался`);
+  });
+
+  test('проект и его контрольные версии переназначаются одной таблицей', () => {
+    const doc = makeRichDoc();
+    const older = { ...doc, name: 'старая' };
+    const { docs } = remapDocs([doc, older]);
+    assert.equal(docs[0]!.id, docs[1]!.id);
+    assert.equal(docs[0]!.schematic.instances[0]!.id, docs[1]!.schematic.instances[0]!.id);
+  });
+});
+
+describe('История Undo/Redo', () => {
+  test('отмена и повтор с подписями действий', () => {
+    let h = initHistory(0);
+    h = pushState(h, 1, 'первое');
+    h = pushState(h, 2, 'второе');
+    assert.equal(h.presentLabel, 'второе');
+    h = undo(h);
+    assert.equal(h.present, 1);
+    assert.equal(h.future[0]!.label, 'второе');
+    h = redo(h);
+    assert.equal(h.present, 2);
+    h = undo(undo(h));
+    assert.equal(h.present, 0);
+    assert.ok(!canUndo(h));
+    h = pushState(h, 5, 'ветка');
+    assert.ok(!canRedo(h), 'новое действие после отмены сбрасывает повтор');
+  });
+
+  test('история ограничена', () => {
+    let h = initHistory(0);
+    for (let i = 1; i <= 50; i++) h = pushState(h, i, `ш${i}`, 10);
+    assert.equal(h.past.length, 10);
+  });
+});
+
+test('версия в appinfo совпадает с package.json', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  assert.equal(APP_VERSION, pkg.version);
+});

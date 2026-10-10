@@ -1,0 +1,40 @@
+{
+  "name": "electronic-lab",
+  "productName": "Электронная лаборатория",
+  "version": "0.1.0",
+  "description": "Локальный редактор принципиальных схем, симулятор и проектировщик печатных плат",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "node --import tsx --test \"tests/unit/**/*.test.ts\"",
+    "test:integration": "node --import tsx --test \"tests/integration/**/*.test.ts\"",
+    "test:e2e": "npm run build && playwright test -c tests/e2e/playwright.config.ts",
+    "test": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:e2e",
+    "package:win": "npm run build && node scripts/package.mjs win32",
+    "package:linux": "npm run build && node scripts/package.mjs linux",
+    "examples": "node --import tsx scripts/make-examples.ts",
+    "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit"
+  },
+  "dependencies": {
+    "jszip": "3.10.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "electron": "43.6.0",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3",
+    "playwright": "1.56.0"
+  },
+  "electronVersion": "43.6.0"
+}

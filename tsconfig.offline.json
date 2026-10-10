@@ -1,0 +1,13 @@
+{
+  "//": "Для сред без доступа к npm: React и Electron проверяются по упрощённым объявлениям из types/offline-shims. На обычной машине используйте tsconfig.json после npm install.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "react": ["./types/offline-shims/react.d.ts"],
+      "react/jsx-runtime": ["./types/offline-shims/react-jsx-runtime.d.ts"],
+      "react-dom/client": ["./types/offline-shims/react-dom-client.d.ts"],
+      "electron": ["./types/offline-shims/electron.d.ts"]
+    }
+  },
+  "include": ["src", "tests", "scripts/*.ts", "types/offline-shims"]
+}

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "id": "2d4f6a8c-1e3b-4d5f-a7c9-0b2d4f6a8c1e",
+  "name": "Повторяющиеся ID",
+  "description": "",
+  "createdAt": "2026-10-01T00:00:00.000Z",
+  "updatedAt": "2026-10-01T00:00:00.000Z",
+  "revision": 3,
+  "schematic": {
+    "instances": [],
+    "nets": [],
+    "wires": [],
+    "annotations": [
+      {
+        "id": "9c8b7a6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+        "kind": "text",
+        "text": "первая",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "targetId": null
+      },
+      {
+        "id": "9c8b7a6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+        "kind": "text",
+        "text": "вторая с тем же ID",
+        "position": {
+          "x": 10,
+          "y": 10
+        },
+        "targetId": null
+      }
+    ]
+  },
+  "library": {
+    "symbols": [],
+    "parts": [],
+    "packages": [],
+    "models": []
+  },
+  "pcb": {
+    "board": null,
+    "placements": [],
+    "tracks": [],
+    "vias": []
+  },
+  "instruments": {
+    "settings": {}
+  },
+  "tests": [],
+  "attachments": [],
+  "changelog": []
+}

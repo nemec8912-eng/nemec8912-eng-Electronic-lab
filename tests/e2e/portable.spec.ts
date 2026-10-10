@@ -33,6 +33,11 @@ test('портативный режим: данные рядом с програ
     await l.page.getByRole('button', { name: 'Создать', exact: true }).click();
     await l.page.locator('svg.canvas').dblclick({ position: { x: 60, y: 200 } });
     await l.page.getByLabel('Текст заметки').fill('сделано на ПК 1');
+    // Симулятор найден в составе портативной сборки (Windows) или в системе (Linux)
+    await l.page.getByRole('tab', { name: 'Тест' }).click();
+    await expect(l.page.getByRole('button', { name: 'Запустить тест' })).toBeEnabled();
+    await expect(l.page.getByText('ngspice не найден')).toHaveCount(0);
+    await l.page.getByRole('tab', { name: 'Схема' }).click();
     await l.page.keyboard.press('Control+s');
     await expect(l.page.locator('.indicator')).toHaveAttribute('data-state', 'saved');
     let exited = new Promise((r) => l.app.process().once('exit', r));

@@ -29,6 +29,10 @@ test('портативный архив для Windows собран правил
     'resources/app/dist/renderer/main.js', 'resources/app/dist/renderer/main.css',
   ]) assert.ok(has(p), `нет ${p}`);
   assert.ok(!has('electron.exe'), 'исполняемый файл переименован');
+  if (process.env.ELAB_ALLOW_NO_NGSPICE !== '1') {
+    assert.ok(has('resources/ngspice/bin/ngspice_con.exe'), 'ngspice входит в пакет');
+    assert.ok(has('resources/ngspice/SOURCE.txt'), 'источник и лицензия ngspice указаны');
+  }
   assert.ok(!has('resources/default_app.asar'), 'демонстрационное приложение Electron удалено');
   assert.ok(!Object.keys(zip.files).some((n) => n.endsWith('.map')), 'карты исходников не поставляются');
 

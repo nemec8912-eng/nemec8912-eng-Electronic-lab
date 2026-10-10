@@ -78,6 +78,21 @@ writeFileSync(join(appDir, 'package.json'), JSON.stringify({
 }, null, 2));
 copyDir(join(root, 'dist'), join(appDir, 'dist'), (src) => !src.endsWith('.map'));
 
+// Симулятор ngspice (ADR-0002): для Windows — официальная сборка из vendor/ngspice/win32-x64
+// (scripts/fetch-ngspice.mjs). Без неё пакет не собирается, кроме явного ELAB_ALLOW_NO_NGSPICE=1.
+const ngspiceSrc = join(root, 'vendor', 'ngspice', `${platform}-x64`);
+const ngspiceExe = join(ngspiceSrc, 'bin', platform === 'win32' ? 'ngspice_con.exe' : 'ngspice');
+if (existsSync(ngspiceExe)) {
+  copyDir(ngspiceSrc, join(outDir, 'resources', 'ngspice'));
+  console.log(`ngspice включён: ${ngspiceSrc}`);
+} else if (platform === 'linux') {
+  console.log('ngspice в Linux-пакет не включается: используется системный (пакет ngspice).');
+} else if (process.env.ELAB_ALLOW_NO_NGSPICE === '1') {
+  console.log('ВНИМАНИЕ: пакет собран БЕЗ ngspice — расчёт в нём будет недоступен (ELAB_ALLOW_NO_NGSPICE=1).');
+} else {
+  throw new Error(`Нет ${ngspiceExe}. Выполните node scripts/fetch-ngspice.mjs или задайте ELAB_ALLOW_NO_NGSPICE=1.`);
+}
+
 // Портативный режим: данные в папке data рядом с программой
 writeFileSync(join(outDir, 'portable.flag'), 'Портативный режим: данные хранятся в папке data рядом с программой.\n');
 writeFileSync(join(outDir, 'ПРОЧТИ МЕНЯ.txt'), [

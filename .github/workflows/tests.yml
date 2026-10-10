@@ -1,0 +1,56 @@
+# Автоматические тесты на Linux и на настоящем Windows: типы, unit, integration, e2e в окне Electron,
+# портативная сборка и её запуск. Портативный архив для Windows сохраняется как артефакт.
+name: Тесты
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Установка зависимостей
+        run: npm install --no-audit --no-fund
+      - name: Проверка типов
+        run: npm run typecheck
+      - name: Unit-тесты
+        run: npm run test:unit
+      - name: Интеграционные тесты
+        run: npm run test:integration
+      - name: Сборка
+        run: npm run build
+      - name: Портативная сборка (Linux)
+        if: runner.os == 'Linux'
+        run: node scripts/package.mjs linux
+      - name: Портативная сборка (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/package.mjs win32
+      - name: Проверка Windows-архива
+        if: runner.os == 'Windows'
+        run: node --import tsx --test tests/integration/package-win.test.ts
+      - name: E2E (Linux, виртуальный экран)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx playwright test -c tests/e2e/playwright.config.ts
+      - name: E2E (Windows)
+        if: runner.os == 'Windows'
+        run: npx playwright test -c tests/e2e/playwright.config.ts
+      - name: Портативный архив для Windows
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ElectronLab-win-x64-portable
+          path: |
+            release/*.zip
+            release/*.sha256
+          retention-days: 30

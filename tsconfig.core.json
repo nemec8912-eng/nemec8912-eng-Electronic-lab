@@ -4,6 +4,7 @@
   "include": [
     "src/core",
     "src/storage",
+    "src/sim",
     "src/shared",
     "src/main/paths.ts",
     "tests/unit",

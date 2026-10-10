@@ -36,6 +36,12 @@ jobs:
           npm run test:integration 2>&1 | tee out.txt; st=${PIPESTATUS[0]}
           if [ "$st" != "0" ]; then grep -E "not ok|error:|expected|actual|Error" out.txt | head -40 | sed 's/^/::error title=Интеграционные тесты::/'; fi
           exit $st
+      - name: Эксперимент — блокировка экземпляра и кириллица в пути
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          npx electron scripts/ci/singleton-probe.js "Электронная лаборатория проба" || true
+          npx electron scripts/ci/singleton-probe.js "ElectronLabProbe" || true
       - name: Сборка
         run: npm run build
       - name: Портативная сборка (Linux)

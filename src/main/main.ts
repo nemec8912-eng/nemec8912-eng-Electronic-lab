@@ -10,6 +10,9 @@ import { registerIpc } from './ipc';
 import { resolveDataRoot } from './paths';
 
 app.setName(APP_NAME);
+// Служебная папка Electron — латиницей: на Windows блокировка единственного экземпляра не работает
+// с кириллицей в пути профиля (проверено в CI). Данные пользователя — в подпапке data (см. paths.ts).
+app.setPath('userData', path.join(app.getPath('appData'), 'ElectronLab'));
 
 /** Диагностика запуска (ELAB_DEBUG=1): пишет в stderr ход старта — видно в логах тестов и при запуске из консоли. */
 const debug = (...args: unknown[]) => { if (process.env.ELAB_DEBUG) console.error('[elab]', ...args); };
@@ -30,22 +33,22 @@ const choice = resolveDataRoot({
 });
 
 debug('папка данных', choice);
+// Блокировка Electron нужна только для удобства (фокус на уже открытом окне). Если её взять не удалось,
+// программа всё равно запускается: от двух копий на одной папке данных защищает session.lock хранилища,
+// которое при занятой папке покажет понятное сообщение. Так кириллица или особенности пути (например,
+// в имени профиля Windows или на флешке) не могут привести к молчаливому закрытию программы.
 const gotLock = app.requestSingleInstanceLock();
 debug('единственный экземпляр', gotLock);
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-  app.whenReady().then(start).catch((e) => {
-    dialog.showErrorBox(APP_NAME, `Не удалось запустить программу:\n${(e as Error).message}`);
-    app.exit(1);
-  });
-}
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+app.whenReady().then(start).catch((e) => {
+  dialog.showErrorBox(APP_NAME, `Не удалось запустить программу:\n${(e as Error).message}`);
+  app.exit(1);
+});
 
 async function start() {
   Menu.setApplicationMenu(null);

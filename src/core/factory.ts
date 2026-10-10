@@ -61,8 +61,8 @@ export function setDescription(doc: ProjectDoc, description: string): ProjectDoc
   return touch({ ...doc, description: description.slice(0, 100_000) });
 }
 
-export function addAnnotation(doc: ProjectDoc, position: Point, text = 'Заметка'): { doc: ProjectDoc; id: string } {
-  const a: Annotation = { id: newId(), kind: 'text', text, position: roundPoint(position), targetId: null };
+export function addAnnotation(doc: ProjectDoc, position: Point, text = 'Заметка', id: string = newId()): { doc: ProjectDoc; id: string } {
+  const a: Annotation = { id, kind: 'text', text, position: roundPoint(position), targetId: null };
   return { doc: touch({ ...doc, schematic: { ...doc.schematic, annotations: [...doc.schematic.annotations, a] } }), id: a.id };
 }
 

@@ -22,12 +22,20 @@ jobs:
           node-version: 22
       - name: Установка зависимостей
         run: npm install --no-audit --no-fund
-      - name: Проверка типов
-        run: npm run typecheck
       - name: Unit-тесты
-        run: npm run test:unit
+        if: success() || failure()
+        shell: bash
+        run: |
+          npm run test:unit 2>&1 | tee out.txt; st=${PIPESTATUS[0]}
+          if [ "$st" != "0" ]; then grep -E "not ok|error:|expected|actual|Error" out.txt | head -40 | sed 's/^/::error title=Unit-тесты::/'; fi
+          exit $st
       - name: Интеграционные тесты
-        run: npm run test:integration
+        if: success() || failure()
+        shell: bash
+        run: |
+          npm run test:integration 2>&1 | tee out.txt; st=${PIPESTATUS[0]}
+          if [ "$st" != "0" ]; then grep -E "not ok|error:|expected|actual|Error" out.txt | head -40 | sed 's/^/::error title=Интеграционные тесты::/'; fi
+          exit $st
       - name: Сборка
         run: npm run build
       - name: Портативная сборка (Linux)
@@ -40,13 +48,21 @@ jobs:
         if: runner.os == 'Windows'
         run: node --import tsx --test tests/integration/package-win.test.ts
       - name: E2E (Linux, виртуальный экран)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && (success() || failure())
         run: xvfb-run -a npx playwright test -c tests/e2e/playwright.config.ts
       - name: E2E (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && (success() || failure())
         run: npx playwright test -c tests/e2e/playwright.config.ts
+      - name: Проверка типов
+        if: success() || failure()
+        shell: bash
+        # Ошибки tsc превращаются в аннотации GitHub, чтобы их было видно в интерфейсе и через API.
+        run: |
+          npx tsc -p tsconfig.json --noEmit --pretty false > tsc.txt || status=$?
+          sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.*)$/::error file=\1,line=\2,col=\3,title=\4::\5/' tsc.txt
+          exit ${status:-0}
       - name: Портативный архив для Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && (success() || failure())
         uses: actions/upload-artifact@v4
         with:
           name: ElectronLab-win-x64-portable

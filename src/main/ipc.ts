@@ -15,7 +15,7 @@ import { simulate } from '../sim/simulate';
 import { builtinCatalog } from '../catalog/builtin';
 import type { PartBundle } from '../core/catalog';
 import { locateNgspice } from '../sim/runner';
-import { kicadToBundle, KicadError, KICAD_LICENSE, type KicadFootprint } from '../catalog-import/kicad';
+import { kicadToBundle, KicadError, KICAD_LICENSE, summarize, type KicadFootprint } from '../catalog-import/kicad';
 import { fetchOnlineFootprint, openLibraryFile, openOnlineLibrary, readFootprintFile, type OpenedLibrary } from '../catalog-import/source';
 import type { KicadLibraryDto } from '../shared/api';
 import { app } from 'electron';
@@ -122,6 +122,11 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle(IPC.kicadOpenFile, wrap(async () => {
     const p = await askOpenPath('Библиотека символов KiCad', { name: 'Символы KiCad', extensions: ['kicad_sym'] });
     return p ? remember(await openLibraryFile(p), false) : null;
+  }));
+  ipcMain.handle(IPC.kicadDescribe, wrap(async (token: string, symbolName: string) => {
+    const opened = kicadLibs.get(String(token));
+    if (!opened) throw new AppError('import-expired', 'Библиотека больше не открыта — откройте её снова');
+    return summarize((await opened.lib.loadSymbol(String(symbolName))).symbol);
   }));
   ipcMain.handle(IPC.kicadBuild, wrap(async (token: string, symbolName: string, fps: { online: string[]; files: boolean }) => {
     const opened = kicadLibs.get(String(token));

@@ -96,6 +96,13 @@ function readSymbol(node: SNode[]): KicadSymbol {
 
 const clean = (s: string | undefined) => (s && s !== '~' ? s : '');
 
+/** Разметка имён выводов KiCad: ~{RST} — черта сверху (инверсия), _{x}/^{x} — индексы. */
+export function pinNameText(s: string): string {
+  return clean(s)
+    .replace(/~\{([^}]*)\}/g, (_, t: string) => [...t].map((c) => `${c}\u0305`).join(''))
+    .replace(/[_^]\{([^}]*)\}/g, '$1');
+}
+
 export function summarize(s: KicadSymbol): SymbolSummary {
   const p = s.properties;
   return {
@@ -317,7 +324,7 @@ export function kicadToBundle(input: KicadImportInput): { bundle: PartBundle; wa
     ? { ...std, id: symbolId }
     : {
       ...icSymbol(ks.name.slice(0, 128), sortedPins.map((p) => ({
-        number: p.number.slice(0, 16), name: clean(p.name).slice(0, 64), electricalType: pinType(p),
+        number: p.number.slice(0, 16), name: pinNameText(p.name).slice(0, 64), electricalType: pinType(p),
         description: p.hidden ? 'скрытый вывод в KiCad (обычно питание)' : '',
       }))),
       id: symbolId,

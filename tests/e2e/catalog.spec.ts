@@ -212,6 +212,17 @@ test('импорт из KiCad: официальная библиотека (те
   await expect(card).toContainText('CC-BY-SA 4.0');
   await expect(card.locator('.badge', { hasText: 'не сверено' })).toBeVisible();
 
+  // Библиотека-папка KiCad 9: сведения символа подгружаются при выборе, посадочное место подставляется
+  await page.getByRole('button', { name: 'Импорт из KiCad…' }).click();
+  await imp.getByLabel('Библиотека KiCad').fill('Timer9');
+  await imp.getByRole('button', { name: 'Загрузить из интернета' }).click();
+  await imp.getByRole('button', { name: 'NE555D', exact: true }).click();
+  await expect(imp.getByLabel('Посадочные места KiCad')).toHaveValue('Package_SO:SOIC-8_3.9x4.9mm_P1.27mm');
+  await imp.getByRole('button', { name: 'Показать деталь' }).click();
+  await expect(prev.locator('.package-preview')).toHaveCount(1);
+  await expect(prev).toContainText('Timer9.kicad_symdir/NE555D.kicad_sym');
+  await imp.getByRole('button', { name: 'Отмена' }).click();
+
   // Файлы с компьютера: символ BC547 (1=C, 2=B, 3=E) и посадочное место TO-92
   await page.getByRole('button', { name: 'Импорт из KiCad…' }).click();
   await stubOpenDialog(l.app, path.join(FIX, 'symbols', 'Transistor_BJT.kicad_sym'));

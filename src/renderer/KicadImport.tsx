@@ -29,10 +29,19 @@ export function KicadImport({ onCancel, onAccept }: { onCancel(): void; onAccept
     if (!r) return;
     setLib(r); setSymbol(null); setPreview(null); setFilter('');
   };
-  const pick = (name: string) => {
+  const pick = async (name: string) => {
     setSymbol(name);
     setPreview(null);
-    setFpText(lib?.symbols.find((s) => s.name === name)?.footprint ?? '');
+    const known = lib?.symbols.find((s) => s.name === name);
+    setFpText(known?.footprint ?? '');
+    if (lib && known && !known.description && !known.footprint) {
+      // Библиотека-папка KiCad 9: сведения о символе подгружаются при выборе.
+      const d = await run('Загрузка символа…', () => unwrap(api().kicad.describe(lib.token, name)));
+      if (d) {
+        setLib((l) => (l ? { ...l, symbols: l.symbols.map((s) => (s.name === name ? d : s)) } : l));
+        setFpText((t) => t || d.footprint);
+      }
+    }
   };
   const build = async (files: boolean) => {
     if (!lib || !symbol) return;
@@ -76,7 +85,7 @@ export function KicadImport({ onCancel, onAccept }: { onCancel(): void; onAccept
               <ul className="kicad-symbols" aria-label="Символы библиотеки">
                 {shown.map((s) => (
                   <li key={s.name}>
-                    <button className={`part-row ${symbol === s.name ? 'on' : ''}`} onClick={() => pick(s.name)} aria-label={s.name}>
+                    <button className={`part-row ${symbol === s.name ? 'on' : ''}`} onClick={() => void pick(s.name)} aria-label={s.name}>
                       <span className="part-row-name">{s.name}</span>
                       {(s.description || s.footprint) && <span className="part-row-meta">{s.description}{s.footprint ? ` · ${s.footprint}` : ''}</span>}
                     </button>

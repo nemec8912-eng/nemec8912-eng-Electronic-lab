@@ -80,8 +80,12 @@ export async function openOnlineLibrary(library: string): Promise<OpenedLibrary>
   checkName('Библиотека', library);
   if (fixtureDir()) {
     const text = await fixtureText(path.join('symbols', `${library}.kicad_sym`));
-    if (text === null) throw new AppError('import-not-found', `Библиотека символов KiCad «${library}» не найдена`);
-    return combined(library, `${SYMBOLS_RAW}/master/${library}.kicad_sym`, KICAD_LICENSE, text);
+    if (text !== null) return combined(library, `${SYMBOLS_RAW}/master/${library}.kicad_sym`, KICAD_LICENSE, text);
+    const dir = path.join(fixtureDir()!, 'symbols', `${library}.kicad_symdir`);
+    const names = (await fs.readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith('.kicad_sym')).map((n) => n.slice(0, -'.kicad_sym'.length));
+    if (!names.length) throw new AppError('import-not-found', `Библиотека символов KiCad «${library}» не найдена`);
+    const dirUrl = `${SYMBOLS_RAW}/master/${library}.kicad_symdir`;
+    return symdirLibrary(library, dirUrl, names, async (name) => ({ text: await fixtureText(path.join('symbols', `${library}.kicad_symdir`, `${name}.kicad_sym`)), url: `${dirUrl}/${name}.kicad_sym` }));
   }
   const lib = encodeURIComponent(library);
   // 1) Единый файл библиотеки (KiCad 6–8 и ветка master до перехода на папки).
@@ -101,34 +105,44 @@ export async function openOnlineLibrary(library: string): Promise<OpenedLibrary>
   }
   if (names.length) {
     const dirUrl = `${SYMBOLS_RAW}/master/${lib}.kicad_symdir`;
-    const cache = new Map<string, KicadSymbol>();
-    const fetchRaw = async (name: string): Promise<{ syms: KicadSymbol[]; url: string }> => {
-      checkName('Символ', name);
+    return symdirLibrary(library, dirUrl, names, async (name) => {
       const url = `${dirUrl}/${encodeURIComponent(name)}.kicad_sym`;
-      const t = await fetchText(url);
-      if (t === null) throw new AppError('import-not-found', `В библиотеке ${library} нет символа ${name}`);
-      try { return { syms: readSymbolsRaw(t), url }; } catch (e) { parseError(e, `Символ ${name}`); }
-    };
-    return {
-      library, origin: dirUrl, license: KICAD_LICENSE, symbols: [],
-      summaries: names.sort().map((name) => ({ name, description: '', reference: '', footprint: '', datasheet: '', keywords: '', pinCount: 0, extends: null })),
-      loadSymbol: async (name) => {
-        const sources: string[] = [];
-        let want: string | null = name;
-        for (let depth = 0; want && depth < 10; depth++) {
-          if (cache.has(want)) { want = cache.get(want)!.extends; continue; }
-          const r = await fetchRaw(want);
-          sources.push(r.url);
-          for (const s of r.syms) cache.set(s.name, s);
-          want = cache.get(want)?.extends ?? null;
-        }
-        const resolved = resolveExtends([...cache.values()]).find((s) => s.name === name);
-        if (!resolved) throw new AppError('import-not-found', `В библиотеке ${library} нет символа ${name}`);
-        return { symbol: resolved, sources };
-      },
-    };
+      return { text: await fetchText(url), url };
+    });
   }
   throw new AppError('import-not-found', `Библиотека символов KiCad «${library}» не найдена на gitlab.com. Проверьте название (например: Timer, Device, Transistor_BJT).`);
+}
+
+/** Библиотека-папка KiCad 9: по файлу на символ; родитель (extends) подгружается отдельно. */
+function symdirLibrary(library: string, origin: string, names: string[], get: (name: string) => Promise<{ text: string | null; url: string }>): OpenedLibrary {
+  const cache = new Map<string, KicadSymbol>();
+  const urlOf = new Map<string, string>();
+  const fetchRaw = async (name: string): Promise<{ syms: KicadSymbol[]; url: string }> => {
+    checkName('Символ', name);
+    const r = await get(name);
+    if (r.text === null) throw new AppError('import-not-found', `В библиотеке ${library} нет символа ${name}`);
+    try { return { syms: readSymbolsRaw(r.text), url: r.url }; } catch (e) { parseError(e, `Символ ${name}`); }
+  };
+  return {
+    library, origin, license: KICAD_LICENSE, symbols: [],
+    summaries: [...names].sort().map((name) => ({ name, description: '', reference: '', footprint: '', datasheet: '', keywords: '', pinCount: 0, extends: null })),
+    loadSymbol: async (name) => {
+      const sources: string[] = [];
+      let want: string | null = name;
+      for (let depth = 0; want && depth < 10; depth++) {
+        if (!cache.has(want)) {
+          const r = await fetchRaw(want);
+          for (const sym of r.syms) { cache.set(sym.name, sym); urlOf.set(sym.name, r.url); }
+        }
+        const url = urlOf.get(want);
+        if (url && !sources.includes(url)) sources.push(url);
+        want = cache.get(want)?.extends ?? null;
+      }
+      const resolved = resolveExtends([...cache.values()]).find((x) => x.name === name);
+      if (!resolved) throw new AppError('import-not-found', `В библиотеке ${library} нет символа ${name}`);
+      return { symbol: resolved, sources };
+    },
+  };
 }
 
 /** Библиотека символов из файла на компьютере. */

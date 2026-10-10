@@ -24,7 +24,7 @@ await check('NE555P + DIP-8 + SOIC-8', async () => {
   const { bundle: b, warnings } = kicadToBundle({ symbol, library: 'Timer', footprints: [dip.fp, soic.fp], sources: [...sources, dip.source, soic.source], license: lib.license });
   const pins = Object.fromEntries(b.symbol.pins.map((p) => [p.number, `${p.name}:${p.electricalType}`]));
   out('notice', `NE555P: ${JSON.stringify(pins)}; предупреждения: ${warnings.join(' | ')}`);
-  assert.deepEqual(Object.fromEntries(b.symbol.pins.map((p) => [p.number, p.name])), { 1: 'GND', 2: 'TR', 3: 'Q', 4: 'R', 5: 'CV', 6: 'THR', 7: 'DIS', 8: 'VCC' });
+  assert.deepEqual(Object.fromEntries(b.symbol.pins.map((p) => [p.number, p.name])), { 1: 'GND', 2: 'TRIG', 3: 'OUT', 4: 'R\u0305S\u0305T\u0305', 5: 'CONT', 6: 'THRES', 7: 'DISCH', 8: 'VCC' });
   assert.equal(b.symbol.pins.find((p) => p.number === '1')!.electricalType, 'ground');
   assert.equal(b.packages[0]!.pads.length, 8);
   assert.equal(b.packages[0]!.pitchMm, 2.54);

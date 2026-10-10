@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import {
-  footprintToPackage, guessCategory, kicadToBundle, KICAD_LICENSE, parseFootprint, parseSymbolLibrary, splitFootprintRef, summarize, isSafeKicadName,
+  footprintToPackage, guessCategory, kicadToBundle, KICAD_LICENSE, parseFootprint, parseSymbolLibrary, splitFootprintRef, summarize, isSafeKicadName, pinNameText,
 } from '../../src/catalog-import/kicad';
 import { parseSexpr } from '../../src/catalog-import/sexpr';
 import { checkLibrary, lintBundle } from '../../src/core/catalog';
@@ -26,7 +26,7 @@ test('библиотека символов: наследование extends, �
   const ne = lib.find((s) => s.name === 'NE555P')!;
   assert.equal(ne.pins.length, 8, 'выводы взяты у родителя');
   const pins = Object.fromEntries(ne.pins.map((p) => [p.number, `${p.name}/${p.type}`]));
-  assert.deepEqual(pins, { 1: 'GND/power_in', 8: 'VCC/power_in', 2: 'TR/input', 3: 'Q/output', 4: 'R/input', 5: 'CV/input', 6: 'THR/input', 7: 'DIS/input' });
+  assert.deepEqual(pins, { 1: 'GND/power_in', 8: 'VCC/power_in', 2: 'TRIG/input', 3: 'OUT/output', 4: '~{RST}/input', 5: 'CONT/passive', 6: 'THRES/input', 7: 'DISCH/input' });
   const s = summarize(ne);
   assert.equal(s.footprint, 'Package_DIP:DIP-8_W7.62mm');
   assert.equal(s.description, 'Precision Timers, 555 compatible, PDIP-8');
@@ -84,6 +84,7 @@ test('импорт NE555P + DIP-8 + SOIC-8: деталь без ошибок, в
   assert.ok(warnings.some((w) => /Модель для расчёта не импортируется/.test(w)));
   assert.equal(b.symbol.graphic, 'box');
   assert.equal(b.symbol.pins.find((p) => p.number === '8')!.electricalType, 'power-in');
+  assert.equal(b.symbol.pins.find((p) => p.number === '4')!.name, 'R\u0305S\u0305T\u0305', 'инверсия ~{RST} — черта сверху');
   assert.equal(b.symbol.pins.find((p) => p.number === '1')!.electricalType, 'ground', 'GND (power_in в KiCad) — земля');
   assert.equal(b.packages.length, 2);
   for (const pk of b.part.packages) assert.equal(pk.pinMap.length, 8);
@@ -112,6 +113,8 @@ test('резистор из Device: общее обозначение, идеа�
 });
 
 test('категории и безопасные имена', () => {
+  assert.equal(pinNameText('V_{CC}'), 'VCC');
+  assert.equal(pinNameText('~'), '');
   assert.equal(guessCategory('U', 'ATmega328P-PU', 'MCU_Microchip_ATmega').category, 'mcu');
   assert.equal(guessCategory('U', '74HC00', '74xx').category, 'ic-digital');
   assert.deepEqual(guessCategory('Q', 'IRF9540N', 'Transistor_FET', 'P-Channel MOSFET'), { category: 'mosfet', graphic: 'pmos' });

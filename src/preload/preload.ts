@@ -42,6 +42,7 @@ const api: ElabApi = {
   kicad: {
     openOnline: (library) => call(IPC.kicadOpenOnline, library),
     openFile: () => call(IPC.kicadOpenFile),
+    describe: (token, symbol) => call(IPC.kicadDescribe, token, symbol),
     build: (token, symbol, footprints) => call(IPC.kicadBuild, token, symbol, footprints),
   },
   sim: {

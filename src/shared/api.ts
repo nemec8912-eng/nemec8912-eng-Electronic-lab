@@ -79,6 +79,8 @@ export interface ElabApi {
   kicad: {
     openOnline(library: string): Promise<Result<KicadLibraryDto>>;
     openFile(): Promise<Result<KicadLibraryDto | null>>;
+    /** Сведения о символе (для библиотек-папок KiCad 9 загружаются при выборе). */
+    describe(token: string, symbol: string): Promise<Result<SymbolSummary>>;
     /** Построить деталь для проверки; files = true — выбрать файлы .kicad_mod на компьютере. null — выбор файлов отменён. */
     build(token: string, symbol: string, footprints: { online: string[]; files: boolean }): Promise<Result<KicadPreviewDto | null>>;
   };
@@ -130,4 +132,5 @@ export const IPC = {
   kicadOpenOnline: 'kicad:open-online',
   kicadOpenFile: 'kicad:open-file',
   kicadBuild: 'kicad:build',
+  kicadDescribe: 'kicad:describe',
 } as const;

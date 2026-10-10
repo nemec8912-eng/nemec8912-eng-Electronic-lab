@@ -1,36 +1,39 @@
 /** Левая панель (каталог) и правая панель (свойства проекта / выбранного объекта). */
-import { useEffect, useState } from 'react';
-import { BUILTIN_PARTS, formatQuantity, modelParams, PARAMS, parseQuantity } from '../core/library';
+import { useEffect, useMemo, useState } from 'react';
+import { categoryLabel, searchBundles } from '../core/catalog';
+import { formatQuantity, modelParams, PARAMS, parseQuantity, RATINGS } from '../core/library';
 import type { Annotation, CheckpointInfo, ComponentInstance, ProjectDoc, Wire } from '../core/model';
 import { symbolOf } from '../core/schematic';
 import { fmtDateTime } from './api';
+import { Badges } from './CatalogView';
+import type { CatalogState } from './useCatalog';
 
-const CATEGORIES = [
-  'Катушки', 'Диоды и стабилитроны', 'Диодные мосты', 'Транзисторы', 'MOSFET',
-  'Тиристоры и симисторы', 'Варисторы', 'Предохранители', 'Реле', 'Трансформаторы', 'Разъёмы', 'Переключатели',
-  'Датчики', 'Аналоговые ИС', 'Цифровые ИС', 'Микроконтроллеры',
-];
-
-export function CatalogPanel({ placing, onPick, enabled }: { placing: string | null; onPick(catalogId: string | null): void; enabled: boolean }) {
+/** Левая панель схемы: поиск по каталогу (встроенный + мой) и выбор детали для размещения. */
+export function CatalogPanel({ catalog, placing, onPick, onOpenCatalog }: {
+  catalog: CatalogState; placing: string | null; onPick(partId: string | null): void; onOpenCatalog(): void;
+}) {
+  const [query, setQuery] = useState('');
+  const found = useMemo(() => searchBundles(catalog.all, query), [catalog.all, query]);
+  const LIMIT = 80;
   return (
     <aside className="panel left" aria-label="Каталог">
-      <h3>Детали прототипа</h3>
+      <h3>Детали</h3>
+      <input type="search" aria-label="Поиск детали для схемы" placeholder="Поиск: 555, 10к, диод…" value={query} onChange={(e) => setQuery(e.target.value)} />
       <ul className="catalog-parts">
-        {BUILTIN_PARTS.map((b) => (
-          <li key={b.catalogId}>
-            <button className={`catalog-item ${placing === b.catalogId ? 'on' : ''}`} disabled={!enabled}
-              aria-pressed={placing === b.catalogId} onClick={() => onPick(placing === b.catalogId ? null : b.catalogId)}>
-              {b.part.name}
+        {found.slice(0, LIMIT).map((b) => (
+          <li key={b.part.id}>
+            <button className={`catalog-item ${placing === b.part.id ? 'on' : ''}`} aria-label={b.part.name} title={b.part.description || b.part.name}
+              aria-pressed={placing === b.part.id} onClick={() => onPick(placing === b.part.id ? null : b.part.id)} data-part-id={b.part.id}>
+              <span>{b.part.name}</span>
+              <Badges b={b} personal={catalog.isPersonal(b.part.id)} />
             </button>
           </li>
         ))}
+        {found.length > LIMIT && <li className="muted small">…и ещё {found.length - LIMIT}. Уточните поиск.</li>}
+        {found.length === 0 && <li className="muted small">Ничего не найдено.</li>}
       </ul>
+      <button className="btn small" onClick={onOpenCatalog}>Открыть каталог…</button>
       <p className="muted small">Выберите деталь и щёлкните на полотне. Провод — щелчок по выводу, затем по второму выводу. Esc — отмена.</p>
-      <h3>Каталог</h3>
-      <p className="stage-note small">Каталог реальных компонентов — этап 2.</p>
-      <ul className="catalog-cats" aria-disabled="true">
-        {CATEGORIES.map((c) => <li key={c}>{c}</li>)}
-      </ul>
     </aside>
   );
 }
@@ -47,6 +50,8 @@ interface PropsPanelProps {
   onInstRefDes(id: string, refDes: string): string | null;
   onInstRotate(id: string): void;
   onInstDelete(id: string): void;
+  /** Добавить деталь проекта в мой каталог. */
+  onAddToCatalog(partId: string): void;
   onWireDelete(id: string): void;
   onCreateCheckpoint(): void;
   onRestoreCheckpoint(cp: CheckpointInfo): void;
@@ -108,7 +113,7 @@ function ValueField({ inst, paramKey, onCommit }: { inst: ComponentInstance; par
   );
 }
 
-function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstDelete }: PropsPanelProps & { inst: ComponentInstance }) {
+function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstDelete, onAddToCatalog }: PropsPanelProps & { inst: ComponentInstance }) {
   const part = doc.library.parts.find((x) => x.id === inst.partId);
   const model = part?.modelId ? doc.library.models.find((m) => m.id === part.modelId) : undefined;
   const sym = symbolOf(doc, inst);
@@ -133,24 +138,41 @@ function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstD
           ? <SourceVoltage key={k} inst={inst} onCommit={(v) => onInstValue(inst.id, k, v, PARAMS[k]!.unit)} />
           : <ValueField key={k} inst={inst} paramKey={k} onCommit={(v) => onInstValue(inst.id, k, v, PARAMS[k]!.unit)} />
       ))}
-      {part && Object.keys(part.ratings).length > 0 && (
+      {part && (
         <dl className="meta">
-          {part.ratings.power && <><dt>Допустимая мощность</dt><dd>{formatQuantity(part.ratings.power.value, 'Вт')}</dd></>}
-          {part.ratings.voltage && <><dt>Допустимое напряжение</dt><dd>{formatQuantity(part.ratings.voltage.value, 'В')}</dd></>}
+          <dt>Категория</dt><dd>{categoryLabel(part.category)}</dd>
+          {part.partNumber && <><dt>Партномер</dt><dd>{part.partNumber}</dd></>}
+          {part.marking && <><dt>Маркировка</dt><dd>{part.marking}</dd></>}
+          {part.description && <><dt>Назначение</dt><dd>{part.description}</dd></>}
+          {part.tolerancePct !== null && <><dt>Допуск</dt><dd>±{String(part.tolerancePct).replace('.', ',')} %</dd></>}
+          {Object.entries(part.ratings).map(([k, q]) => <RatingRow key={k} k={k} value={q.value} />)}
+          {part.temperature && <><dt>Температура</dt><dd>{part.temperature.minC}…{part.temperature.maxC} °C</dd></>}
         </dl>
       )}
       <dl className="meta">
-        <dt>Модель</dt><dd>{model ? `${model.name}${model.verified ? '' : ' (не проверена)'}` : 'нет модели — расчёт невозможен'}</dd>
-        <dt>Символ</dt><dd>{sym?.standard ?? '—'}</dd>
-        <dt>Корпус</dt><dd>{part?.packages.length ? part.packages.map((pk) => doc.library.packages.find((x) => x.id === pk.packageId)?.name).join(', ') : 'на плате не размещается'}</dd>
+        <dt>Модель</dt><dd>{model ? `${model.name}${model.verified ? '' : ' (не проверена)'}` : 'нет'}</dd>
+        <dt>Символ</dt><dd>{sym?.name ?? '—'}</dd>
+        <dt>Корпус</dt><dd>{part?.packages.length ? part.packages.map((pk) => doc.library.packages.find((x) => x.id === pk.packageId)?.name).join(', ') : 'не задан — на плате не размещается'}</dd>
+        <dt>Сверено с даташитом</dt><dd>{part?.origin.verified ? 'да' : 'нет'}</dd>
       </dl>
-      <p className="muted small">Детали прототипа идеальные: без допусков, паразитных параметров и тепловой модели.</p>
+      {part && part.category !== 'reference' && !model && (
+        <p className="stage-note small" data-testid="no-model-warning">Нет SPICE-модели — эта деталь не моделируется. Схему с ней можно рисовать и разводить на плате, но расчёт будет остановлен с объяснением.</p>
+      )}
+      {model?.kind === 'spice-primitive' && <p className="muted small">Модель идеальная: без допусков, паразитных параметров и тепловой модели.</p>}
+      {part && part.category !== 'reference' && (
+        <button className="btn small" onClick={() => onAddToCatalog(part.id)} title="Сохранить копию этой детали (из проекта) в мой каталог">Добавить в мой каталог</button>
+      )}
       <div className="row">
         <button className="btn" onClick={() => onInstRotate(inst.id)} title="R">Повернуть</button>
         <button className="btn danger" onClick={() => onInstDelete(inst.id)} title="Delete">Удалить</button>
       </div>
     </div>
   );
+}
+
+function RatingRow({ k, value }: { k: string; value: number }) {
+  const r = RATINGS[k];
+  return <><dt>{r?.label ?? k}</dt><dd>{formatQuantity(value, r?.unitRu ?? '')}</dd></>;
 }
 
 function SourceVoltage({ inst, onCommit }: { inst: ComponentInstance; onCommit(v: number): void }) {

@@ -5,14 +5,16 @@ import { newId } from '../core/ids';
 import { setProbe, setTranSettings } from '../core/instruments';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import { addTrack, copperSvg, deleteTrack, movePlacement, rotatePlacement, setBoard, syncFromSchematic } from '../core/pcb';
-import { connectPins, deleteInstance, deleteWire, moveInstance, placeBuiltin, renameRefDes, rotateInstance, setValue } from '../core/schematic';
+import { connectPins, deleteInstance, deleteWire, moveInstance, placeBundle, renameRefDes, rotateInstance, setValue } from '../core/schematic';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
 import { BoardPanel } from './BoardPanel';
 import { TestPanel } from './TestPanel';
 import { circuitKey } from '../sim/key';
 import { api, errorText, fmtBytes, fmtDateTime, fmtTime, unwrap } from './api';
 import { useDialogs } from './Dialogs';
+import { CatalogView } from './CatalogView';
 import { CatalogPanel, PropertiesPanel } from './Panels';
+import { useCatalog, type CatalogState } from './useCatalog';
 import { ProjectList } from './ProjectList';
 import { SchematicCanvas, type Selection } from './SchematicCanvas';
 import { useEditor, type Editor } from './useEditor';
@@ -27,6 +29,8 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [opened, setOpened] = useState<Opened | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const catalog = useCatalog();
   const sessionCounter = useRef(0);
   /** Рабочее место регистрирует сюда функцию «закрыть проект с вопросом о сохранении». */
   const closeCurrent = useRef<(() => Promise<boolean>) | null>(null);
@@ -206,14 +210,19 @@ export function App() {
           onClosed={closeProject}
           onSwitch={(doc) => setOpened({ doc, savedRevision: doc.revision, session: ++sessionCounter.current })}
           toast={toast}
+          catalog={catalog}
         />
       ) : (
         <>
-          <TopBar info={info} fileActions={fileActions} />
-          <main className="start">
-            <ProjectList projects={projects} loading={loading} onCreate={createProject} onOpen={openProject}
-              onRename={listActions.rename} onDuplicate={listActions.duplicate} onDelete={listActions.remove} />
-          </main>
+          <TopBar info={info} fileActions={fileActions} onCatalog={() => setCatalogOpen((o) => !o)} catalogOpen={catalogOpen} />
+          {catalogOpen ? (
+            <CatalogView catalog={catalog} onClose={() => setCatalogOpen(false)} toast={toast} />
+          ) : (
+            <main className="start">
+              <ProjectList projects={projects} loading={loading} onCreate={createProject} onOpen={openProject}
+                onRename={listActions.rename} onDuplicate={listActions.duplicate} onDelete={listActions.remove} />
+            </main>
+          )}
           <StatusBar info={info} />
         </>
       )}
@@ -230,9 +239,11 @@ interface FileActions {
   restoreBackup(): Promise<void>;
 }
 
-function TopBar({ info, fileActions, editor, projectActions }: {
+function TopBar({ info, fileActions, editor, projectActions, onCatalog, catalogOpen }: {
   info: AppInfo | null;
   fileActions: FileActions;
+  onCatalog?(): void;
+  catalogOpen?: boolean;
   editor?: Editor;
   projectActions?: { back(): void; save(): void; saveAs(): void; exportProject(): void };
 }) {
@@ -248,6 +259,7 @@ function TopBar({ info, fileActions, editor, projectActions }: {
         <span className="sep" />
         <button className="btn" onClick={() => fileActions.backupAll(editor?.flushAutosave)}>Резервная копия всего</button>
         <button className="btn" onClick={() => fileActions.restoreBackup()}>Восстановить резервную копию</button>
+        {onCatalog && <><span className="sep" /><button className={`btn ${catalogOpen ? 'on' : ''}`} aria-pressed={catalogOpen} onClick={onCatalog}>Каталог деталей</button></>}
       </div>
       {!info && <span className="muted">Загрузка…</span>}
     </header>
@@ -283,9 +295,9 @@ function StatusBar({ info, editor }: { info: AppInfo | null; editor?: Editor }) 
   );
 }
 
-type Tab = 'schematic' | 'test' | 'board';
+type Tab = 'schematic' | 'test' | 'board' | 'catalog';
 
-function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitch, toast }: {
+function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitch, toast, catalog }: {
   opened: Opened;
   info: AppInfo | null;
   fileActions: FileActions;
@@ -293,6 +305,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   onClosed(): Promise<void>;
   onSwitch(doc: ProjectDoc): void;
   toast(text: string, kind?: 'ok' | 'error'): void;
+  catalog: CatalogState;
 }) {
   const dialogs = useDialogs();
   const editor = useEditor(opened.doc, opened.savedRevision);
@@ -463,7 +476,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       <TopBar info={info} fileActions={fileActions} editor={editor} projectActions={projectActions} />
       <nav className="tabs" role="tablist">
         <span className="project-title" title={doc.name}>{doc.name}</span>
-        {([['schematic', 'Схема'], ['test', 'Тест'], ['board', 'Плата']] as const).map(([k, label]) => (
+        {([['schematic', 'Схема'], ['test', 'Тест'], ['board', 'Плата'], ['catalog', 'Каталог']] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
         ))}
         <div className="toolbar tabs-right" role="toolbar" aria-label="Правка">
@@ -473,7 +486,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       </nav>
       {tab === 'schematic' && (
         <main className="workspace">
-          <CatalogPanel placing={placing} onPick={setPlacing} enabled />
+          <CatalogPanel catalog={catalog} placing={placing} onPick={setPlacing} onOpenCatalog={() => setTab('catalog')} />
           <section className="center">
             <SchematicCanvas
               doc={doc}
@@ -481,9 +494,11 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
               selection={selection}
               onSelect={setSelection}
               placing={placing}
-              onPlace={(catalogId, p) => {
+              onPlace={(partId, p) => {
+                const bundle = catalog.byId(partId);
+                if (!bundle) { toast('Деталь не найдена в каталоге', 'error'); setPlacing(null); return; }
                 const id = newId();
-                editor.apply('Размещение детали', (d) => placeBuiltin(d, catalogId, p, id).doc);
+                editor.apply(`Размещение: ${bundle.part.name}`, (d) => placeBundle(d, bundle, p, id).doc);
                 setSelection({ kind: 'inst', id });
                 setPlacing(null);
               }}
@@ -518,11 +533,24 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             }}
             onInstRotate={(id) => editor.apply('Поворот детали', (d) => rotateInstance(d, id))}
             onInstDelete={(id) => { editor.apply('Удаление детали', (d) => deleteInstance(d, id)); setSelection(null); }}
+            onAddToCatalog={async (partId) => {
+              try {
+                const saved = await unwrap(api().catalog.fromProject(editorRef.current.doc, partId));
+                await catalog.reload();
+                toast(`«${saved.part.name}» добавлена в мой каталог`);
+              } catch (e) {
+                await dialogs.alert('Деталь не добавлена в каталог', errorText(e));
+              }
+            }}
             onWireDelete={(id) => { editor.apply('Удаление провода', (d) => deleteWire(d, id)); setSelection(null); }}
             onCreateCheckpoint={createCheckpoint}
             onRestoreCheckpoint={restoreCheckpoint}
           />
         </main>
+      )}
+      {tab === 'catalog' && (
+        <CatalogView catalog={catalog} toast={toast} onClose={() => setTab('schematic')}
+          onPlace={(partId) => { setPlacing(partId); setTab('schematic'); }} />
       )}
       {tab === 'test' && (
         <main className="workspace single">

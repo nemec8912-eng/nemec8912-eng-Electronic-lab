@@ -1,7 +1,7 @@
 /** Обработчики IPC: тонкий слой между окном и хранилищем, плюс системные диалоги выбора файлов. */
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { APP_VERSION } from '../core/appinfo';
 import { newId } from '../core/ids';
 import type { ProjectDoc } from '../core/model';
@@ -109,6 +109,11 @@ export function registerIpc(ctx: MainContext): void {
 
   ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { tran: boolean }) => simulate(doc, findNgspice(), { tran: Boolean(opts?.tran) })));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));
+  ipcMain.handle(IPC.openExternal, wrap(async (url: string) => {
+    const u = String(url ?? '');
+    if (!/^https?:\/\/[^\s]+$/i.test(u) || u.length > 2000) throw new AppError('bad-url', 'Ссылка должна начинаться с http:// или https://');
+    await shell.openExternal(u);
+  }));
   ipcMain.handle(IPC.closeConfirmed, wrap(async () => { ctx.confirmClose(); }));
 
   ipcMain.handle(IPC.list, wrap(() => store().listProjects()));

@@ -418,12 +418,18 @@ describe('Личный каталог в хранилище', () => {
     const lm = builtinCatalog().find((b) => b.part.partNumber === 'LM358')!;
     const custom = structuredClone(lm);
     custom.part.id = newId(); custom.part.partNumber = 'LM358-МОЙ'; custom.part.name = 'Мой ОУ';
+    custom.part.origin = { ...custom.part.origin, catalogPartId: custom.part.id }; // как в личном каталоге другого ПК
     const doc = placeBundle(createProject('С другого ПК'), custom, { x: 0, y: 0 }).doc;
     const { root, store } = await freshStore('cat3');
     const added = await store.addProjectPartToCatalog(doc, doc.library.parts[0]!.id, builtinCatalog());
     assert.equal(added.part.name, 'Мой ОУ');
     assert.match(added.part.origin.notes, /Добавлена из проекта/);
     assert.notEqual(added.part.id, doc.library.parts[0]!.id);
+    assert.equal(added.part.id, custom.part.id, 'каталожный id с другого ПК сохранён');
+    const again = placeBundle(doc, added, { x: 100, y: 0 }).doc;
+    assert.equal(again.library.parts.length, 1, 'повторное размещение использует копию в проекте');
+    await assert.rejects(store.addProjectPartToCatalog(doc, doc.library.parts[0]!.id, builtinCatalog()),
+      (e: unknown) => e instanceof AppError && e.code === 'part-invalid' && (e.details ?? []).some((d) => /уже есть в каталоге/.test(d)), 'дубликат не добавляется');
     const file = path.join(root, 'library', 'catalog.json');
     await fs.writeFile(file, '{ сломано');
     await assert.rejects(store.readCatalog(), (e: unknown) => e instanceof AppError && e.code === 'catalog-invalid');

@@ -42,6 +42,8 @@ export interface ElabApi {
     /** Подтверждение, что окно можно закрыть (после «Сохранить»/«Не сохранять»). */
     closeConfirmed(): Promise<Result<void>>;
     onCloseRequest(cb: (choice: 'save' | 'discard') => void): () => void;
+    /** Открыть ссылку (даташит) в браузере системы — только по нажатию пользователя, только http/https. */
+    openExternal(url: string): Promise<Result<void>>;
   };
   projects: {
     list(): Promise<Result<ProjectSummary[]>>;
@@ -89,6 +91,7 @@ export const IPC = {
   setDirty: 'app:set-dirty',
   closeConfirmed: 'app:close-confirmed',
   closeRequest: 'app:close-request',
+  openExternal: 'app:open-external',
   list: 'projects:list',
   create: 'projects:create',
   open: 'projects:open',

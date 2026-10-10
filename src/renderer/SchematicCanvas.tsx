@@ -53,7 +53,9 @@ function instanceLabel(doc: ProjectDoc, inst: ComponentInstance): string[] {
     if (def) lines.push(formatQuantity(q.value, def.unitRu));
   }
   // На схеме видны и предельные параметры, если они определяют выбор (например, напряжение конденсатора).
-  if (part.category === 'capacitor' && part.ratings.voltage) lines.push(formatQuantity(part.ratings.voltage.value, 'В'));
+  if ((part.category === 'capacitor' || part.category === 'capacitor-polar') && part.ratings.voltage) lines.push(formatQuantity(part.ratings.voltage.value, 'В'));
+  // У полупроводников и микросхем номинала нет — подписываем партномер.
+  if (lines.length === 1 && part.partNumber) lines.push(part.partNumber);
   return lines;
 }
 

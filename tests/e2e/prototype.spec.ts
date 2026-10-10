@@ -54,7 +54,7 @@ test('прототип: схема → ngspice → щупы → плата → �
   // --- Схема ---
   const canvas = page.locator('svg.canvas');
   const place = async (name: string, x: number, y: number) => {
-    await page.getByRole('button', { name }).click();
+    await page.getByRole('button', { name, exact: true }).click();
     await canvas.click({ position: { x, y } });
   };
   await place('Источник постоянного напряжения', 120, 250);

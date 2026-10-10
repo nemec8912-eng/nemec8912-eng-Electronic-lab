@@ -14,6 +14,7 @@ const api: ElabApi = {
       ipcRenderer.on(IPC.closeRequest, listener);
       return () => { ipcRenderer.removeListener(IPC.closeRequest, listener); };
     },
+    openExternal: (url) => call(IPC.openExternal, url),
   },
   projects: {
     list: () => call(IPC.list),

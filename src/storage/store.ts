@@ -354,7 +354,11 @@ export class DataStore {
     const src = bundleOf(doc.library, projectPartId);
     if (!src) throw new AppError('not-found', 'Деталь не найдена в проекте');
     const pkgIds = new Map(src.packages.map((p) => [p.id, newId()]));
-    const partId = newId();
+    // Деталь, пришедшая с другого ПК, сохраняет свой каталожный id: тогда размещение её из каталога
+    // в этом же проекте использует уже встроенную копию, а не создаёт вторую.
+    const origId = src.part.origin.catalogPartId;
+    const taken = new Set([...(await this.readCatalog()).parts.map((p) => p.id), ...builtinParts.map((x) => x.part.id)]);
+    const partId = origId && isUuid(origId) && !taken.has(origId) ? origId : newId();
     const b: PartBundle = {
       part: {
         ...structuredClone(src.part), id: partId, symbolId: newId(), modelId: src.model ? newId() : null,

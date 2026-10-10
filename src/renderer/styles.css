@@ -215,3 +215,77 @@ pre.netlist, .error-text pre { white-space: pre-wrap; font-size: 11.5px; backgro
 .track.selected .track-line { stroke: #6fb3ff; }
 .track-rubber { stroke: #6fb3ff; opacity: .6; stroke-linecap: round; pointer-events: none; }
 .rat { stroke: #f5f5f5; stroke-width: 0.12; stroke-dasharray: 0.6 0.4; pointer-events: none; }
+
+/* ---------- Этап 2: каталог ---------- */
+.sym .fill { fill: var(--text); }
+.sym .dash { stroke-dasharray: 4 3; }
+.pin-num { font-size: 9px; fill: var(--muted); }
+.pin-dot-preview { fill: #c0392b; stroke: none; }
+.btn.on { border-color: var(--accent); background: #eaf1fb; }
+.grow { flex: 1; }
+select { font: inherit; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; background: #fff; max-width: 100%; }
+.linklike { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; word-break: break-all; font: inherit; }
+.catalog-screen { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.catalog-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.catalog-head h2 { font-size: 16px; margin: 0 8px 0 0; }
+.catalog-error { margin: 6px 12px; }
+.catalog-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(170px, 18vw, 240px) minmax(220px, 1fr) minmax(320px, 1.4fr); }
+.catalog-filters { background: var(--panel); border-right: 1px solid var(--line); padding: 10px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.cat-list { list-style: none; padding: 0; margin: 0; }
+.cat { width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 4px; padding: 4px 6px; cursor: pointer; }
+.cat:hover { background: #f0f4fa; }
+.cat.on { border-color: var(--accent); background: #eaf1fb; font-weight: 600; }
+.catalog-list { overflow: auto; padding: 8px; border-right: 1px solid var(--line); }
+.catalog-list ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.part-row { width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.part-row.on { border-color: var(--accent); background: #eaf1fb; }
+.part-row-name { font-weight: 600; }
+.part-row-meta { color: var(--muted); font-size: 12.5px; }
+.badges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.badge.mine { background: #e3efff; color: #164a8f; }
+.badge.muted-badge { background: #eef0f3; color: var(--muted); }
+.catalog-card { overflow: auto; padding: 12px 16px; background: var(--panel); }
+.part-title { font-size: 17px; margin: 0 0 4px; }
+.card-actions { margin: 10px 0; }
+.part-card h4, .editor-main h4, .pkg-add h4 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 6px; }
+.previews { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+.previews figure { margin: 0; flex: 1 1 200px; min-width: 0; border: 1px solid var(--line); border-radius: 4px; padding: 6px; background: var(--canvas); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.previews figcaption { font-size: 12.5px; color: var(--muted); }
+.preview { width: 100%; max-width: 100%; }
+.no-pkg { padding: 30px 6px; text-align: center; }
+.pkg-body { fill: none; stroke: #6d7782; stroke-width: 0.12; stroke-dasharray: 0.5 0.3; }
+.pkg-pad rect, .pkg-pad ellipse { fill: #d9a441; }
+.pkg-pad.first rect, .pkg-pad.first ellipse { fill: #c4741b; }
+.pkg-pad.hl rect, .pkg-pad.hl ellipse { fill: var(--accent); }
+.pkg-hole { fill: var(--canvas); }
+.pkg-num { fill: #1d2228; font-weight: 600; }
+.pkg-key { fill: #c0392b; }
+.pins-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.pins-table th, .pins-table td { border-bottom: 1px solid #eef0f3; padding: 3px 5px; text-align: left; vertical-align: middle; }
+.pins-table th { color: var(--muted); font-weight: 600; }
+.pins-table tbody tr:hover { background: #f4f7fb; }
+.pins-table.edit input { padding: 3px 6px; }
+.pins-table input.narrow { width: 64px; }
+.part-editor .editor-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(170px, 16vw, 220px) minmax(320px, 1fr) clamp(220px, 22vw, 300px); }
+.editor-nav { background: var(--panel); border-right: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+.editor-preview { margin-top: 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--canvas); padding: 4px; }
+.err-count { color: var(--danger); font-weight: 400; font-size: 12px; }
+.editor-main { overflow: auto; padding: 12px 16px; background: var(--panel); }
+.editor-lint { overflow: auto; padding: 10px 12px; background: var(--panel); border-left: 1px solid var(--line); }
+.editor-lint h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 2px 0 8px; }
+.editor-lint .linklike { color: inherit; word-break: normal; }
+.ok-line { color: var(--ok); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; align-items: start; }
+.form-grid .span2 { grid-column: 1 / -1; }
+.rating-row { display: flex; gap: 4px; align-items: center; }
+.rating-row .field { flex: 1; }
+.pkg-block { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+.pkg-block-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.pkg-name { width: 220px; font-weight: 600; }
+.pkg-block-body { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr); gap: 12px; }
+.pkg-block-body .preview { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; }
+.pkg-add { border-top: 1px solid var(--line); margin-top: 10px; }
+.catalog-item { display: flex; flex-direction: column; gap: 2px; }
+.panel.left input[type="search"] { margin-bottom: 8px; }
+.panel.left .catalog-parts { max-height: calc(100vh - 290px); overflow: auto; }

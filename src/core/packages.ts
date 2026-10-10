@@ -165,6 +165,9 @@ const SMA_SIZES: Record<string, { pitch: number; w: number; h: number; body: [nu
   SMC: { pitch: 6.8, w: 2.5, h: 3.3, body: [7.0, 5.9] },
 };
 
+/** Число с десятичной запятой для названий корпусов. */
+const ru = (v: number) => String(v).replace('.', ',');
+
 /** Построить корпус по семейству и параметрам. Бросает ошибку с понятным текстом при недопустимых параметрах. */
 export function generatePackage(family: string, params: GenParams = {}): PackageTemplate {
   const fam = FAMILIES.find((f) => f.id === family);
@@ -185,7 +188,7 @@ export function generatePackage(family: string, params: GenParams = {}): Package
       const pins = num(p, 'pins', 8), pitch = num(p, 'pitch', 2.54), span = num(p, 'span', 7.62), drill = num(p, 'drill', 0.8);
       if (pins % 2) throw new Error('DIP: число выводов должно быть чётным');
       const pads = dualRow(pins, pitch, span, (n, x, y, first) => tht(n, x, y, drill, first));
-      return { ...base, name: `DIP-${pins} (${span === 15.24 ? '600 mil' : `${span} мм`})`, pads, body: { x: r2(0.8), y: r2(-1.3), w: r2(span - 1.6), h: r2((pins / 2 - 1) * pitch + 2.6) },
+      return { ...base, name: `DIP-${pins} (${span === 15.24 ? '600 mil' : `${ru(span)} мм`})`, pads, body: { x: r2(0.8), y: r2(-1.3), w: r2(span - 1.6), h: r2((pins / 2 - 1) * pitch + 2.6) },
         pin1Marker: 'выемка у вывода 1, квадратная площадка', pitchMm: pitch, numbering: 'против часовой стрелки от вывода 1, вид сверху' };
     }
     case 'SOIC': case 'SOP': case 'TSSOP': {
@@ -201,7 +204,7 @@ export function generatePackage(family: string, params: GenParams = {}): Package
       const pads = quad(pins, pitch, span, w, h);
       if (family === 'QFN' && num(p, 'ep', 0) > 0) pads.push(smd(String(pins + 1), 0, 0, num(p, 'ep', 0), num(p, 'ep', 0)));
       const half = span / 2 - w / 2 - 0.15;
-      return { ...base, name: `${family}-${pins} шаг ${pitch}`, pads, body: { x: r2(-half), y: r2(-half), w: r2(half * 2), h: r2(half * 2) },
+      return { ...base, name: `${family}-${pins} шаг ${ru(pitch)}`, pads, body: { x: r2(-half), y: r2(-half), w: r2(half * 2), h: r2(half * 2) },
         pin1Marker: 'точка у вывода 1 (левый верхний угол)', pitchMm: pitch,
         numbering: `против часовой стрелки от вывода 1, вид сверху${family === 'QFN' && num(p, 'ep', 0) > 0 ? `; теплоотвод — вывод ${pins + 1}` : ''}` };
     }
@@ -211,7 +214,7 @@ export function generatePackage(family: string, params: GenParams = {}): Package
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
         pads.push(smd(`${bgaRowName(r)}${c + 1}`, (c - (cols - 1) / 2) * pitch, (r - (rows - 1) / 2) * pitch, ball, ball, 'round'));
       }
-      return { ...base, name: `BGA-${rows * cols} ${rows}×${cols} шаг ${pitch}`, pads, body: bodyAround(pads, pitch / 2),
+      return { ...base, name: `BGA-${rows * cols} ${rows}×${cols} шаг ${ru(pitch)}`, pads, body: bodyAround(pads, pitch / 2),
         pin1Marker: 'метка в углу A1', pitchMm: pitch, numbering: 'ряды A, B, C… (без I, O, Q, S, X, Z), столбцы 1, 2, 3…; A1 — левый верхний, вид сверху' };
     }
     case 'SOT-23': {
@@ -231,7 +234,7 @@ export function generatePackage(family: string, params: GenParams = {}): Package
     case 'TO-92': {
       const pitch = num(p, 'pitch', 1.27);
       const pads = [tht('1', 0, 0, 0.75, true, 1.3), tht('2', pitch, 0, 0.75, false, 1.3), tht('3', pitch * 2, 0, 0.75, false, 1.3)];
-      return { ...base, name: `TO-92 (шаг ${pitch})`, pads, body: { x: r2(pitch - 2.4), y: -1.6, w: 4.8, h: 3.2 }, pin1Marker: 'плоская сторона к себе, вывод 1 слева', pitchMm: pitch, numbering: 'слева направо, плоской стороной к себе, выводами вниз' };
+      return { ...base, name: `TO-92 (шаг ${ru(pitch)})`, pads, body: { x: r2(pitch - 2.4), y: -1.6, w: 4.8, h: 3.2 }, pin1Marker: 'плоская сторона к себе, вывод 1 слева', pitchMm: pitch, numbering: 'слева направо, плоской стороной к себе, выводами вниз' };
     }
     case 'TO-220': {
       const pins = num(p, 'pins', 3), pitch = num(p, 'pitch', 2.54);
@@ -242,12 +245,12 @@ export function generatePackage(family: string, params: GenParams = {}): Package
       const pitch = num(p, 'pitch', 10.16), drill = num(p, 'drill', 0.8), L = num(p, 'bodyL', 6.3), D = num(p, 'bodyD', 2.5);
       if (L >= pitch) throw new Error('Корпус длиннее расстояния между отверстиями');
       const pads = [tht('1', 0, 0, drill, false), tht('2', pitch, 0, drill, false)];
-      return { ...base, name: `Аксиальный, шаг ${pitch} мм`, pads, body: { x: r2((pitch - L) / 2), y: r2(-D / 2), w: L, h: D }, pin1Marker: null, pitchMm: pitch, numbering: 'для диода вывод 1 — катод (полоса на корпусе)' };
+      return { ...base, name: `Аксиальный, шаг ${ru(pitch)} мм`, pads, body: { x: r2((pitch - L) / 2), y: r2(-D / 2), w: L, h: D }, pin1Marker: null, pitchMm: pitch, numbering: 'для диода вывод 1 — катод (полоса на корпусе)' };
     }
     case 'RADIAL': {
       const pitch = num(p, 'pitch', 2.5), d = num(p, 'diameter', 6.3), drill = num(p, 'drill', 0.8), polar = bool(p, 'polar', true);
       const pads = [tht('1', 0, 0, drill, polar), tht('2', pitch, 0, drill, false)];
-      return { ...base, name: `Радиальный ∅${d}, шаг ${pitch}`, pads, body: { x: r2(pitch / 2 - d / 2), y: r2(-d / 2), w: d, h: d },
+      return { ...base, name: `Радиальный ∅${ru(d)}, шаг ${ru(pitch)}`, pads, body: { x: r2(pitch / 2 - d / 2), y: r2(-d / 2), w: d, h: d },
         pin1Marker: polar ? 'вывод 1 — «+» (квадратная площадка); «−» отмечен полосой на корпусе' : null, pitchMm: pitch, numbering: null };
     }
     case 'CHIP': case 'SMA': {
@@ -266,13 +269,13 @@ export function generatePackage(family: string, params: GenParams = {}): Package
         const n = rows === 1 ? i + 1 : i * 2 + r + 1;
         pads.push(tht(String(n), r * pitch, i * pitch, 1.0, n === 1, 1.7));
       }
-      return { ...base, name: `Штыревой ${rows}×${per}, шаг ${pitch}`, pads, body: bodyAround(pads, 0.4), pin1Marker: 'квадратная площадка — вывод 1', pitchMm: pitch,
+      return { ...base, name: `Штыревой ${rows}×${per}, шаг ${ru(pitch)}`, pads, body: bodyAround(pads, 0.4), pin1Marker: 'квадратная площадка — вывод 1', pitchMm: pitch,
         numbering: rows === 1 ? 'по порядку' : 'нечётные — левый ряд, чётные — правый' };
     }
     case 'TERMINAL': {
       const pins = num(p, 'pins', 2), pitch = num(p, 'pitch', 5.08);
       const pads = Array.from({ length: pins }, (_, i) => tht(String(i + 1), i * pitch, 0, 1.3, i === 0, 2.4));
-      return { ...base, name: `Клеммник ${pins} конт., шаг ${pitch}`, pads, body: { x: -2.5, y: -4, w: r2((pins - 1) * pitch + 5), h: 8 }, pin1Marker: 'контакт 1 — квадратная площадка', pitchMm: pitch, numbering: 'по порядку' };
+      return { ...base, name: `Клеммник ${pins} конт., шаг ${ru(pitch)}`, pads, body: { x: -2.5, y: -4, w: r2((pins - 1) * pitch + 5), h: 8 }, pin1Marker: 'контакт 1 — квадратная площадка', pitchMm: pitch, numbering: 'по порядку' };
     }
   }
   throw new Error(`Семейство ${family} не реализовано`);

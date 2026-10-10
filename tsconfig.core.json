@@ -5,6 +5,7 @@
     "src/core",
     "src/storage",
     "src/sim",
+    "src/catalog",
     "src/shared",
     "src/main/paths.ts",
     "tests/unit",

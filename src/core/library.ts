@@ -20,12 +20,24 @@ export const PARAMS: Record<string, ParamDef> = {
   resistance: { key: 'resistance', label: 'Сопротивление', unit: 'Ω', unitRu: 'Ом', min: 0, max: 1e12 },
   capacitance: { key: 'capacitance', label: 'Ёмкость', unit: 'F', unitRu: 'Ф', min: 0, max: 10 },
   voltage: { key: 'voltage', label: 'Напряжение', unit: 'V', unitRu: 'В', min: -1e4, max: 1e4 },
+  inductance: { key: 'inductance', label: 'Индуктивность', unit: 'H', unitRu: 'Гн', min: 0, max: 1e4 },
+  zenerVoltage: { key: 'zenerVoltage', label: 'Напряжение стабилизации', unit: 'V', unitRu: 'В', min: 0, max: 1e3 },
 };
 
 /** Пределы деталей (ratings) — для предупреждений о перегрузке. */
 export const RATINGS: Record<string, { label: string; unit: string; unitRu: string }> = {
   power: { label: 'Допустимая мощность', unit: 'W', unitRu: 'Вт' },
   voltage: { label: 'Допустимое напряжение', unit: 'V', unitRu: 'В' },
+  current: { label: 'Допустимый ток', unit: 'A', unitRu: 'А' },
+  reverseVoltage: { label: 'Максимальное обратное напряжение', unit: 'V', unitRu: 'В' },
+  surgeCurrent: { label: 'Ударный ток', unit: 'A', unitRu: 'А' },
+  vce: { label: 'Напряжение коллектор–эмиттер', unit: 'V', unitRu: 'В' },
+  vds: { label: 'Напряжение сток–исток', unit: 'V', unitRu: 'В' },
+  rdsOn: { label: 'Сопротивление открытого канала', unit: 'Ω', unitRu: 'Ом' },
+  supplyMin: { label: 'Питание, минимум', unit: 'V', unitRu: 'В' },
+  supplyMax: { label: 'Питание, максимум', unit: 'V', unitRu: 'В' },
+  outputMin: { label: 'Выходное напряжение, минимум', unit: 'V', unitRu: 'В' },
+  outputMax: { label: 'Выходное напряжение, максимум', unit: 'V', unitRu: 'В' },
 };
 
 export interface BuiltinPart {

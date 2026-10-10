@@ -103,7 +103,7 @@ export const PackageDefSchema = z.object({
   /** Контур корпуса для шелкографии, мм (прямоугольник вокруг начала координат). */
   body: z.object({ x: Finite, y: Finite, w: Finite.positive(), h: Finite.positive() }).strict().nullable(),
   /** Как найти первый вывод: «выемка слева», «точка у вывода 1», «скос корпуса» и т. п. */
-  pin1Marker: z.string().max(64).nullable(),
+  pin1Marker: z.string().max(200).nullable(),
   mount: z.enum(['THT', 'SMD']),
   /** Шаг выводов, мм (null — нерегулярный). */
   pitchMm: Finite.positive().nullable(),
@@ -116,8 +116,11 @@ export const PackageDefSchema = z.object({
 export const SimModelSchema = z.object({
   id: Id,
   name: z.string().min(1).max(128),
-  /** spice-primitive: шаблон строки netlist; ground: вывод — опорный узел 0. */
-  kind: z.enum(['spice-primitive', 'spice-subckt', 'ground']),
+  /**
+   * spice-primitive: шаблон строки netlist; ground: вывод — опорный узел 0;
+   * connector: электрического элемента нет (разъём, клеммник) — выводы лишь продолжают цепи.
+   */
+  kind: z.enum(['spice-primitive', 'spice-subckt', 'ground', 'connector']),
   text: z.string().max(1_000_000),
   source: z.string().max(1024).nullable(),
   verified: z.boolean(),

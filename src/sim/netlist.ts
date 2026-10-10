@@ -72,7 +72,8 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
       else err('unconnected-pin', `Символ земли ${r.inst.refDes} ни к чему не подключён.`, [r.inst.id]);
     }
   }
-  const devices = resolved.filter((r) => r.model?.kind !== 'ground');
+  // Разъёмы — не элементы цепи: в netlist не попадают, их выводы лишь продолжают цепи.
+  const devices = resolved.filter((r) => r.model?.kind !== 'ground' && r.model?.kind !== 'connector');
   if (devices.length > 0 && groundNets.size === 0) {
     err('no-ground', 'Нет опорного узла: добавьте символ «Земля» и подключите его к общему проводу. Без него напряжения в схеме не определены.');
   }

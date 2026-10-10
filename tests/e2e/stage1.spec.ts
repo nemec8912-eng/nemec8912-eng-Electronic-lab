@@ -8,7 +8,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { expect, test, type Page } from 'playwright/test';
-import { launch, stubMessageBox, stubOpenDialog, stubSaveDialog, type Launched } from './launch';
+import { killHard, launch, stubMessageBox, stubOpenDialog, stubSaveDialog, type Launched } from './launch';
 
 const temps: string[] = [];
 function temp(prefix: string) {
@@ -108,9 +108,7 @@ test('аварийное завершение после автосохране�
   await l.page.keyboard.press('Control+s');
   await addNote(l.page, 300, 200, 'не успел сохранить');
   await expect(await saveIndicator(l.page)).toHaveAttribute('data-state', 'autosaved', { timeout: 10_000 });
-  const exited = new Promise((r) => l.app.process().once('exit', r));
-  l.app.process().kill('SIGKILL');
-  await exited;
+  await killHard(l.app);
 
   l = await launch({ dataDir });
   await expect(l.page.locator('.toast.error')).toContainText('аварийно');

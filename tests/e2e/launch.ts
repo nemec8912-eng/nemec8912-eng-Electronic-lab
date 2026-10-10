@@ -1,4 +1,5 @@
 /** Запуск собранного приложения в Electron для e2e-тестов, с отдельной папкой данных. */
+import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 
@@ -19,7 +20,18 @@ export async function launch(opts: { dataDir?: string; appDir?: string; executab
   env.ELAB_DEBUG = '1';
   if (opts.dataDir) env.ELAB_DATA_DIR = opts.dataDir; else delete env.ELAB_DATA_DIR;
   const args = opts.executable ? ['--no-sandbox'] : [opts.appDir ?? APP_DIR, '--no-sandbox'];
-  const app = await electron.launch({ executablePath: opts.executable ?? electronPath(), args, env, timeout: 60_000 });
+  // Только что скопированный .exe Windows (антивирус) может кратковременно не дать запустить — повторяем.
+  let app: ElectronApplication | undefined;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      app = await electron.launch({ executablePath: opts.executable ?? electronPath(), args, env, timeout: 60_000 });
+      break;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      console.error(`запуск не удался (попытка ${attempt}): ${(e as Error).message.split('\n')[0]}`);
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   return { app, page };
@@ -41,4 +53,17 @@ export async function stubMessageBox(app: ElectronApplication, response: number)
   await app.evaluate(({ dialog }, r) => {
     dialog.showMessageBox = (async () => ({ response: r, checkboxChecked: false })) as typeof dialog.showMessageBox;
   }, response);
+}
+
+/**
+ * Имитация аварии: мгновенно завершить всё дерево процессов приложения.
+ * В Windows дочерние процессы Electron не завершаются вместе с главным, поэтому — taskkill /T /F.
+ */
+export async function killHard(app: ElectronApplication): Promise<void> {
+  const proc = app.process();
+  const exited = new Promise<void>((r) => proc.once('exit', () => r()));
+  if (process.platform === 'win32' && proc.pid) spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F']);
+  else proc.kill('SIGKILL');
+  await exited;
+  if (process.platform === 'win32') await new Promise((r) => setTimeout(r, 1500));
 }

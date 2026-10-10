@@ -53,6 +53,9 @@ jobs:
       - name: Проверка Windows-архива
         if: runner.os == 'Windows'
         run: node --import tsx --test tests/integration/package-win.test.ts
+      - name: Пробный запуск портативной сборки (Windows)
+        if: runner.os == 'Windows' && (success() || failure())
+        run: node scripts/ci/run-portable.mjs
       - name: E2E (Linux, виртуальный экран)
         if: runner.os == 'Linux' && (success() || failure())
         run: xvfb-run -a npx playwright test -c tests/e2e/playwright.config.ts

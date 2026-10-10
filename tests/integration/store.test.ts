@@ -142,7 +142,8 @@ describe('Аварийное завершение и восстановлени�
     await store.close();
 
     const r = spawnSync(process.execPath, ['--import', 'tsx', CHILD, 'autosave-then-kill', root, doc.id], { encoding: 'utf8' });
-    assert.equal(r.signal, 'SIGKILL', r.stderr);
+    // В Linux процесс завершается сигналом, в Windows — принудительно с ненулевым кодом.
+    assert.ok(r.signal === 'SIGKILL' || (process.platform === 'win32' && r.status !== 0), r.stderr);
 
     const reopened = await DataStore.open(root, { ignoreLiveLock: true });
     assert.equal(reopened.crashedLastSession, true);

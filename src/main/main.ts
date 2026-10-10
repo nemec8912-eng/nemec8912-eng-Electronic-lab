@@ -1,7 +1,7 @@
 /** Точка входа главного процесса Electron. */
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
-import { app, BrowserWindow, dialog, Menu, session } from 'electron';
+import { app, BrowserWindow, dialog, Menu, screen, session } from 'electron';
 import { APP_NAME } from '../core/appinfo';
 import { AppError } from '../core/result';
 import { IPC } from '../shared/api';
@@ -93,11 +93,13 @@ async function start() {
 }
 
 function createWindow() {
+  // Окно по размеру рабочей области экрана (ноутбуки 1366×768 и меньше).
+  const work = screen.getPrimaryDisplay().workAreaSize;
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 640,
+    width: Math.min(1400, work.width),
+    height: Math.min(900, work.height),
+    minWidth: Math.min(800, work.width),
+    minHeight: Math.min(560, work.height),
     title: APP_NAME,
     backgroundColor: '#f4f5f7',
     show: false,

@@ -26,8 +26,18 @@ async function createProject(page: Page, name: string) {
   await expect(page.locator('.project-title')).toHaveText(name);
 }
 
+/** Точка на полотне с учётом его фактического размера (на маленьком экране полотно узкое). */
+async function canvasPoint(page: Page, x: number, y: number) {
+  const box = (await page.locator('svg.canvas').boundingBox())!;
+  return { x: Math.max(20, Math.min(x, box.width - 120)), y: Math.max(60, Math.min(y, box.height - 60)) };
+}
+
+async function clickEmpty(page: Page) {
+  await page.locator('svg.canvas').click({ position: await canvasPoint(page, 40, 10_000) });
+}
+
 async function addNote(page: Page, x: number, y: number, text?: string) {
-  await page.locator('svg.canvas').dblclick({ position: { x, y } });
+  await page.locator('svg.canvas').dblclick({ position: await canvasPoint(page, x, y) });
   if (text !== undefined) {
     await page.getByLabel('Текст заметки').fill(text);
   }
@@ -55,7 +65,7 @@ test('проект: создать, заметки, Undo/Redo, сохранит�
   await expect(await saveIndicator(page)).toHaveAttribute('data-state', /unsaved|autosaved/);
 
   // Undo/Redo: текст второй заметки (один шаг), сама вторая заметка
-  await page.locator('svg.canvas').click({ position: { x: 700, y: 500 } });
+  await clickEmpty(page);
   await page.keyboard.press('Control+z');
   await expect(page.locator('g.note').nth(1)).toContainText('Заметка');
   await page.keyboard.press('Control+z');
@@ -143,14 +153,14 @@ test('контрольные версии: создать, изменить, в�
   const { page } = l;
   await createProject(page, 'Версии');
   await addNote(page, 300, 200, 'исходная схема');
-  await page.locator('svg.canvas').click({ position: { x: 700, y: 500 } });
+  await clickEmpty(page);
   await page.getByRole('button', { name: 'Создать контрольную версию' }).click();
   await dialog(page).getByRole('textbox').fill('до замены транзистора');
   await dialog(page).getByRole('button', { name: 'Создать' }).click();
   await expect(page.getByLabel('Контрольные версии')).toContainText('до замены транзистора');
 
   await addNote(page, 500, 300, 'после замены');
-  await page.locator('svg.canvas').click({ position: { x: 700, y: 500 } });
+  await clickEmpty(page);
   await expect(page.locator('g.note')).toHaveCount(2);
   await page.getByLabel('Контрольные версии').locator('li', { hasText: 'до замены транзистора' }).getByRole('button', { name: 'Вернуть' }).click();
   await dialog(page).getByRole('button', { name: 'Вернуть' }).click();

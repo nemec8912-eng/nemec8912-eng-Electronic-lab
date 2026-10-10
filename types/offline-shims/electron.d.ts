@@ -7,6 +7,7 @@ declare module 'electron' {
   export const contextBridge: any;
   export const Menu: any;
   export const session: any;
+  export const screen: any;
   export class BrowserWindow { constructor(opts?: any); static getAllWindows(): BrowserWindow[]; [k: string]: any }
   export type ElectronApplication = any;
 }

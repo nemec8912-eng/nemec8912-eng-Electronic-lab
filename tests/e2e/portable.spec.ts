@@ -27,7 +27,7 @@ test('портативный режим: данные рядом с програ
     await expect(l.page.locator('.statusbar')).toContainText(`Портативный режим: ${path.join(onFlash, 'data')}`);
     await l.page.getByLabel('Название нового проекта').fill('С флешки');
     await l.page.getByRole('button', { name: 'Создать', exact: true }).click();
-    await l.page.locator('svg.canvas').dblclick({ position: { x: 300, y: 200 } });
+    await l.page.locator('svg.canvas').dblclick({ position: { x: 60, y: 200 } });
     await l.page.getByLabel('Текст заметки').fill('сделано на ПК 1');
     await l.page.keyboard.press('Control+s');
     await expect(l.page.locator('.indicator')).toHaveAttribute('data-state', 'saved');

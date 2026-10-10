@@ -2,7 +2,7 @@
 // Запуск 1 — из папки сборки; запуск 2 — из копии в папке с кириллицей и пробелами в пути.
 // Строки вывода — аннотации GitHub.
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -38,7 +38,13 @@ async function probe(label, dir) {
 const ok1 = await probe('сборка', built);
 const cyr = resolve('release', 'Проверка кириллицы', 'Электронная лаборатория');
 rmSync(resolve('release', 'Проверка кириллицы'), { recursive: true, force: true });
-cpSync(built, cyr, { recursive: true });
+mkdirSync(cyr, { recursive: true });
+try {
+  cpSync(built, cyr, { recursive: true, force: true });
+} catch (e) {
+  console.log(`::warning title=portable-probe копирование::${e.message}`);
+}
+console.log(`::warning title=portable-probe копирование::release: ${readdirSync(resolve('release')).join(' | ')}; в копии: ${existsSync(cyr) ? readdirSync(cyr).length : 'нет'}`);
 const ok2 = await probe('кириллица', cyr);
 rmSync(resolve('release', 'Проверка кириллицы'), { recursive: true, force: true });
 process.exit(ok1 && ok2 ? 0 : 1);

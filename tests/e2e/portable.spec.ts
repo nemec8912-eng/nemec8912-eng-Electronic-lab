@@ -3,10 +3,11 @@
  * данные создаются в папке data рядом с программой; папку целиком можно перенести («флешка») и продолжить работу.
  * Запускается после `npm run package:linux`; без собранного пакета тест пропускается.
  */
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { expect, test } from 'playwright/test';
+import { copyDir } from '../../scripts/copy-dir.mjs';
 import { launch, reportAndCleanup, APP_DIR } from './launch';
 
 const pkg = require(path.join(APP_DIR, 'package.json')) as { version: string };
@@ -40,10 +41,9 @@ test('портативный режим: данные рядом с програ
     expect(readdirSync(path.join(onFlash, 'data', 'projects')).length).toBe(1);
 
     // «Другой ПК»: папка скопирована в другое место, исходная удалена
-    // Латиница в пути: Playwright в Windows не запускает .exe из папок с кириллицей. Запуск программы
-    // из кириллической папки проверяется напрямую, без Playwright: scripts/ci/run-portable.mjs.
-    const otherPc = path.join(flash, 'other-pc', 'ElectronLab');
-    cpSync(onFlash, otherPc, { recursive: true, verbatimSymlinks: true });
+    // Кириллица в пути намеренно: программа должна работать из папок вроде «D:\\Программы».
+    const otherPc = path.join(flash, 'другой ПК', 'Электронная лаборатория');
+    copyDir(onFlash, otherPc);
     rmSync(path.join(onFlash, 'data'), { recursive: true, force: true });
     l = await launch({ executable: path.join(otherPc, exeName) });
     await expect(l.page.locator('.statusbar')).toContainText(path.join(otherPc, 'data'));

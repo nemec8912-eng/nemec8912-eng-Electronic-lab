@@ -2,8 +2,9 @@
 // Запуск 1 — из папки сборки; запуск 2 — из копии в папке с кириллицей и пробелами в пути.
 // Строки вывода — аннотации GitHub.
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { copyDir } from '../copy-dir.mjs';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const isWin = process.platform === 'win32';
@@ -40,7 +41,7 @@ const cyr = resolve('release', 'Проверка кириллицы', 'Элек�
 rmSync(resolve('release', 'Проверка кириллицы'), { recursive: true, force: true });
 mkdirSync(cyr, { recursive: true });
 try {
-  cpSync(built, cyr, { recursive: true, force: true });
+  copyDir(built, cyr);
 } catch (e) {
   console.log(`::warning title=portable-probe копирование::${e.message}`);
 }

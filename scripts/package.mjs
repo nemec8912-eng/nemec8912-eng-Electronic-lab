@@ -3,10 +3,11 @@
 // Архив Electron берётся из папки ELAB_ELECTRON_ZIP_DIR (или vendor-cache/), а если его нет — скачивается
 // с GitHub-релиза Electron. Контрольная сумма всегда сверяется с SHASUMS256.txt того же релиза.
 import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
+import { copyDir } from './copy-dir.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
@@ -64,7 +65,7 @@ for (const f of Object.values(ez.files)) {
 // Переименование исполняемого файла и удаление демонстрационного приложения Electron
 const exeFrom = join(outDir, platform === 'win32' ? 'electron.exe' : 'electron');
 const exeTo = join(outDir, platform === 'win32' ? `${appName}.exe` : appName);
-cpSync(exeFrom, exeTo);
+copyFileSync(exeFrom, exeTo);
 if (platform === 'linux') chmodSync(exeTo, 0o755);
 rmSync(exeFrom);
 rmSync(join(outDir, 'resources', 'default_app.asar'), { force: true });
@@ -75,7 +76,7 @@ mkdirSync(appDir, { recursive: true });
 writeFileSync(join(appDir, 'package.json'), JSON.stringify({
   name: pkg.name, productName: pkg.productName, version: pkg.version, main: pkg.main, private: true,
 }, null, 2));
-cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true, filter: (src) => !src.endsWith('.map') });
+copyDir(join(root, 'dist'), join(appDir, 'dist'), (src) => !src.endsWith('.map'));
 
 // Портативный режим: данные в папке data рядом с программой
 writeFileSync(join(outDir, 'portable.flag'), 'Портативный режим: данные хранятся в папке data рядом с программой.\n');

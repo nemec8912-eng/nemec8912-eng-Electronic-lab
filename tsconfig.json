@@ -25,6 +25,7 @@
   "include": [
     "src",
     "tests",
-    "scripts/*.mts"
+    "scripts/*.mts",
+    "scripts/*.d.mts"
   ]
 }

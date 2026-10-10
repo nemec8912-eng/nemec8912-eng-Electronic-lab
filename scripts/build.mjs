@@ -1,6 +1,6 @@
 // Сборка приложения в dist/: главный процесс, мост (preload) и интерфейс. Без обращений к сети.
 import { build } from 'esbuild';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,5 +43,5 @@ await Promise.all([
 ]);
 
 mkdirSync(join(out, 'renderer'), { recursive: true });
-cpSync(join(root, 'src/renderer/index.html'), join(out, 'renderer/index.html'));
+copyFileSync(join(root, 'src/renderer/index.html'), join(out, 'renderer/index.html'));
 console.log('Сборка готова: dist/');

@@ -358,3 +358,26 @@ test('переименование из списка меняет и рабоч�
   assert.equal(o.recovery!.doc.name, 'Новое');
   await store.close();
 });
+
+test('кириллица и пробелы в пути к папке данных (например, D:\\Программы\\Электронная лаборатория)', async () => {
+  const t = await tempDir('elab-cyr-');
+  cleanups.push(t.cleanup);
+  const root = path.join(t.dir, 'Мои документы', 'Электронная лаборатория', 'data');
+  let s = await DataStore.open(root);
+  const d = await s.createProject('Проект «Ёлка» №1');
+  await s.saveProject(addAnnotation(d, { x: 0, y: 0 }, 'кириллица').doc);
+  const bak = (await createBackup(s)).buffer;
+  const exported = await s.exportProject((await s.openProject(d.id)).doc);
+  await s.close();
+  s = await DataStore.open(root);
+  assert.equal((await s.openProject(d.id)).doc.schematic.annotations[0]!.text, 'кириллица');
+  const other = path.join(t.dir, 'Флешка', 'Резерв');
+  const s2 = await DataStore.open(other);
+  await restoreBackup(s2, await verifyBackup(bak));
+  await s2.close();
+  const s3 = await DataStore.open(other);
+  assert.equal((await s3.listProjects())[0]!.name, 'Проект «Ёлка» №1');
+  await s3.close();
+  assert.equal((await s.previewImport(exported)).existing?.id, d.id);
+  await s.close();
+});

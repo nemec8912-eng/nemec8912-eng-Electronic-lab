@@ -2,6 +2,7 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import JSZip from 'jszip';
 import { APP_VERSION } from '../core/appinfo';
 import { newId } from '../core/ids';
 import type { ProjectDoc } from '../core/model';
@@ -285,6 +286,22 @@ export function registerIpc(ctx: MainContext): void {
     if (!p) return null;
     await writeChecked(p, Buffer.from(pdf));
     return { path: p, bytes: pdf.length };
+  }));
+  ipcMain.handle(IPC.saveGerber, wrap(async (name: string, files: Array<{ name: string; content: string }>) => {
+    if (!Array.isArray(files) || files.length === 0 || files.length > 40) throw new AppError('bad-data', 'Нечего сохранять');
+    const zip = new JSZip();
+    let total = 0;
+    for (const f of files) {
+      if (typeof f?.name !== 'string' || !/^[A-Za-z0-9_.-]{1,80}$/.test(f.name) || typeof f.content !== 'string') throw new AppError('bad-data', 'Недопустимое имя файла в архиве');
+      total += f.content.length;
+      zip.file(f.name, f.content, { date: new Date() });
+    }
+    if (total > 100 * 1024 * 1024) throw new AppError('bad-data', 'Слишком большой архив');
+    const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const p = await askSavePath('Сохранить Gerber и сверловку', `${safeFileName(String(name ?? 'плата'), 'плата')} — gerber.zip`, { name: 'Архив ZIP', extensions: ['zip'] });
+    if (!p) return null;
+    await writeChecked(p, buf);
+    return { path: p, bytes: buf.length, files: files.length };
   }));
   ipcMain.handle(IPC.print, wrap(async (svg: string, w: number, h: number) => renderSheet(String(svg), Number(w), Number(h), (wc) =>
     new Promise<{ printed: boolean; reason: string | null }>((resolve) => {

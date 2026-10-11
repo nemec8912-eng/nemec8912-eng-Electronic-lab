@@ -4,12 +4,11 @@ import { addAnnotation, removeAnnotation, renameProject, setDescription, updateA
 import { newId } from '../core/ids';
 import { setSimSettings, setTranSettings } from '../core/instruments';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
-import { addTrack, copperSvg, deleteTrack, movePlacement, rotatePlacement, setBoard, syncFromSchematic } from '../core/pcb';
 import { adoptModel, deleteItems, kindOf, placeBundle, renameRefDes, renumber, rotateItems, setValue } from '../core/schematic';
 import { runErc, type ErcIssue } from '../core/erc';
 import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
-import { BoardPanel } from './BoardPanel';
+import { BoardPanel, type BoardSel } from './BoardPanel';
 import { TestPanel } from './TestPanel';
 import { circuitKey } from '../sim/key';
 import { api, errorText, fmtBytes, fmtDateTime, fmtTime, unwrap } from './api';
@@ -320,7 +319,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   const [focus, setFocus] = useState<{ at: { x: number; y: number }; seq: number } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [placing, setPlacing] = useState<string | null>(null);
-  const [boardSel, setBoardSel] = useState<{ kind: 'track' | 'placement'; id: string } | null>(null);
+  const [boardSel, setBoardSel] = useState<BoardSel>(null);
   const [sim, setSim] = useState<{ result: SimResult; key: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>([]);
@@ -401,21 +400,10 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       if (typing) return;
       if (mod && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); editorRef.current.undo(); }
       else if (mod && (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey))) { e.preventDefault(); editorRef.current.redo(); }
-      else if (e.key === 'Delete' || e.key === 'Backspace') {
-        const ed = editorRef.current;
-        if (tab === 'board' && boardSel?.kind === 'track') {
-          e.preventDefault();
-          ed.apply('Удаление дорожки', (d) => deleteTrack(d, boardSel.id));
-          setBoardSel(null);
-        }
-      } else if (e.code === 'KeyR' && !mod) {
-        const ed = editorRef.current;
-        if (tab === 'board' && boardSel?.kind === 'placement') ed.apply('Поворот детали на плате', (d) => rotatePlacement(d, boardSel.id));
-      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, boardSel, tab]);
+  }, [save]);
 
   const projectActions = {
     back: () => { void close(); },
@@ -605,32 +593,10 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
         <main className="workspace single">
           <BoardPanel
             doc={doc}
-            selectedTrack={boardSel?.kind === 'track' ? boardSel.id : null}
-            selectedPlacement={boardSel?.kind === 'placement' ? boardSel.id : null}
+            selection={boardSel}
             onSelect={setBoardSel}
-            onSync={() => {
-              const r = syncFromSchematic(editorRef.current.doc);
-              if (r.doc !== editorRef.current.doc) editor.apply('Синхронизация платы со схемой', () => r.doc);
-              return r.report;
-            }}
-            onBoard={(w, h) => editor.apply('Размер платы', (d) => setBoard(d, w, h))}
-            onMove={(id, p, dragId) => editor.apply('Перемещение детали на плате', (d) => movePlacement(d, id, p), dragId)}
-            onRotate={(id) => editor.apply('Поворот детали на плате', (d) => rotatePlacement(d, id))}
-            onTrack={(a, b, w) => {
-              const r = addTrack(editorRef.current.doc, a, b, w);
-              if (!r.error) editor.apply('Дорожка', (d) => addTrack(d, a, b, w).doc);
-              return r.error;
-            }}
-            onDeleteTrack={(id) => { editor.apply('Удаление дорожки', (d) => deleteTrack(d, id)); setBoardSel(null); }}
-            onExport={async (copperSide) => {
-              try {
-                const svg = copperSvg(editorRef.current.doc, { copperSide });
-                const r = await unwrap(api().files.saveSvg(`${editorRef.current.doc.name} — ${copperSide ? 'сторона меди' : 'сторона деталей'}`, svg));
-                if (r) toast(`Сохранено: ${r.path}`);
-              } catch (e) {
-                await dialogs.alert('Рисунок не сохранён', errorText(e));
-              }
-            }}
+            onEdit={(label, fn, key) => editor.apply(label, fn, key)}
+            toast={toast}
           />
         </main>
       )}

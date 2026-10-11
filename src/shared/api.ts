@@ -103,6 +103,8 @@ export interface ElabApi {
     saveDrawing(defaultName: string, kind: 'svg' | 'png' | 'txt', data: string | Uint8Array): Promise<Result<{ path: string; bytes: number } | null>>;
     /** Лист SVG → PDF заданного размера (мм) через движок печати Chromium. */
     savePdf(defaultName: string, svg: string, widthMm: number, heightMm: number): Promise<Result<{ path: string; bytes: number } | null>>;
+    /** Архив Gerber/Excellon (.zip) через диалог выбора файла. Имена файлов — латиница, цифры, «-_.». */
+    saveGerber(defaultName: string, files: Array<{ name: string; content: string }>): Promise<Result<{ path: string; bytes: number; files: number } | null>>;
     /** Печать листа через системный диалог печати. */
     print(svg: string, widthMm: number, heightMm: number): Promise<Result<{ printed: boolean; reason: string | null }>>;
   };
@@ -142,6 +144,7 @@ export const IPC = {
   saveDrawing: 'files:save-drawing',
   savePdf: 'files:save-pdf',
   print: 'files:print',
+  saveGerber: 'files:save-gerber',
   kicadOpenOnline: 'kicad:open-online',
   kicadOpenFile: 'kicad:open-file',
   kicadBuild: 'kicad:build',

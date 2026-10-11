@@ -393,3 +393,36 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .scope-screen .zero-mark.ch1 path { fill: #ffd84d; } .scope-screen .zero-mark.ch2 path { fill: #5fb4ff; }
 .scope-screen .zero-mark text { font: 600 11px/1 system-ui, sans-serif; fill: #cfd8d3; }
 .test-charts:has(.scope) { max-height: 60%; }
+
+/* ---------- Этап 6: плата ---------- */
+.board-wrap .canvas-toolbar .field.inline.compact { width: auto; align-items: center; gap: 6px; margin: 0; }
+.board-wrap .canvas-toolbar .field.inline.compact input { width: 90px; }
+.canvas-toolbar .spacer { flex: 1; }
+.layer-btn.top.on { background: #c0392b; border-color: #c0392b; color: #fff; }
+.layer-btn.bottom.on { background: #2e6fd1; border-color: #2e6fd1; color: #fff; }
+.one-layer .track-line { stroke: #c98a2c; }
+.two-layer .cu-layer.top .track-line { stroke: #d0493a; }
+.two-layer .cu-layer.bottom .track-line { stroke: #4a86e0; }
+.two-layer .cu-layer.inactive { opacity: .45; }
+.track.same-net .track-line { filter: brightness(1.25); }
+.pad.smd.bottom .pad-cu { fill: #b88a3a; }
+.two-layer .pad.smd.top .pad-cu { fill: #e0705f; }
+.two-layer .pad.smd.bottom .pad-cu { fill: #6f9fe6; }
+.via { cursor: pointer; }
+.via-cu { fill: #b9bec5; }
+.via.selected .via-cu, .via.same-net .via-cu { fill: #ffd76e; }
+.via-ghost { fill: none; stroke: #ffd76e; stroke-width: 0.15; pointer-events: none; }
+.track-rubber.top { stroke: #ff8a7a; }
+.track-rubber.bottom { stroke: #8ab8ff; }
+.one-layer .track-rubber { stroke: #6fb3ff; }
+.rat.same-net { stroke: #ffd76e; stroke-width: 0.2; }
+.pl.side-bottom .pl-body { stroke-dasharray: 0.5 0.3; }
+.drc-mark { fill: none; stroke: #ff5252; stroke-width: 0.25; pointer-events: none; }
+.board-canvas.routing { cursor: crosshair; }
+.canvas-error { position: absolute; left: 10px; bottom: 46px; background: #b3261e; color: #fff; border-radius: 4px; padding: 5px 10px; font-size: 13px; max-width: 70%; }
+.canvas-status .btn { margin: 0 4px; }
+.row.wrap { flex-wrap: wrap; }
+.ok-text { color: #2e7d32; }
+.board-side .rules { margin: 6px 0; }
+.board-side .rules .field.inline { width: 100%; }
+.board-wrap .canvas-status { bottom: auto; top: 44px; left: 10px; right: auto; max-width: calc(100% - 20px); }

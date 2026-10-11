@@ -33,7 +33,7 @@ async function dragPlacement(page: Page, refDes: string, target: { x: number; y:
   const g = page.locator(`[data-placement-id][data-refdes="${refDes}"]`);
   const x0 = Number(await g.getAttribute('data-x')), y0 = Number(await g.getAttribute('data-y'));
   const box = (await g.locator('.pl-body').boundingBox())!;
-  const scale = 9; // пикселей на мм — начальный масштаб вкладки «Плата»
+  const scale = Number(await page.locator('svg.board-canvas').getAttribute('data-scale')); // пикселей на мм
   const sx = box.x + box.width / 2, sy = box.y + box.height / 2;
   await page.mouse.move(sx, sy);
   await page.mouse.down();
@@ -121,7 +121,8 @@ test('прототип: схема → ngspice → щупы → плата → �
   await page.getByRole('tab', { name: 'Плата' }).click();
   await page.getByRole('button', { name: 'Синхронизировать со схемой' }).click();
   await expect(page.getByTestId('sync-report')).toContainText('Добавлено: V1, R1, R2');
-  await expect(page.getByTestId('drc')).toContainText('Не разведено соединений: 3');
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByTestId('drc').locator('li', { hasText: 'Не разведено: цепь' })).toHaveCount(3);
   // Расстановка без пересечений: R1 повёрнут на 90°, R2 — на 270°
   await page.locator('[data-refdes="R1"] .pl-body').click();
   await page.getByRole('button', { name: 'Повернуть деталь (R)' }).click();
@@ -138,10 +139,10 @@ test('прототип: схема → ngspice → щупы → плата → �
     await pad(page, b).click({ force: true });
   }
   await expect(page.locator('g.track')).toHaveCount(3);
-  await expect(page.getByTestId('drc')).toHaveText(/Ошибок нет, всё разведено/);
+  await expect(page.getByTestId('drc-summary')).toHaveText('Ошибок: 0, предупреждений: 0');
   const svgPath = path.join(flash, 'плата.svg');
   await stubSaveDialog(l.app, svgPath);
-  await page.getByRole('button', { name: 'SVG — вид со стороны деталей' }).click();
+  await page.getByRole('button', { name: 'Медь: SVG' }).click();
   await expect(page.locator('.toast').last()).toContainText('Сохранено');
   const svg = readFileSync(svgPath, 'utf8');
   expect(svg).toMatch(/width="[\d.]+mm"/);

@@ -58,6 +58,16 @@
 | `src/sim/simulate.ts` | + выбор анализа и параметрический прогон (запуск ngspice на копиях документа) |
 | `src/renderer/TestPanel.tsx`, `Plot.tsx` | Выбор анализа и настройки, графики под схемой (время, развёртка, логарифмическая частота, несколько кривых, курсор), токи выводов |
 
+Добавлено на этапе 5 (приборы):
+
+| Модуль | Ответственность |
+|---|---|
+| `src/core/instruments.ts` | Настройки приборов в `instruments.settings` (мультиметр: щупы и режим; осциллограф: каналы, В/дел, смещение, развёртка, синхронизация, курсоры; ESR-метр: щупы и частота), защитное чтение, снятие щупов с удалённой детали; вывод амперметра для расчёта |
+| `src/sim/readings.ts` | Чистые функции показаний из одного результата расчёта: статистика сигнала (среднее, True RMS, размах, частота), мультиметр V⎓/V~/A⎓/A~, состояние блока питания CV/CC/OFF, экран осциллографа с синхронизацией |
+| `src/sim/meters.ts` | Измерения прибором со своим сигналом: Ω (5 диапазонов), прозвонка, проверка диодов (1 мА), ESR (малый переменный ток на выбранной частоте) — схема обесточена, отдельный запуск ngspice |
+| `src/sim/netlist.ts` | + опции прибора: амперметр в разрыв вывода, отключение источников, утечки 1 ТОм, свободные выводы как отдельные узлы, строки прибора, AC в одной точке |
+| `src/renderer/Instruments.tsx` | Панели мультиметра, осциллографа (экран 10×8 делений, автоизмерения, курсоры), ESR-метра и блока питания; метки щупов на схеме |
+
 Добавлено на этапе 3 (редактор схем):
 
 | Модуль | Ответственность |
@@ -134,6 +144,10 @@ ProjectDoc
 
 `schemaVersion: 5`: настройки расчёта `simulation.analysis` (`op`, `tran`, `dc`, `ac`), `simulation.dc` (источник, от, до, шаг), `simulation.ac` (частоты, точек на декаду), `simulation.sweep` (деталь, параметр, до 12 значений). Ссылки на экземпляры в настройках переназначаются при импорте копией вместе с остальными UUID; ссылка на удалённую деталь — не ошибка целостности, а «источник не выбран». Миграция v4 → v5 сохраняет настройки переходного процесса (фикстура `project-v4.json`). Модели деталей — шаблоны с подстановками ([ADR-0005](adr/0005-simulation-models-and-analyses.md)); формат модели не менялся.
 
+### Этап 5 — без изменения формата
+
+Настройки приборов хранятся в уже существующем поле `instruments.settings` (`multimeter`, `scope`, `esr`); значения читаются защитно, неизвестное заменяется значением по умолчанию — поэтому версия формата осталась 5. Лабораторный БП и электролит с ESR — обычные детали справочника с параметрами `voltage`, `currentLimit`, `enabled`, `esr` ([ADR-0006](adr/0006-virtual-instruments.md)).
+
 ## 3. Миграции
 
 `src/core/migrations.ts`: цепочка шагов `from → to`. При открытии/импорте документ поднимается до текущей `schemaVersion`, затем проходит zod-валидацию и проверку целостности. Документ более новой версии, чем знает программа, не открывается (сообщение «создан более новой версией программы»), ничего не перезаписывается. Версия 0 — формат раннего прототипа, хранится как фикстура `tests/fixtures/project-v0.json` для проверки цепочки.
@@ -193,7 +207,7 @@ data/
 
 Все вызовы асинхронные, ответ `{ ok: true, value } | { ok: false, error: { code, message, details? } }`.
 
-`app.info/setDirty/openExternal`, `projects.list/create/open/save/autosave/discardRecovery/rename/duplicate/saveAs/delete`, `checkpoints.list/create/restore`, `catalog.list/save/remove/fromProject`, `kicad.openOnline/openFile/describe/build`, `sim.run`, `files.exportProject/importProject/resolveImport/backupAll/restoreBackup/saveSvg/saveDrawing/savePdf/print`. Диалоги выбора файлов показывает главный процесс; в тестах они подменяются.
+`app.info/setDirty/openExternal`, `projects.list/create/open/save/autosave/discardRecovery/rename/duplicate/saveAs/delete`, `checkpoints.list/create/restore`, `catalog.list/save/remove/fromProject`, `kicad.openOnline/openFile/describe/build`, `sim.run/measure`, `files.exportProject/importProject/resolveImport/backupAll/restoreBackup/saveSvg/saveDrawing/savePdf/print`. Диалоги выбора файлов показывает главный процесс; в тестах они подменяются.
 
 ## 9. Безопасность и офлайн
 

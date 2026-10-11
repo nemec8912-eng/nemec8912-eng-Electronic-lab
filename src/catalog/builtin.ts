@@ -109,9 +109,10 @@ const DEFS: Def[] = [
     values: { capacitance: q(100e-9, 'F') }, ratings: { voltage: q(50, 'V') }, tolerancePct: 10,
     symbol: sym('iec-capacitor'), packages: [{ family: 'CHIP', params: { size: '0805' }, pinMap: 'identity' }], model: C_MODEL },
   { key: 'cap/electrolytic', name: 'Конденсатор электролитический', category: 'capacitor-polar', refPrefix: 'C', description: 'Алюминиевый электролитический, радиальный', generic: true,
-    values: { capacitance: q(47e-6, 'F') }, ratings: { voltage: q(50, 'V') }, tolerancePct: 20, polarized: true, temperature: { minC: -40, maxC: 105 },
+    ratings: { voltage: q(50, 'V') }, tolerancePct: 20, polarized: true, temperature: { minC: -40, maxC: 105 },
     symbol: sym('iec-capacitor-polar'), packages: [{ family: 'RADIAL', params: { pitch: 2.5, diameter: 6.3, polar: true }, pinMap: 'identity' }],
-    model: { ...C_MODEL, name: 'Идеальный конденсатор (полярность не моделируется)' } },
+    values: { capacitance: q(47e-6, 'F'), esr: q(0.6, 'Ω') },
+    model: SM.C_ELECTROLYTIC_ESR },
   { key: 'ind/radial', name: 'Дроссель радиальный', category: 'inductor', refPrefix: 'L', description: 'Катушка индуктивности на ферритовом сердечнике', generic: true,
     values: { inductance: q(100e-6, 'H') }, ratings: { current: q(0.5, 'A') }, tolerancePct: 10,
     symbol: sym('iec-inductor'), packages: [{ family: 'RADIAL', params: { pitch: 5, diameter: 8, polar: false }, pinMap: 'identity' }], model: L_MODEL },
@@ -145,6 +146,10 @@ const DEFS: Def[] = [
   { key: 'src/current', name: 'Источник постоянного тока', category: 'source', refPrefix: 'G', description: 'Идеальный источник тока: ток выходит из вывода «+».', generic: true,
     values: { current: q(0.01, 'A') },
     symbol: sym('iec-current-source'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: [['+', '1'], ['-', '2']] }], model: SM.SRC_CURRENT },
+
+  { key: 'src/lab-psu', name: 'Лабораторный блок питания', category: 'source', refPrefix: 'G', description: 'Регулируемый блок питания: напряжение, ограничение тока, включение выхода; режимы CV и CC. Управляется на панели «Блок питания» вкладки «Тест».', generic: true,
+    values: { voltage: q(5, 'V'), currentLimit: q(0.1, 'A'), enabled: q(1, '') },
+    symbol: sym('lab-psu'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: [['+', '1'], ['-', '2']] }], model: SM.SRC_LAB_PSU },
 
   // ---------- Диоды ----------
   { key: 'diode/1n4007', name: 'Диод выпрямительный 1N4007', category: 'diode', refPrefix: 'VD', description: 'Выпрямительный диод 1 А, 1000 В', generic: false, partNumber: '1N4007', marking: '1N4007',

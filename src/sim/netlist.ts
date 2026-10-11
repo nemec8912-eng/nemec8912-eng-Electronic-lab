@@ -9,7 +9,7 @@
  * У R, C, L и источников ток берётся из самого элемента.
  */
 import { modelParams, PARAMS, paramInRange } from '../core/library';
-import type { ComponentInstance, PartDef, ProjectDoc, SimModel } from '../core/model';
+import type { ComponentInstance, PartDef, PinRef, ProjectDoc, SimModel } from '../core/model';
 import { symbolOf } from '../core/schematic';
 import { checkModelTemplate, evalExpr } from '../core/spice';
 
@@ -17,7 +17,7 @@ export interface SimIssue {
   severity: 'error' | 'warning';
   code:
     | 'empty' | 'no-ground' | 'no-model' | 'not-simulated' | 'unsupported-model' | 'bad-model' | 'unconnected-pin' | 'missing-value'
-    | 'bad-value' | 'dangling-node' | 'no-dc-path' | 'shorted-source' | 'bad-settings' | 'no-ac-source' | 'no-sweep-source' | 'unverified-model';
+    | 'bad-value' | 'dangling-node' | 'no-dc-path' | 'shorted-source' | 'bad-settings' | 'no-ac-source' | 'no-sweep-source' | 'unverified-model' | 'meter';
   message: string;
   /** Связанные объекты: id экземпляров и сетей — для подсветки. */
   refs: string[];
@@ -34,6 +34,26 @@ export interface Netlist {
   /** id экземпляра → (номер вывода → вектор тока, втекающего в вывод). */
   pinCurrentVectors: Map<string, Map<string, string>>;
   issues: SimIssue[];
+  /** Вектор тока амперметра мультиметра (включён последовательно с выводом), если он есть. */
+  ammeterVector: string | null;
+}
+
+/**
+ * Дополнительные условия расчёта для приборов (этап 5).
+ * ammeter — идеальный амперметр (источник 0 В) последовательно с выводом: ток, втекающий в вывод;
+ * powerOff — «питание отключено»: источники (категория «источник») из схемы убираются, как при
+ * измерении сопротивления, прозвонке, проверке диодов и ESR; leak — к каждому узлу 1 ТОм на землю,
+ * чтобы обесточенная схема с разомкнутыми участками была определена (проверки «висящих» узлов не нужны);
+ * refNet — если в схеме нет земли, этот узел (COM прибора) становится опорным; extra — строки прибора
+ * (источник тестового тока и т. п.), им передаётся имя узла цепи; acSingleHz — частотный анализ в одной точке.
+ */
+export interface NetlistOptions {
+  ammeter?: { instanceId: string; pin: string } | null;
+  powerOff?: boolean;
+  leak?: boolean;
+  refNet?: string | null;
+  extra?: (nodeOfPin: (ref: PinRef) => string | null) => string[];
+  acSingleHz?: number;
 }
 
 export interface Analyses {
@@ -71,7 +91,7 @@ const DIGITAL = new Set(['ic-digital', 'mcu']);
 /** Элементы, ток которых ngspice даёт сам (без амперметров на выводах). */
 const TWO_TERMINAL = new Set(['R', 'C', 'L', 'V', 'I']);
 
-export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Электронная лаборатория'): Netlist {
+export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Электронная лаборатория', opts: NetlistOptions = {}): Netlist {
   const issues: SimIssue[] = [];
   const err = (code: SimIssue['code'], message: string, refs: string[] = []) => issues.push({ severity: 'error', code, message, refs });
   const warn = (code: SimIssue['code'], message: string, refs: string[] = []) => issues.push({ severity: 'warning', code, message, refs });
@@ -79,6 +99,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
   const elementOf = new Map<string, string>();
   const currentVectors = new Map<string, string>();
   const pinCurrentVectors = new Map<string, Map<string, string>>();
+  const freePinNodes = new Map<string, string>();
 
   const resolved: Resolved[] = doc.schematic.instances.map((inst) => {
     const part = doc.library.parts.find((p) => p.id === inst.partId);
@@ -97,12 +118,14 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
     for (const pin of symbolOf(doc, r.inst)?.pins ?? []) {
       const n = netOfPin.get(`${r.inst.id}#${pin.number}`);
       if (n) groundNets.add(n);
-      else err('unconnected-pin', `Символ земли ${r.inst.refDes} ни к чему не подключён.`, [r.inst.id]);
+      else if (!opts.leak) err('unconnected-pin', `Символ земли ${r.inst.refDes} ни к чему не подключён.`, [r.inst.id]);
     }
   }
+  if (groundNets.size === 0 && opts.refNet) groundNets.add(opts.refNet);
   // Разъёмы — не элементы цепи: в netlist не попадают, их выводы лишь продолжают цепи.
-  const devices = resolved.filter((r) => r.model?.kind !== 'ground' && r.model?.kind !== 'connector');
-  if (devices.length > 0 && groundNets.size === 0) {
+  // При «питание отключено» источники из схемы убираются (разомкнуты), как при измерении прибором.
+  const devices = resolved.filter((r) => r.model?.kind !== 'ground' && r.model?.kind !== 'connector' && !(opts.powerOff && r.part?.category === 'source'));
+  if (devices.length > 0 && groundNets.size === 0 && !opts.leak) {
     err('no-ground', 'Нет опорного узла: добавьте символ «Земля» и подключите его к общему проводу. Без него напряжения в схеме не определены.');
   }
   let k = 1;
@@ -122,6 +145,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
   const nodeUse = new Map<string, Array<{ inst: string; pin: string }>>();
   const dcEdges: Array<[string, string]> = []; // проводящие по постоянному току связи
   let hasAcSource = false;
+  let ammeterVector: string | null = null;
   for (const r of devices) {
     const { inst, part, model } = r;
     if (!part || !model) {
@@ -148,7 +172,9 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
     while (usedElements.has(el.toLowerCase())) el = `${el}_`;
     usedElements.add(el.toLowerCase());
     const elLower = el.toLowerCase();
-    const modelName = `m_${model.id.replace(/-/g, '').slice(0, 12)}`;
+    // Карточки с параметрами экземпляра ({v:…}, {e:…}) — своя копия модели у каждого экземпляра.
+    const perInstance = cardLines.some((l) => /\{[ve]:/.test(l));
+    const modelName = `m_${model.id.replace(/-/g, '').slice(0, 12)}${perInstance ? `_${elLower}` : ''}`;
 
     let ok = true;
     const nodes: string[] = [];
@@ -159,6 +185,19 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
     let line = elementTpl!.replace(/^[A-Za-z]/, el);
     line = line.replace(/\{n:([^}]+)\}/g, (_m, pin: string) => {
       const net = netOfPin.get(`${inst.id}#${pin}`);
+      if (!net && opts.leak) {
+        // Измерение прибором: свободный вывод — свой узел (щуп можно приложить прямо к выводу детали).
+        let free = freePinNodes.get(`${inst.id}#${pin}`);
+        if (!free) { free = `f${freePinNodes.size + 1}`; freePinNodes.set(`${inst.id}#${pin}`, free); }
+        nodes.push(free);
+        nodeUse.set(free, [...(nodeUse.get(free) ?? []), { inst: inst.id, pin }]);
+        if (!withAmmeters) return free;
+        pinIndex += 1;
+        const inner = `${elLower}_p${pinIndex}`;
+        ammeters.push(`v_${elLower}_${pinIndex} ${free} ${inner} 0`);
+        pinVectors.set(pin, `i(v_${elLower}_${pinIndex})`);
+        return inner;
+      }
       if (!net) {
         ok = false;
         err('unconnected-pin', `${inst.refDes}: вывод ${pin} ни к чему не подключён.`, [inst.id]);
@@ -167,12 +206,19 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
       const node = nodeOfNet.get(net)!;
       nodes.push(node);
       nodeUse.set(node, [...(nodeUse.get(node) ?? []), { inst: inst.id, pin }]);
-      if (!withAmmeters) return node;
+      // Амперметр мультиметра: цепь перестраивается — вывод отсоединяется от узла и подключается через прибор.
+      let attach = node;
+      if (opts.ammeter && opts.ammeter.instanceId === inst.id && opts.ammeter.pin === pin) {
+        if (!ammeterVector) ammeters.push(`v_meter ${node} n_meter 0`);
+        ammeterVector = 'i(v_meter)';
+        attach = 'n_meter';
+      }
+      if (!withAmmeters) return attach;
       if (pinVectors.has(pin)) return `${elLower}_p${[...pinVectors.keys()].indexOf(pin) + 1}`;
       pinIndex += 1;
       const inner = `${elLower}_p${pinIndex}`;
       const src = `v_${elLower}_${pinIndex}`;
-      ammeters.push(`${src} ${node} ${inner} 0`);
+      ammeters.push(`${src} ${attach} ${inner} 0`);
       pinVectors.set(pin, `i(${src})`);
       return inner;
     });
@@ -188,11 +234,14 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
       }
       vars[key] = q.value;
     }
-    line = line.replace(/\{v:([A-Za-z_]+)\}/g, (_m, key: string) => (inst.values[key] ? spiceNumber(inst.values[key]!.value) : '?'));
-    line = line.replace(/\{e:([^}]+)\}/g, (_m, expr: string) => {
-      try { return spiceNumber(evalExpr(expr, vars)); } catch { ok = false; return '?'; }
-    });
-    line = line.replace(/\{model\}/g, modelName);
+    const subst = (text: string) => text
+      .replace(/\{v:([A-Za-z_]+)\}/g, (_m, key: string) => (inst.values[key] ? spiceNumber(inst.values[key]!.value) : '?'))
+      .replace(/\{e:([^}]+)\}/g, (_m, expr: string) => {
+        try { return spiceNumber(evalExpr(expr, vars)); } catch { ok = false; return '?'; }
+      })
+      .replace(/\{model\}/g, modelName);
+    line = subst(line);
+    const instCards = cardLines.map(subst);
     if (!ok) continue;
     if ((letter === 'V' || letter === 'I') && nodes.length === 2 && nodes[0] === nodes[1]) {
       err('shorted-source', `${inst.refDes}: оба вывода источника соединены друг с другом — короткое замыкание источника.`, [inst.id]);
@@ -209,17 +258,21 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
     if (pinVectors.size) pinCurrentVectors.set(inst.id, pinVectors);
     elementOf.set(inst.id, elLower);
     lines.push(...ammeters, line);
-    if (cardLines.length && !cards.has(model.id)) cards.set(model.id, cardLines.map((l) => l.replace(/\{model\}/g, modelName)));
+    const cardKey = perInstance ? `${model.id}/${inst.id}` : model.id;
+    if (cardLines.length && !cards.has(cardKey)) cards.set(cardKey, instCards);
   }
 
+  if (opts.ammeter && !ammeterVector) {
+    warn('meter', 'Амперметр не подключён: вывод под красным щупом не участвует в расчёте (деталь удалена, вывод свободен или деталь не моделируется).');
+  }
   // Висящие узлы: подключён ровно один вывод (кроме земли).
   for (const [node, uses] of nodeUse) {
-    if (node === '0' || uses.length > 1) continue;
+    if (opts.leak || node === '0' || uses.length > 1) continue;
     const inst = doc.schematic.instances.find((i) => i.id === uses[0]!.inst);
     err('dangling-node', `${inst?.refDes}.${uses[0]!.pin}: узел соединён только с этим выводом — цепь разомкнута.`, [uses[0]!.inst]);
   }
   // Путь по постоянному току до земли. Узел только через конденсаторы — рабочая точка не определена.
-  if (groundNets.size > 0) {
+  if (groundNets.size > 0 && !opts.leak) {
     const reach = new Set(['0']);
     let grew = true;
     while (grew) {
@@ -256,7 +309,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
   }
   if (analyses.ac) {
     const a = analyses.ac;
-    if (!hasAcSource) err('no-ac-source', 'Частотный анализ: нужен источник синусоидального напряжения — его амплитуда задаёт уровень входного сигнала. Остальные источники в частотном анализе дают 0.');
+    if (!hasAcSource && !opts.leak) err('no-ac-source', 'Частотный анализ: нужен источник синусоидального напряжения — его амплитуда задаёт уровень входного сигнала. Остальные источники в частотном анализе дают 0.');
     if (!(a.fStartHz > 0 && a.fStopHz > a.fStartHz && a.fStopHz <= 1e12 && a.pointsPerDecade >= 1 && Math.log10(a.fStopHz / a.fStartHz) * a.pointsPerDecade <= 100_000)) {
       err('bad-settings', 'Частотный анализ: начальная частота больше нуля и меньше конечной, не более 100 000 точек.');
     }
@@ -270,11 +323,20 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
   if (dcLine) control.push(dcLine, 'write dc.raw all');
   // В частотном анализе ngspice не даёт токи деталей (@c1[i]) и из-за них отказывается писать «all» —
   // записываются только напряжения узлов, их и использует интерфейс.
-  const acNodes = [...new Set([...nodeOfNet.values()].filter((n) => n !== '0'))].map((n) => `v(${n})`);
+  const acNodes = [...new Set([...nodeOfNet.values(), ...freePinNodes.values()].filter((n) => n !== '0'))].map((n) => `v(${n})`);
   if (analyses.ac) control.push(`ac dec ${analyses.ac.pointsPerDecade} ${spiceNumber(analyses.ac.fStartHz)} ${spiceNumber(analyses.ac.fStopHz)}`, `write ac.raw ${acNodes.join(' ') || 'all'}`);
+  else if (opts.acSingleHz) control.push(`ac lin 1 ${spiceNumber(opts.acSingleHz)} ${spiceNumber(opts.acSingleHz)}`, `write ac.raw ${acNodes.join(' ') || 'all'}`);
   control.push('quit', '.endc');
   const safeTitle = title.replace(/[^\x20-\x7e]/g, '_').slice(0, 80);
   const modelCards = [...cards.values()].flat();
+  const usedNodeNames = [...new Set([...nodeOfNet.values(), ...freePinNodes.values()].filter((n) => n !== '0'))];
+  if (opts.leak) usedNodeNames.forEach((n, i) => lines.push(`r_leak${i + 1} ${n} 0 1e12`));
+  if (opts.extra) {
+    lines.push(...opts.extra((ref) => {
+      const net = netOfPin.get(`${ref.instanceId}#${ref.pin}`);
+      return net ? nodeOfNet.get(net) ?? null : freePinNodes.get(`${ref.instanceId}#${ref.pin}`) ?? null;
+    }));
+  }
   const text = [`* ${safeTitle}`, ...lines, ...(modelCards.length ? ['* модели', ...modelCards] : []), ...control, '.end', ''].join('\n');
-  return { text, nodeOfNet, elementOf, currentVectors, pinCurrentVectors, issues };
+  return { text, nodeOfNet, elementOf, currentVectors, pinCurrentVectors, issues, ammeterVector };
 }

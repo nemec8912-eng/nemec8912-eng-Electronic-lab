@@ -47,6 +47,7 @@ const api: ElabApi = {
   },
   sim: {
     run: (doc, opts) => call(IPC.simRun, doc, opts),
+    measure: (doc, req) => call(IPC.simMeasure, doc, req),
   },
   files: {
     exportProject: (doc) => call(IPC.exportProject, doc),

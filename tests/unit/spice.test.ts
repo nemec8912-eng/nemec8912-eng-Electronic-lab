@@ -26,7 +26,8 @@ test('модель не может управлять расчётом или ч
   assert.ok(bad('D {n:1} {n:2} {model}\nR1 a b 1k'), 'второй элемент вне подсхемы');
   assert.ok(bad('X {n:1} {model}\n.subckt {model} a\nR1 a 0 1'), 'не закрыта подсхема');
   assert.ok(bad('.model x D'), 'первая строка — не элемент');
-  assert.ok(bad('D {n:1} {n:2} {model}\n.model {model} D(IS={v:x})'), 'параметры экземпляра — только в строке элемента');
+  assert.ok(bad('D {n:1} {n:2} {model}\n.model {model} D(IS={x})'), 'неизвестная подстановка в карточке');
+  assert.deepEqual(checkModelTemplate('X {n:1} {n:2} {model}\n.subckt {model} a b\nC1 a m {v:capacitance}\nR1 m b {v:esr}\n.ends'), [], 'параметры экземпляра в подсхеме');
   assert.deepEqual(checkModelTemplate('D {n:2} {n:1} {model}\n* комментарий\n.model {model} D(IS=1n\n+ N=1.5)'), []);
 });
 

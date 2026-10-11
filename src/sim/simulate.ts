@@ -2,6 +2,7 @@
 import { formatQuantity, PARAMS } from '../core/library';
 import type { ProjectDoc } from '../core/model';
 import { AppError } from '../core/result';
+import { ammeterPin } from '../core/instruments';
 import { analysesFor, buildNetlist } from './netlist';
 
 export { analysesFor };
@@ -22,7 +23,7 @@ type RunPart = Pick<SimResult, 'status' | 'issues' | 'error' | 'op' | 'tran' | '
 
 async function runOnce(doc: ProjectDoc, ngspicePath: string | null, analysis: AnalysisKind): Promise<RunPart> {
   const an = analysesFor(doc, analysis);
-  const nl = buildNetlist(doc, an, doc.name);
+  const nl = buildNetlist(doc, an, doc.name, { ammeter: ammeterPin(doc) });
   const base: RunPart = { status: 'blocked', issues: nl.issues, error: null, op: null, tran: null, dc: null, ac: null, netlist: nl.text, warnings: [], version: null };
   if (nl.issues.some((i) => i.severity === 'error')) return base;
   if (!ngspicePath) {

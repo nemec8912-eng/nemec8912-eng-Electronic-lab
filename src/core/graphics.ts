@@ -115,6 +115,9 @@ export function symbolPrims(symbol: SymbolDef): Prim[] {
       // Источник тока (ГОСТ 2.728): стрелка с двойным острием — отличается от источника ЭДС.
       L(0, -30, 0, -15), { t: 'circle', cx: 0, cy: 0, r: 15 }, L(0, 10, 0, -10), P('M -4 -5 L 0 -10 L 4 -5', 'arrow'), P('M -4 -1 L 0 -6 L 4 -1', 'arrow'), L(0, 15, 0, 30),
     ];
+    case 'lab-psu': return [
+      L(0, -40, 0, -20), R(-20, -20, 40, 40), T(0, -6, 'БП', 'sym-sign', 'middle'), T(0, 10, 'CV/CC', 'pin-num', 'middle'), T(7, -26, '+'), L(0, 20, 0, 40),
+    ];
     case 'ground': return [L(0, -10, 0, 0), L(-12, 0, 12, 0, 'thick'), L(-8, 4, 8, 4), L(-4, 8, 4, 8)];
     default: return boxSymbol(symbol);
   }
@@ -132,6 +135,7 @@ export function symbolBounds(symbol: SymbolDef): { x: number; y: number; w: numb
     case 'npn': case 'pnp': case 'nmos': case 'pmos': return { x: -30, y: -30, w: 48, h: 60 };
     case 'relay': return { x: -40, y: -24, w: 80, h: 48 };
     case 'transformer': return { x: -40, y: -32, w: 80, h: 64 };
+    case 'lab-psu': return { x: -20, y: -40, w: 40, h: 80 };
     case 'iec-dc-source': case 'iec-ac-source': case 'iec-pulse-source': case 'iec-current-source': return { x: -16, y: -30, w: 32, h: 60 };
     case 'ground': return { x: -13, y: -10, w: 26, h: 20 };
     default: {

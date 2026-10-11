@@ -6,6 +6,7 @@
 import { builtinBundle, type PartBundle } from './catalog';
 import { endKey, graphOf, rebuildNets } from './connectivity';
 import { touch } from './factory';
+import { dropInstrumentPins } from './instruments';
 import { newId } from './ids';
 import { builtinByCatalogId } from './library';
 import type { Annotation, ComponentInstance, Junction, Net, NetLabel, PinRef, Point, ProjectDoc, Quantity, SimModel, SymbolDef, Wire, WireEnd } from './model';
@@ -519,7 +520,7 @@ export function deleteItems(doc: ProjectDoc, ids: Set<string>): ProjectDoc {
     .filter((w) => !ids.has(w.id) && !(w.a.kind === 'pin' && goneInst.has(w.a.instanceId)) && !(w.b.kind === 'pin' && goneInst.has(w.b.instanceId)))
     .map((w) => ({ ...w, a: freeIfGone(w.a), b: freeIfGone(w.b) }));
   let settings = doc.instruments.settings;
-  for (const id of goneInst) settings = dropProbesOf(settings, id);
+  for (const id of goneInst) settings = dropInstrumentPins(settings, id);
   const keepId = (id: string) => !ids.has(id) && !goneInst.has(id);
   const d: ProjectDoc = {
     ...doc,
@@ -540,14 +541,6 @@ export function deleteItems(doc: ProjectDoc, ids: Set<string>): ProjectDoc {
 export const deleteInstance = (doc: ProjectDoc, id: string) => deleteItems(doc, new Set([id]));
 export const deleteWire = (doc: ProjectDoc, id: string) => deleteItems(doc, new Set([id]));
 
-function dropProbesOf(settings: Record<string, unknown>, instanceId: string): Record<string, unknown> {
-  const mm = settings.multimeter as { red?: PinRef | null; black?: PinRef | null } | undefined;
-  if (!mm) return settings;
-  return {
-    ...settings,
-    multimeter: { ...mm, red: mm.red?.instanceId === instanceId ? null : mm.red ?? null, black: mm.black?.instanceId === instanceId ? null : mm.black ?? null },
-  };
-}
 
 /**
  * Уборка графа: узел без проводов удаляется; узел с одним проводом превращается в свободный конец;

@@ -3,6 +3,7 @@ import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
 import type { SimResult } from '../sim/results';
+import type { MeasureRequest, MeasureResult } from '../sim/meters';
 import type { PartBundle } from '../core/catalog';
 import type { SymbolSummary } from '../catalog-import/kicad';
 
@@ -87,6 +88,8 @@ export interface ElabApi {
   sim: {
     /** Расчёт текущего состояния документа: рабочая точка и выбранный анализ (по умолчанию — из настроек проекта). */
     run(doc: ProjectDoc, opts: { analysis?: 'op' | 'tran' | 'dc' | 'ac' }): Promise<Result<SimResult>>;
+    /** Измерение прибором со своим тестовым сигналом (Ω, прозвонка, диод, ESR); питание схемы отключается. */
+    measure(doc: ProjectDoc, req: MeasureRequest): Promise<Result<MeasureResult>>;
   };
   files: {
     exportProject(doc: ProjectDoc): Promise<Result<{ path: string; bytes: number } | null>>;
@@ -130,6 +133,7 @@ export const IPC = {
   backupAll: 'files:backup-all',
   restoreBackup: 'files:restore-backup',
   simRun: 'sim:run',
+  simMeasure: 'sim:measure',
   catList: 'catalog:list',
   catSave: 'catalog:save',
   catRemove: 'catalog:remove',

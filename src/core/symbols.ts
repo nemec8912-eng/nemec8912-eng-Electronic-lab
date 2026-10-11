@@ -44,6 +44,7 @@ export const STANDARD_SYMBOLS: Record<string, () => SymbolTemplate> = {
   'iec-dc-source': () => ({ name: 'Источник ЭДС', standard: STD, graphic: 'iec-dc-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
   'iec-ac-source': () => ({ name: 'Источник синусоидального напряжения', standard: STD, graphic: 'iec-ac-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
   'iec-pulse-source': () => ({ name: 'Источник импульсного напряжения', standard: STD, graphic: 'iec-pulse-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
+  'lab-psu': () => ({ name: 'Лабораторный блок питания', standard: STD, graphic: 'lab-psu', box: null, pins: [pin('+', '+', 'power-out', 0, -40), pin('-', '−', 'power-out', 0, 40)] }),
   'iec-current-source': () => ({ name: 'Источник тока', standard: STD, graphic: 'iec-current-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30, 'ток выходит из этого вывода'), pin('-', '−', 'power-out', 0, 30)] }),
 };
 

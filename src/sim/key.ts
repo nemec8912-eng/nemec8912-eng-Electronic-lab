@@ -3,6 +3,7 @@
  * изгибы проводов, заметки, щупы, плата не входят). Результат расчёта считается актуальным,
  * пока ключ не изменился, — поэтому установка щупа или перемещение детали его не «устаревают».
  */
+import { ammeterPin } from '../core/instruments';
 import type { ProjectDoc } from '../core/model';
 
 export function circuitKey(doc: ProjectDoc): string {
@@ -14,5 +15,7 @@ export function circuitKey(doc: ProjectDoc): string {
     m: doc.library.models,
     y: doc.library.symbols.map((x) => [x.id, x.pins.map((q) => [q.number, q.electricalType])]),
     t: doc.simulation,
+    // Амперметр включается в цепь последовательно — от его места зависит, какой ток измерен.
+    a: ammeterPin(doc),
   });
 }

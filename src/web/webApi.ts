@@ -217,6 +217,10 @@ export function webApi(): ElabApi {
         };
         return ok(res);
       },
+      measure: async (_doc, req) => ok({
+        kind: req.kind, status: 'failed', display: '—', value: null, beep: false, method: '', esr: null, netlist: '',
+        message: 'В браузерной демо-версии измерения не выполняются: прибор считает схему через ngspice, который работает только в программе для ПК.',
+      }),
     },
     files: {
       exportProject: noWeb, importProject: noWeb, resolveImport: noWeb, backupAll: noWeb, restoreBackup: noWeb,

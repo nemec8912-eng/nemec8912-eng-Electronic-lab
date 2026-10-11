@@ -141,7 +141,7 @@ describe('Размещение детали каталога на схеме', (
   test('номинал детали переходит в экземпляр; разъём не мешает расчёту', () => {
     const cap = all.find((b) => b.part.category === 'capacitor-polar')!;
     const r = placeBundle(createProject('x'), cap, { x: 0, y: 0 });
-    assert.deepEqual(r.doc.schematic.instances[0]!.values, { capacitance: { value: 47e-6, unit: 'F' } });
+    assert.deepEqual(r.doc.schematic.instances[0]!.values, { capacitance: { value: 47e-6, unit: 'F' }, esr: { value: 0.6, unit: 'Ω' } });
     const conn = all.find((b) => b.part.category === 'connector')!;
     const r2 = placeBundle(createProject('x'), conn, { x: 0, y: 0 });
     const nl = buildNetlist(r2.doc, { op: true, tran: null });

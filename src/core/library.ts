@@ -27,6 +27,10 @@ export const PARAMS: Record<string, ParamDef> = {
   frequency: { key: 'frequency', label: 'Частота', unit: 'Hz', unitRu: 'Гц', min: 0, max: 1e9 },
   duty: { key: 'duty', label: 'Заполнение', unit: '%', unitRu: '%', min: 1, max: 99 },
   current: { key: 'current', label: 'Ток', unit: 'A', unitRu: 'А', min: -1e3, max: 1e3, signed: true },
+  currentLimit: { key: 'currentLimit', label: 'Ограничение тока', unit: 'A', unitRu: 'А', min: 0, max: 100 },
+  /** Выход блока питания: 1 — включён, 0 — выключен (переключается кнопкой на панели прибора). */
+  enabled: { key: 'enabled', label: 'Выход включён (1/0)', unit: '', unitRu: '', min: 0, max: 1, signed: true },
+  esr: { key: 'esr', label: 'ESR (эквивалентное последовательное сопротивление)', unit: 'Ω', unitRu: 'Ом', min: 0, max: 1e6 },
   inductance: { key: 'inductance', label: 'Индуктивность', unit: 'H', unitRu: 'Гн', min: 0, max: 1e4 },
   zenerVoltage: { key: 'zenerVoltage', label: 'Напряжение стабилизации', unit: 'V', unitRu: 'В', min: 0, max: 1e3 },
 };

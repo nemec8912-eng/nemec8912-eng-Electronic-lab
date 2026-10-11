@@ -17,6 +17,8 @@ export interface OpResult {
   current: Record<string, number>;
   /** id экземпляра прибора → ток, втекающий в вывод (номер вывода → А). */
   pins: Record<string, Record<string, number>>;
+  /** Ток через амперметр мультиметра (втекающий в вывод под красным щупом), если он включён. */
+  meter?: number;
 }
 
 export interface TranResult {
@@ -24,6 +26,7 @@ export interface TranResult {
   node: Record<string, number[]>;
   current: Record<string, number[]>;
   pins: Record<string, Record<string, number[]>>;
+  meter?: number[];
 }
 
 export interface DcResult {
@@ -106,7 +109,8 @@ function mapSeries(plot: RawPlot, nl: Netlist, len: number) {
     for (const [pin, name] of map) { const v = vector(plot, name); if (v) out[pin] = v; }
     pins[instId] = out;
   }
-  return { node, current, pins };
+  const meter = nl.ammeterVector ? vector(plot, nl.ammeterVector) : undefined;
+  return { node, current, pins, ...(meter ? { meter } : {}) };
 }
 
 export function mapOp(plot: RawPlot, nl: Netlist): OpResult {
@@ -116,6 +120,7 @@ export function mapOp(plot: RawPlot, nl: Netlist): OpResult {
     node: first(s.node),
     current: first(s.current),
     pins: Object.fromEntries(Object.entries(s.pins).map(([k, v]) => [k, first(v)])),
+    ...(s.meter ? { meter: s.meter[0] ?? NaN } : {}),
   };
 }
 

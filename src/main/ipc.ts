@@ -12,6 +12,7 @@ import type { ElabReadResult } from '../storage/elab';
 import { safeFileName, timestampForFile, writeFileAtomic } from '../storage/fsutil';
 import { DataStore } from '../storage/store';
 import { simulate } from '../sim/simulate';
+import { measure, type MeasureRequest } from '../sim/meters';
 import { builtinCatalog } from '../catalog/builtin';
 import type { PartBundle } from '../core/catalog';
 import { locateNgspice } from '../sim/runner';
@@ -177,6 +178,12 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { analysis?: string }) => {
     const a = opts?.analysis;
     return simulate(doc, findNgspice(), { analysis: a === 'op' || a === 'tran' || a === 'dc' || a === 'ac' ? a : undefined });
+  }));
+  ipcMain.handle(IPC.simMeasure, wrap((doc: ProjectDoc, req: MeasureRequest) => {
+    const kind = req?.kind;
+    if (kind !== 'ohm' && kind !== 'cont' && kind !== 'diode' && kind !== 'esr') throw new AppError('bad-request', 'Неизвестный режим измерения.');
+    const f = Number(req.freqHz);
+    return measure(doc, findNgspice(), { kind, red: req.red ?? null, black: req.black ?? null, freqHz: Number.isFinite(f) && f > 0 && f <= 1e7 ? f : undefined });
   }));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));
   ipcMain.handle(IPC.openExternal, wrap(async (url: string) => {

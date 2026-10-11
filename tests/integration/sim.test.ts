@@ -65,7 +65,7 @@ describe('Эталонные задачи ngspice', { skip }, () => {
 
   test('без «включения при t = 0» переходный процесс начинается с заряженного конденсатора', async () => {
     const { doc, c } = rcCircuit();
-    const d = { ...doc, simulation: { tran: { ...doc.simulation.tran, startFromZero: false } } };
+    const d = { ...doc, simulation: { ...doc.simulation, tran: { ...doc.simulation.tran, startFromZero: false } } };
     const res = await simulate(d, NG);
     const out = netOfPin(doc, p(c, '1'))!.id;
     close(valueAt(res.tran!.time, res.tran!.node[out]!, 0), 5, 1e-6, 'Vc(0)');

@@ -37,3 +37,16 @@ export function setTranSettings(doc: ProjectDoc, patch: Partial<SimulationSettin
   if (tran.stopS === cur.stopS && tran.stepS === cur.stepS && tran.startFromZero === cur.startFromZero) return doc;
   return touch({ ...doc, simulation: { ...doc.simulation, tran } });
 }
+
+/** Изменение настроек расчёта (выбор анализа, развёртка DC, частотный анализ, параметрический прогон). */
+export function setSimSettings(doc: ProjectDoc, patch: Partial<Omit<SimulationSettings, 'tran'>>): ProjectDoc {
+  const next: SimulationSettings = {
+    ...doc.simulation,
+    ...patch,
+    dc: { ...doc.simulation.dc, ...(patch.dc ?? {}) },
+    ac: { ...doc.simulation.ac, ...(patch.ac ?? {}) },
+    sweep: { ...doc.simulation.sweep, ...(patch.sweep ?? {}) },
+  };
+  if (JSON.stringify(next) === JSON.stringify(doc.simulation)) return doc;
+  return touch({ ...doc, simulation: next });
+}

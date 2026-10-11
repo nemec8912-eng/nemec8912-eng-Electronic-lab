@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 4 as const;
+export const CURRENT_SCHEMA_VERSION = 5 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -270,8 +270,25 @@ export const SimulationSettingsSchema = z.object({
    * иначе расчёт начинается из установившейся рабочей точки.
    */
   tran: z.object({ stopS: Finite.positive(), stepS: Finite.positive(), startFromZero: z.boolean() }).strict(),
+  /** Какой анализ выполняет кнопка «Запустить тест» (v5). Рабочая точка считается всегда. */
+  analysis: z.enum(['op', 'tran', 'dc', 'ac']),
+  /** Развёртка по постоянному току: значение источника sourceId меняется от start до stop с шагом step. */
+  dc: z.object({ sourceId: Id.nullable(), start: Finite, stop: Finite, step: Finite.positive() }).strict(),
+  /** Частотный анализ (малый сигнал): от fStartHz до fStopHz, точек на декаду. */
+  ac: z.object({ fStartHz: Finite.positive(), fStopHz: Finite.positive(), pointsPerDecade: z.number().int().min(1).max(1000) }).strict(),
+  /**
+   * Параметрический прогон: тот же анализ для нескольких значений параметра детали instanceId
+   * (например, сопротивления R2). null — прогона нет.
+   */
+  sweep: z.object({ instanceId: Id.nullable(), param: z.string().max(32), values: z.array(Finite).max(12) }).strict(),
 }).strict();
-export const DEFAULT_SIMULATION = { tran: { stopS: 0.01, stepS: 1e-5, startFromZero: true } };
+export const DEFAULT_SIMULATION = {
+  tran: { stopS: 0.01, stepS: 1e-5, startFromZero: true },
+  analysis: 'tran' as const,
+  dc: { sourceId: null, start: 0, stop: 10, step: 0.1 },
+  ac: { fStartHz: 10, fStopHz: 1e6, pointsPerDecade: 20 },
+  sweep: { instanceId: null, param: '', values: [] as number[] },
+};
 
 // ---------- Документ ----------
 

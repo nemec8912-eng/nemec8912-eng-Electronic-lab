@@ -105,6 +105,16 @@ const migrations: Migration[] = [
     to: 4,
     migrate: (raw) => migrateV3toV4(raw as Record<string, any>),
   },
+  {
+    /** v4 → v5 (этап 4): выбор анализа, развёртка DC, частотный анализ, параметрический прогон. */
+    from: 4,
+    to: 5,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      const d = structuredClone(DEFAULT_SIMULATION);
+      return { ...r, schemaVersion: 5, simulation: { ...d, ...(r.simulation ?? {}), analysis: d.analysis, dc: d.dc, ac: d.ac, sweep: d.sweep } };
+    },
+  },
 ];
 
 function migrateV3toV4(r: Record<string, any>): Record<string, unknown> {

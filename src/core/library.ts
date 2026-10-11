@@ -12,14 +12,21 @@ export interface ParamDef {
   label: string;
   unit: string; // единица СИ в данных
   unitRu: string; // подпись в интерфейсе
-  min: number; // строго больше
+  min: number; // строго больше (для signed — не меньше)
   max: number;
+  /** Может быть нулём и отрицательным (напряжение, ток источника, смещение). */
+  signed?: boolean;
 }
 
 export const PARAMS: Record<string, ParamDef> = {
   resistance: { key: 'resistance', label: 'Сопротивление', unit: 'Ω', unitRu: 'Ом', min: 0, max: 1e12 },
   capacitance: { key: 'capacitance', label: 'Ёмкость', unit: 'F', unitRu: 'Ф', min: 0, max: 10 },
-  voltage: { key: 'voltage', label: 'Напряжение', unit: 'V', unitRu: 'В', min: -1e4, max: 1e4 },
+  voltage: { key: 'voltage', label: 'Напряжение', unit: 'V', unitRu: 'В', min: -1e4, max: 1e4, signed: true },
+  amplitude: { key: 'amplitude', label: 'Амплитуда', unit: 'V', unitRu: 'В', min: 0, max: 1e4 },
+  offset: { key: 'offset', label: 'Постоянная составляющая', unit: 'V', unitRu: 'В', min: -1e4, max: 1e4, signed: true },
+  frequency: { key: 'frequency', label: 'Частота', unit: 'Hz', unitRu: 'Гц', min: 0, max: 1e9 },
+  duty: { key: 'duty', label: 'Заполнение', unit: '%', unitRu: '%', min: 1, max: 99 },
+  current: { key: 'current', label: 'Ток', unit: 'A', unitRu: 'А', min: -1e3, max: 1e3, signed: true },
   inductance: { key: 'inductance', label: 'Индуктивность', unit: 'H', unitRu: 'Гн', min: 0, max: 1e4 },
   zenerVoltage: { key: 'zenerVoltage', label: 'Напряжение стабилизации', unit: 'V', unitRu: 'В', min: 0, max: 1e3 },
 };
@@ -126,8 +133,19 @@ export const builtinByCatalogId = (id: string) => BUILTIN_PARTS.find((b) => b.ca
 
 /** Параметры, которые требует модель: {v:resistance} → ['resistance']. */
 export function modelParams(model: SimModel | undefined): string[] {
-  if (!model || model.kind !== 'spice-primitive') return [];
-  return [...model.text.matchAll(/\{v:([a-z_]+)\}/g)].map((m) => m[1]!);
+  if (!model || (model.kind !== 'spice-primitive' && model.kind !== 'spice-subckt')) return [];
+  const keys = new Set<string>();
+  for (const m of model.text.matchAll(/\{v:([A-Za-z_]+)\}/g)) keys.add(m[1]!);
+  // Имена параметров внутри выражений {e:…}: duty/100/frequency → duty, frequency.
+  for (const m of model.text.matchAll(/\{e:([^}]+)\}/g)) for (const w of m[1]!.matchAll(/[A-Za-z_]+/g)) if (PARAMS[w[0]]) keys.add(w[0]);
+  return [...keys];
+}
+
+/** Значение параметра в допустимых пределах? */
+export function paramInRange(key: string, v: number): boolean {
+  const d = PARAMS[key];
+  if (!d) return Number.isFinite(v);
+  return d.signed ? v >= d.min && v <= d.max : v > d.min && v <= d.max;
 }
 
 // ---------- Форматирование величин ----------

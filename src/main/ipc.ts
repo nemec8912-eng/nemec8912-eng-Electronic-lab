@@ -174,7 +174,10 @@ export function registerIpc(ctx: MainContext): void {
       throw e;
     }
   }));
-  ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { tran: boolean }) => simulate(doc, findNgspice(), { tran: Boolean(opts?.tran) })));
+  ipcMain.handle(IPC.simRun, wrap((doc: ProjectDoc, opts: { analysis?: string }) => {
+    const a = opts?.analysis;
+    return simulate(doc, findNgspice(), { analysis: a === 'op' || a === 'tran' || a === 'dc' || a === 'ac' ? a : undefined });
+  }));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));
   ipcMain.handle(IPC.openExternal, wrap(async (url: string) => {
     const u = String(url ?? '');

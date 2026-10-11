@@ -309,9 +309,17 @@ describe('Полная резервная копия', () => {
   test('повреждённый бэкап отклоняется до изменения данных', async () => {
     const pc4 = await freshStore('bk4');
     const mine = await pc4.store.createProject('Не трогать');
+    // Порча данных самого большого файла архива (а не служебного поля вроде времени в заголовке ZIP,
+    // которое на содержимое не влияет).
     const broken = Buffer.from(backup);
-    const mid = Math.floor(broken.length / 2);
-    broken[mid] = broken[mid]! ^ 0xff;
+    let target = { at: -1, size: 0 };
+    for (let i = 0; i + 30 < broken.length; i++) {
+      if (broken.readUInt32LE(i) !== 0x04034b50) continue;
+      const size = broken.readUInt32LE(i + 18), data = i + 30 + broken.readUInt16LE(i + 26) + broken.readUInt16LE(i + 28);
+      if (size > target.size) target = { at: data + Math.floor(size / 2), size };
+    }
+    assert.ok(target.at > 0);
+    broken[target.at] = broken[target.at]! ^ 0xff;
     await assert.rejects(verifyBackup(broken), AppError);
     await assert.rejects(verifyBackup(await pc4.store.exportProject(mine)), (e: unknown) => e instanceof AppError && e.code === 'wrong-format');
     assert.deepEqual((await pc4.store.listProjects()).map((p) => p.id), [mine.id]);

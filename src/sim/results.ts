@@ -1,42 +1,82 @@
 /**
  * Привязка результатов ngspice к объектам проекта и проверка пределов деталей.
- * Знаки токов: ток резистора/конденсатора — от вывода 1 к выводу 2 через деталь;
- * ток источника — как в ngspice: через источник от «+» к «−» (отрицательный, когда источник отдаёт мощность).
+ * Знаки токов: ток резистора/конденсатора/катушки — от вывода 1 к выводу 2 через деталь;
+ * ток источника — как в ngspice: через источник от «+» к «−» (отрицательный, когда источник отдаёт мощность);
+ * ток вывода прибора (pins) — втекающий в вывод. Мощность детали — Σ U·I по выводам (поглощаемая).
  */
 import { formatQuantity, RATINGS } from '../core/library';
-import type { ProjectDoc } from '../core/model';
+import type { ComponentInstance, ProjectDoc } from '../core/model';
+import { symbolOf } from '../core/schematic';
 import type { Netlist, SimIssue } from './netlist';
 import type { RawPlot } from './raw';
 
 export interface OpResult {
   /** id сети → напряжение относительно земли, В. Сети «земли» — 0. */
   node: Record<string, number>;
-  /** id экземпляра R/C/V → ток, А. */
+  /** id экземпляра R/C/L/V → ток, А. */
   current: Record<string, number>;
+  /** id экземпляра прибора → ток, втекающий в вывод (номер вывода → А). */
+  pins: Record<string, Record<string, number>>;
 }
 
 export interface TranResult {
   time: number[];
   node: Record<string, number[]>;
   current: Record<string, number[]>;
+  pins: Record<string, Record<string, number[]>>;
 }
+
+export interface DcResult {
+  /** Экземпляр-источник, значение которого менялось; x — его значения (В или А). */
+  sourceId: string;
+  x: number[];
+  node: Record<string, number[]>;
+  current: Record<string, number[]>;
+  pins: Record<string, Record<string, number[]>>;
+}
+
+export interface AcResult {
+  freq: number[];
+  /** Комплексные напряжения узлов (относительно земли): действительная и мнимая части. */
+  re: Record<string, number[]>;
+  im: Record<string, number[]>;
+}
+
+export type LimitKind = 'power' | 'voltage' | 'reverse-voltage' | 'polarity' | 'current' | 'vce' | 'vds' | 'supply-high' | 'supply-low';
 
 export interface LimitWarning {
   instanceId: string;
-  kind: 'power' | 'voltage';
+  kind: LimitKind;
   value: number;
   limit: number;
   message: string;
 }
 
+export interface SweepRun {
+  value: number;
+  status: 'ok' | 'blocked' | 'failed';
+  error: { code: string; message: string; details: string[] } | null;
+  op: OpResult | null;
+  tran: TranResult | null;
+  dc: DcResult | null;
+  ac: AcResult | null;
+}
+
+export type AnalysisKind = 'op' | 'tran' | 'dc' | 'ac';
+
 export interface SimResult {
   status: 'ok' | 'blocked' | 'failed';
+  analysis: AnalysisKind;
   /** Ревизия документа, по которой выполнен расчёт: по ней интерфейс понимает, что результат устарел. */
   revision: number;
   issues: SimIssue[];
   error: { code: string; message: string; details: string[] } | null;
   op: OpResult | null;
   tran: TranResult | null;
+  dc: DcResult | null;
+  ac: AcResult | null;
+  /** Параметрический прогон: тот же анализ для нескольких значений параметра детали. */
+  sweep: { instanceId: string; param: string; runs: SweepRun[] } | null;
   limits: LimitWarning[];
   engine: { name: 'ngspice'; version: string | null };
   netlist: string;
@@ -44,84 +84,203 @@ export interface SimResult {
   durationMs: number;
 }
 
-const nodeVector = (node: string) => `v(${node})`;
+/** Вектор по имени из netlist: «i(v1)» — ток источника (в старых ngspice — «v1#branch»), «@r1[i]» — сохранённый ток. */
+function vector(plot: RawPlot, name: string): number[] | undefined {
+  const v = plot.values;
+  if (name.startsWith('i(')) return v[name] ?? v[`${name.slice(2, -1)}#branch`];
+  if (name.startsWith('@')) return v[`i(${name})`] ?? v[name];
+  return v[name];
+}
 
-/** Ток элемента: источник — i(v1) (или v1#branch); сохранённый ток R/C — i(@r1[i]) (или @r1[i]). */
-function currentVector(plot: RawPlot, el: string, saved: string | undefined): number[] | undefined {
-  if (el.startsWith('v')) return plot.values[`i(${el})`] ?? plot.values[`${el}#branch`];
-  if (!saved) return undefined;
-  return plot.values[`i(${saved})`] ?? plot.values[saved];
+function mapSeries(plot: RawPlot, nl: Netlist, len: number) {
+  const node: Record<string, number[]> = {};
+  for (const [netId, n] of nl.nodeOfNet) node[netId] = n === '0' ? new Array(len).fill(0) : plot.values[`v(${n})`] ?? [];
+  const current: Record<string, number[]> = {};
+  for (const [instId, name] of nl.currentVectors) {
+    const v = vector(plot, name);
+    if (v) current[instId] = v;
+  }
+  const pins: Record<string, Record<string, number[]>> = {};
+  for (const [instId, map] of nl.pinCurrentVectors) {
+    const out: Record<string, number[]> = {};
+    for (const [pin, name] of map) { const v = vector(plot, name); if (v) out[pin] = v; }
+    pins[instId] = out;
+  }
+  return { node, current, pins };
 }
 
 export function mapOp(plot: RawPlot, nl: Netlist): OpResult {
-  const node: Record<string, number> = {};
-  for (const [netId, n] of nl.nodeOfNet) node[netId] = n === '0' ? 0 : plot.values[nodeVector(n)]?.[0] ?? NaN;
-  const current: Record<string, number> = {};
-  for (const [instId, el] of nl.elementOf) {
-    const v = currentVector(plot, el, nl.currentVectors.get(instId));
-    if (v) current[instId] = v[0]!;
-  }
-  return { node, current };
+  const s = mapSeries(plot, nl, 1);
+  const first = (r: Record<string, number[]>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v[0] ?? NaN]));
+  return {
+    node: first(s.node),
+    current: first(s.current),
+    pins: Object.fromEntries(Object.entries(s.pins).map(([k, v]) => [k, first(v)])),
+  };
 }
 
 export function mapTran(plot: RawPlot, nl: Netlist): TranResult {
   const time = plot.values.time ?? [];
-  const node: Record<string, number[]> = {};
-  for (const [netId, n] of nl.nodeOfNet) node[netId] = n === '0' ? time.map(() => 0) : plot.values[nodeVector(n)] ?? [];
-  const current: Record<string, number[]> = {};
-  for (const [instId, el] of nl.elementOf) {
-    const v = currentVector(plot, el, nl.currentVectors.get(instId));
-    if (v) current[instId] = v;
-  }
-  return { time, node, current };
+  return { time, ...mapSeries(plot, nl, time.length) };
 }
 
-/** Напряжение на детали (вывод 1 − вывод 2) по рабочей точке/переходному процессу. */
-function pinNets(doc: ProjectDoc, instanceId: string): string[] {
-  const out: string[] = [];
-  for (const pin of ['1', '2']) {
-    const n = doc.schematic.nets.find((x) => x.connections.some((c) => c.instanceId === instanceId && c.pin === pin));
-    if (n) out.push(n.id);
+export function mapDc(plot: RawPlot, nl: Netlist, sourceId: string): DcResult {
+  const sweepVar = plot.variables[0]?.name ?? '';
+  const x = plot.values[sweepVar] ?? [];
+  return { sourceId, x, ...mapSeries(plot, nl, x.length) };
+}
+
+export function mapAc(plot: RawPlot, nl: Netlist): AcResult {
+  const freq = plot.values.frequency ?? [];
+  const re: Record<string, number[]> = {};
+  const im: Record<string, number[]> = {};
+  for (const [netId, n] of nl.nodeOfNet) {
+    if (n === '0') { re[netId] = freq.map(() => 0); im[netId] = freq.map(() => 0); continue; }
+    re[netId] = plot.values[`v(${n})`] ?? [];
+    im[netId] = plot.imag[`v(${n})`] ?? [];
+  }
+  return { freq, re, im };
+}
+
+// ---------- Пределы деталей ----------
+
+interface Samples {
+  len: number;
+  node: Record<string, number[] | number>;
+  current: Record<string, number[] | number>;
+  pins: Record<string, Record<string, number[] | number>>;
+  /** Подпись момента: «t = 1,2 мс», «при V1 = 3 В». */
+  where(i: number): string;
+}
+
+const at = (x: number[] | number | undefined, i: number) => (x === undefined ? NaN : Array.isArray(x) ? x[i] ?? NaN : x);
+
+function samplesOf(op: OpResult | null, tran: TranResult | null, dc: DcResult | null, doc: ProjectDoc): Samples[] {
+  const out: Samples[] = [];
+  if (op) out.push({ len: 1, node: op.node, current: op.current, pins: op.pins, where: () => 'в рабочей точке' });
+  if (tran) out.push({ len: tran.time.length, node: tran.node, current: tran.current, pins: tran.pins, where: (i) => `при t = ${formatQuantity(tran.time[i]!, 'с')}` });
+  if (dc) {
+    const src = doc.schematic.instances.find((x) => x.id === dc.sourceId)?.refDes ?? 'источнике';
+    out.push({ len: dc.x.length, node: dc.node, current: dc.current, pins: dc.pins, where: (i) => `при ${src} = ${formatQuantity(dc.x[i]!, '')}`.trim() });
   }
   return out;
 }
 
-export function checkLimits(doc: ProjectDoc, op: OpResult | null, tran: TranResult | null): LimitWarning[] {
+/** Электрические величины детали в точке выборки: напряжения и втекающие токи выводов. */
+function deviceProbe(doc: ProjectDoc, inst: ComponentInstance) {
+  const pins = symbolOf(doc, inst)?.pins ?? [];
+  const netOf = new Map<string, string>();
+  for (const n of doc.schematic.nets) for (const c of n.connections) if (c.instanceId === inst.id) netOf.set(c.pin, n.id);
+  const byName = (name: string) => pins.find((p) => p.name.toUpperCase() === name)?.number;
+  const v = (s: Samples, pin: string | undefined, i: number) => (pin && netOf.has(pin) ? at(s.node[netOf.get(pin)!], i) : NaN);
+  /** Ток, втекающий в вывод. Для двухвыводных — из тока элемента (от вывода 1 к выводу 2). */
+  const iin = (s: Samples, pin: string | undefined, i: number): number => {
+    if (!pin) return NaN;
+    const pc = s.pins[inst.id];
+    if (pc && pc[pin] !== undefined) return at(pc[pin], i);
+    const c = s.current[inst.id];
+    if (c === undefined || pins.length !== 2) return NaN;
+    return pin === pins[0]!.number ? at(c, i) : -at(c, i);
+  };
+  const power = (s: Samples, i: number) => {
+    let p = 0;
+    for (const pin of pins) {
+      const vi = v(s, pin.number, i), ii = iin(s, pin.number, i);
+      if (!Number.isFinite(vi) || !Number.isFinite(ii)) return NaN;
+      p += vi * ii;
+    }
+    return p;
+  };
+  return { pins, byName, v, iin, power };
+}
+
+/**
+ * Проверка пределов по результатам расчёта: мощность резисторов и приборов, напряжение и полярность
+ * конденсаторов, обратное напряжение и ток диодов и светодиодов, Uкэ/Uси и ток транзисторов,
+ * напряжение питания микросхем, ток нагрузки стабилизаторов. Оценка без тепловой модели.
+ */
+export function checkLimits(doc: ProjectDoc, op: OpResult | null, tran: TranResult | null, dc: DcResult | null = null, suffix = ''): LimitWarning[] {
   const out: LimitWarning[] = [];
+  const sets = samplesOf(op, tran, dc, doc);
+  if (!sets.length) return out;
   for (const inst of doc.schematic.instances) {
     const part = doc.library.parts.find((p) => p.id === inst.partId);
     if (!part) continue;
-    const nets = pinNets(doc, inst.id);
-    if (nets.length !== 2) continue;
-    const [a, b] = nets as [string, string];
-    const vAt = (src: { node: Record<string, number | number[]> }, i?: number) => {
-      const va = src.node[a], vb = src.node[b];
-      const x = Array.isArray(va) ? va[i!] : va, y = Array.isArray(vb) ? vb[i!] : vb;
-      return (x ?? NaN) - (y ?? NaN);
-    };
-    let maxV = 0, maxP = 0;
-    if (op) {
-      const v = vAt(op);
-      maxV = Math.max(maxV, Math.abs(v));
-      if (op.current[inst.id] !== undefined) maxP = Math.max(maxP, Math.abs(v * op.current[inst.id]!));
-    }
-    if (tran) {
-      const cur = tran.current[inst.id];
-      for (let i = 0; i < tran.time.length; i++) {
-        const v = vAt(tran, i);
-        if (Number.isFinite(v)) maxV = Math.max(maxV, Math.abs(v));
-        if (cur && Number.isFinite(v)) maxP = Math.max(maxP, Math.abs(v * cur[i]!));
+    const d = deviceProbe(doc, inst);
+    if (d.pins.length === 0) continue;
+    const R = part.ratings;
+    const cat = part.category;
+    /** Наибольшее значение f по всем выборкам и где оно достигнуто. */
+    const peak = (f: (s: Samples, i: number) => number) => {
+      let best = -Infinity, where = '';
+      for (const s of sets) for (let i = 0; i < s.len; i++) {
+        const x = f(s, i);
+        if (Number.isFinite(x) && x > best) { best = x; where = s.where(i); }
       }
-    }
-    const power = part.ratings.power?.value;
-    if (part.category === 'resistor' && power !== undefined && maxP > power) {
-      out.push({ instanceId: inst.id, kind: 'power', value: maxP, limit: power,
-        message: `${inst.refDes}: расчётная мощность ${formatQuantity(maxP, RATINGS.power!.unitRu)} больше допустимой ${formatQuantity(power, RATINGS.power!.unitRu)} — риск перегрева. Оценка без тепловой модели.` });
-    }
-    const vmax = part.ratings.voltage?.value;
-    if (part.category === 'capacitor' && vmax !== undefined && maxV > vmax) {
-      out.push({ instanceId: inst.id, kind: 'voltage', value: maxV, limit: vmax,
-        message: `${inst.refDes}: напряжение ${formatQuantity(maxV, 'В')} больше допустимого ${formatQuantity(vmax, 'В')} — риск пробоя.` });
+      return { value: best, where };
+    };
+    const add = (kind: LimitKind, limit: number | undefined, f: (s: Samples, i: number) => number, text: (v: number, lim: number, where: string) => string) => {
+      if (limit === undefined) return;
+      const p = peak(f);
+      if (p.value > limit) out.push({ instanceId: inst.id, kind, value: p.value, limit, message: `${inst.refDes}: ${text(p.value, limit, p.where)}${suffix}` });
+    };
+    const W = (x: number) => formatQuantity(x, RATINGS.power!.unitRu);
+    const V = (x: number) => formatQuantity(x, 'В');
+    const A = (x: number) => formatQuantity(x, 'А');
+    const [p1, p2] = d.pins.map((p) => p.number);
+    const vAcross = (s: Samples, i: number) => d.v(s, p1, i) - d.v(s, p2, i);
+
+    if (cat === 'resistor') {
+      add('power', R.power?.value, (s, i) => Math.abs(d.power(s, i)), (v, l, w) => `расчётная мощность ${W(v)} больше допустимой ${W(l)} (${w}) — риск перегрева. Оценка без тепловой модели.`);
+    } else if (cat === 'capacitor' || cat === 'capacitor-polar') {
+      add('voltage', R.voltage?.value, (s, i) => Math.abs(vAcross(s, i)), (v, l, w) => `напряжение ${V(v)} больше допустимого ${V(l)} (${w}) — риск пробоя.`);
+      if (cat === 'capacitor-polar' || part.polarized) {
+        add('polarity', 1, (s, i) => -vAcross(s, i), (v, _l, w) => `обратное напряжение ${V(v)} на полярном конденсаторе (${w}) — электролитический конденсатор может выйти из строя. Проверьте полярность.`);
+      }
+    } else if (cat === 'inductor') {
+      add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, p1, i)), (v, l, w) => `ток ${A(v)} больше допустимого ${A(l)} (${w}) — перегрев или насыщение сердечника.`);
+    } else if (cat === 'diode' || cat === 'zener' || cat === 'led') {
+      const a = d.byName('A'), kk = d.byName('K');
+      if (a && kk) {
+        if (cat !== 'zener') add('reverse-voltage', R.reverseVoltage?.value, (s, i) => d.v(s, kk, i) - d.v(s, a, i), (v, l, w) => `обратное напряжение ${V(v)} больше допустимого ${V(l)} (${w}) — риск пробоя.`);
+        add('current', R.current?.value, (s, i) => d.iin(s, a, i), (v, l, w) => cat === 'led'
+          ? `ток светодиода ${A(v)} больше допустимого ${A(l)} (${w}) — светодиод перегреется. Нужен токоограничивающий резистор побольше.`
+          : `прямой ток ${A(v)} больше допустимого ${A(l)} (${w}).`);
+      }
+      add('power', R.power?.value, (s, i) => d.power(s, i), (v, l, w) => `рассеиваемая мощность ${W(v)} больше допустимой ${W(l)} (${w}) — риск перегрева. Оценка без тепловой модели.`);
+    } else if (cat === 'bjt') {
+      const c = d.byName('C'), e = d.byName('E');
+      add('vce', R.vce?.value, (s, i) => Math.abs(d.v(s, c, i) - d.v(s, e, i)), (v, l, w) => `напряжение коллектор–эмиттер ${V(v)} больше допустимого ${V(l)} (${w}) — риск пробоя.`);
+      add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, c, i)), (v, l, w) => `ток коллектора ${A(v)} больше допустимого ${A(l)} (${w}).`);
+      add('power', R.power?.value, (s, i) => d.power(s, i), (v, l, w) => `рассеиваемая мощность ${W(v)} больше допустимой ${W(l)} (${w}) — риск перегрева. Оценка без тепловой модели.`);
+    } else if (cat === 'mosfet') {
+      const dd = d.byName('D'), ss = d.byName('S');
+      add('vds', R.vds?.value, (s, i) => Math.abs(d.v(s, dd, i) - d.v(s, ss, i)), (v, l, w) => `напряжение сток–исток ${V(v)} больше допустимого ${V(l)} (${w}) — риск пробоя.`);
+      add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, dd, i)), (v, l, w) => `ток стока ${A(v)} больше допустимого ${A(l)} (${w}).`);
+      add('power', R.power?.value, (s, i) => d.power(s, i), (v, l, w) => `рассеиваемая мощность ${W(v)} больше допустимой ${W(l)} (${w}) — без радиатора и тепловой модели оценка условная.`);
+    } else if (cat.startsWith('ic') || cat === 'mcu') {
+      const sym = d.pins;
+      const supply = sym.filter((p) => p.electricalType === 'power-in').map((p) => p.number);
+      const ground = sym.filter((p) => p.electricalType === 'ground').map((p) => p.number);
+      const vsup = (s: Samples, i: number) => {
+        if (!supply.length) return NaN;
+        const hi = Math.max(...supply.map((p) => d.v(s, p, i)));
+        const lo = ground.length ? Math.min(...ground.map((p) => d.v(s, p, i))) : 0;
+        return hi - lo;
+      };
+      add('supply-high', R.supplyMax?.value, vsup, (v, l, w) => `напряжение питания ${V(v)} больше максимального ${V(l)} (${w}) — микросхема может выйти из строя.`);
+      if (op && R.supplyMin) {
+        const s0 = sets[0]!;
+        const v = vsup(s0, 0);
+        if (Number.isFinite(v) && v > 0.1 && v < R.supplyMin.value) {
+          out.push({ instanceId: inst.id, kind: 'supply-low', value: v, limit: R.supplyMin.value,
+            message: `${inst.refDes}: напряжение питания ${V(v)} ниже минимального ${V(R.supplyMin.value)} — реальная микросхема может работать неправильно; поведенческая модель этого не учитывает.${suffix}` });
+        }
+      }
+      const outs = sym.filter((p) => p.electricalType === 'output' || p.electricalType === 'power-out').map((p) => p.number);
+      add('current', R.current?.value, (s, i) => Math.max(...outs.map((p) => Math.abs(d.iin(s, p, i)))), (v, l, w) => `ток выхода ${A(v)} больше допустимого ${A(l)} (${w}) — в реальной микросхеме сработает ограничение или защита; модель его не воспроизводит.`);
+    } else {
+      add('power', R.power?.value, (s, i) => Math.abs(d.power(s, i)), (v, l, w) => `мощность ${W(v)} больше допустимой ${W(l)} (${w}). Оценка без тепловой модели.`);
     }
   }
   return out;
@@ -139,4 +298,23 @@ export function valueAt(time: number[], values: number[], t: number): number {
     }
   }
   return values[values.length - 1]!;
+}
+
+/** Модуль (раз) и фаза (градусы) комплексного отношения a/b по точкам частотного анализа. */
+export function transfer(ac: AcResult, outNet: string, refNet: string | null, inNet: string | null): { mag: number[]; phaseDeg: number[] } {
+  const n = ac.freq.length;
+  const mag: number[] = [], phaseDeg: number[] = [];
+  const sub = (net: string | null, k: number): [number, number] => (net ? [ac.re[net]?.[k] ?? NaN, ac.im[net]?.[k] ?? NaN] : [0, 0]);
+  for (let k = 0; k < n; k++) {
+    const [or, oi] = sub(outNet, k), [rr, ri] = sub(refNet, k);
+    let re = or - rr, im = oi - ri;
+    if (inNet) {
+      const [ir, ii] = sub(inNet, k);
+      const den = ir * ir + ii * ii;
+      [re, im] = [(re * ir + im * ii) / den, (im * ir - re * ii) / den];
+    }
+    mag.push(Math.hypot(re, im));
+    phaseDeg.push((Math.atan2(im, re) * 180) / Math.PI);
+  }
+  return { mag, phaseDeg };
 }

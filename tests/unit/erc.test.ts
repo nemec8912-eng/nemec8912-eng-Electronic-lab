@@ -32,7 +32,7 @@ describe('ERC', () => {
     for (const i of issues) assert.ok(ERC_HELP[i.code].length > 10);
   });
 
-  test('микросхема: неподключённые питание и входы, «нет модели» — сведения', () => {
+  test('микросхема: неподключённые питание и входы; у NE555 есть модель — «нет модели» не выводится', () => {
     const b = new Builder();
     const u = place555(b, 300, 200);
     b.place('GND', 0, 0);
@@ -42,7 +42,7 @@ describe('ERC', () => {
     assert.match(vcc.message, /DA1\.8 \(VCC\)/);
     assert.deepEqual(vcc.at, pinPosition(b.doc, p(u, '8')), 'место — точка вывода');
     assert.equal(issues.filter((i) => i.code === 'unconnected-input').length, 4);
-    assert.ok(issues.some((i) => i.code === 'no-model' && i.severity === 'info'));
+    assert.ok(!issues.some((i) => i.code === 'no-model'));
   });
 
   test('питание на землю и вход питания без источника', () => {

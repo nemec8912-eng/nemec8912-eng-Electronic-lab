@@ -26,12 +26,21 @@ describe('Встроенный справочник', () => {
     assert.equal(builtinCatalog()[5]!.part.id, all[5]!.part.id, 'ID встроенных деталей стабильны');
   });
 
-  test('реальные детали помечены «не сверено», у полупроводников и микросхем нет модели — это предупреждения', () => {
+  test('реальные детали помечены «не сверено»; модели приборов «не проверены»; без модели — предупреждение', () => {
     const ne = byPn('NE555');
     assert.equal(ne.part.origin.verified, false);
     const lint = lintBundle(ne);
-    assert.ok(lint.some((l) => l.field === 'model' && /не моделируется/.test(l.message)));
+    assert.ok(lint.some((l) => l.field === 'model' && /не проверена/.test(l.message)), 'поведенческая модель NE555 есть, но не проверена');
     assert.ok(lint.some((l) => l.field === 'origin'));
+    const thy = byPn('BT151-500R');
+    assert.equal(thy.model, null);
+    assert.ok(lintBundle(thy).some((l) => l.field === 'model' && /не моделируется/.test(l.message)));
+    for (const pn of ['1N4007', '1N4148', '1N5819', '1N4733A', 'BZX55C5V1', 'BC547', 'BC557', '2N3904', '2N3906', 'IRF540N', 'IRLZ44N', '2N7000', 'LM358', 'LM317T', 'L7805CV']) {
+      const m = byPn(pn).model;
+      assert.ok(m && !m.verified && m.source, `${pn}: модель с источником, «не проверена»`);
+    }
+    assert.equal(byPn('74HC00').model, null, 'цифровые микросхемы не моделируются');
+    assert.equal(byPn('ATMEGA328P-PU').model, null);
     assert.equal(ne.packages.length, 2, 'DIP-8 и SOIC-8');
     assert.ok(ne.packages.every((p) => p.pin1Marker));
   });
@@ -107,7 +116,13 @@ describe('Личный каталог', () => {
 });
 
 describe('Размещение детали каталога на схеме', () => {
-  test('NE555: обозначение DA1, комплект встроен в проект, расчёт честно отказывает (нет модели)', () => {
+  test('74HC00: цифровая микросхема — расчёт честно отказывает с объяснением', () => {
+    const r = placeBundle(createProject('Логика'), byPn('74HC00'), { x: 0, y: 0 });
+    const nl = buildNetlist(r.doc, { op: true, tran: null });
+    assert.ok(nl.issues.some((i) => i.code === 'not-simulated' && /цифровые микросхемы и микроконтроллеры не моделируются/.test(i.message)));
+  });
+
+  test('NE555: обозначение DA1, комплект встроен в проект, модель попадает в netlist один раз', () => {
     const r = placeBundle(createProject('Таймер'), byPn('NE555'), { x: 0, y: 0 });
     const inst = r.doc.schematic.instances[0]!;
     assert.equal(inst.refDes, 'DA1');
@@ -119,7 +134,8 @@ describe('Размещение детали каталога на схеме', (
     assert.equal(again.doc.library.parts.length, 1, 'повторное размещение использует копию проекта');
     assert.equal(again.doc.schematic.instances[1]!.refDes, 'DA2');
     const nl = buildNetlist(again.doc, { op: true, tran: null });
-    assert.ok(nl.issues.some((i) => i.code === 'no-model' && /DA1/.test(i.message)));
+    assert.ok(!nl.issues.some((i) => i.code === 'no-model'));
+    assert.ok(nl.issues.some((i) => i.code === 'unconnected-pin' && /DA1/.test(i.message)), 'выводы не подключены — расчёт не отправляется');
   });
 
   test('номинал детали переходит в экземпляр; разъём не мешает расчёту', () => {

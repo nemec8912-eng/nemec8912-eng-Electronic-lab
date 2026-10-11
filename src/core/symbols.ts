@@ -41,6 +41,10 @@ export const STANDARD_SYMBOLS: Record<string, () => SymbolTemplate> = {
   'transformer': () => ({ name: 'Трансформатор', standard: STD, graphic: 'transformer', box: null, pins: [
     pin('1', 'I1', 'passive', -40, -30, 'первичная обмотка'), pin('2', 'I2', 'passive', -40, 30, 'первичная обмотка'),
     pin('3', 'II1', 'passive', 40, -30, 'вторичная обмотка'), pin('4', 'II2', 'passive', 40, 30, 'вторичная обмотка')] }),
+  'iec-dc-source': () => ({ name: 'Источник ЭДС', standard: STD, graphic: 'iec-dc-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
+  'iec-ac-source': () => ({ name: 'Источник синусоидального напряжения', standard: STD, graphic: 'iec-ac-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
+  'iec-pulse-source': () => ({ name: 'Источник импульсного напряжения', standard: STD, graphic: 'iec-pulse-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
+  'iec-current-source': () => ({ name: 'Источник тока', standard: STD, graphic: 'iec-current-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30, 'ток выходит из этого вывода'), pin('-', '−', 'power-out', 0, 30)] }),
 };
 
 /** Стандартный символ категории. */

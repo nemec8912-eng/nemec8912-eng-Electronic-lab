@@ -4,12 +4,15 @@
  *  • распространённые реальные детали — с партномером, разводкой корпуса и предельными параметрами
  *    по типовым данным даташитов. Все они помечены «не сверено с даташитом» (origin.verified = false):
  *    перед применением пользователь сверяет сведения с даташитом своего производителя.
- * SPICE-моделей у полупроводников и микросхем на этапе 2 нет — это показывается явно (этап 4).
+ * SPICE-модели (этап 4) — src/catalog/spiceModels.ts: модели производителей и упрощённые/поведенческие модели
+ * по даташиту, все помечены «не проверены». Тиристор, симистор, мост, цифровые микросхемы и микроконтроллер
+ * не моделируются — это показывается явно.
  */
 import { builtinBundle, stableId, type PartBundle } from '../core/catalog';
 import { BUILTIN_PARTS, PART_INFO_DEFAULTS } from '../core/library';
 import type { PartDef, Quantity, SimModel } from '../core/model';
 import { generatePackage, type GenParams } from '../core/packages';
+import * as SM from './spiceModels';
 import { icSymbol, standardSymbol, type IcPinInput, type SymbolTemplate } from '../core/symbols';
 
 type PinMap = Array<[symbolPin: string, pad: string]> | 'identity';
@@ -130,24 +133,35 @@ const DEFS: Def[] = [
     symbol: sym('switch'), packages: [], model: null },
   { key: 'led/5mm-red', name: 'Светодиод 5 мм красный', category: 'led', refPrefix: 'HL', description: 'Индикаторный светодиод; вывод катода короче, у катода срез на корпусе', generic: true,
     ratings: { current: q(0.02, 'A'), reverseVoltage: q(5, 'V') },
-    symbol: sym('led'), packages: [{ family: 'RADIAL', params: { pitch: 2.54, diameter: 5, polar: false }, pinMap: [['1', '1'], ['2', '2']] }], model: null },
+    symbol: sym('led'), packages: [{ family: 'RADIAL', params: { pitch: 2.54, diameter: 5, polar: false }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_LED_RED },
+
+  // ---------- Источники сигналов (этап 4) ----------
+  { key: 'src/sine', name: 'Источник синусоидального напряжения', category: 'source', refPrefix: 'G', description: 'Генератор синуса: амплитуда, частота, постоянная составляющая. Его амплитуда — уровень входного сигнала в частотном анализе.', generic: true,
+    values: { amplitude: q(1, 'V'), frequency: q(1000, 'Hz'), offset: q(0, 'V') },
+    symbol: sym('iec-ac-source'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: [['+', '1'], ['-', '2']] }], model: SM.SRC_SINE },
+  { key: 'src/pulse', name: 'Источник прямоугольных импульсов', category: 'source', refPrefix: 'G', description: 'Генератор импульсов от 0 до заданного напряжения: частота и заполнение.', generic: true,
+    values: { voltage: q(5, 'V'), frequency: q(1000, 'Hz'), duty: q(50, '%') },
+    symbol: sym('iec-pulse-source'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: [['+', '1'], ['-', '2']] }], model: SM.SRC_PULSE },
+  { key: 'src/current', name: 'Источник постоянного тока', category: 'source', refPrefix: 'G', description: 'Идеальный источник тока: ток выходит из вывода «+».', generic: true,
+    values: { current: q(0.01, 'A') },
+    symbol: sym('iec-current-source'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: [['+', '1'], ['-', '2']] }], model: SM.SRC_CURRENT },
 
   // ---------- Диоды ----------
   { key: 'diode/1n4007', name: 'Диод выпрямительный 1N4007', category: 'diode', refPrefix: 'VD', description: 'Выпрямительный диод 1 А, 1000 В', generic: false, partNumber: '1N4007', marking: '1N4007',
     ratings: { reverseVoltage: q(1000, 'V'), current: q(1, 'A'), surgeCurrent: q(30, 'A') }, temperature: { minC: -65, maxC: 175 },
-    symbol: sym('diode'), packages: [{ family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }, pinMap: [['1', '1'], ['2', '2']] }], model: null },
+    symbol: sym('diode'), packages: [{ family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_1N4007 },
   { key: 'diode/1n4148', name: 'Диод импульсный 1N4148', category: 'diode', refPrefix: 'VD', description: 'Быстрый кремниевый диод малой мощности', generic: false, partNumber: '1N4148', marking: '4148',
     ratings: { reverseVoltage: q(100, 'V'), current: q(0.15, 'A') },
-    symbol: sym('diode'), packages: [{ family: 'AXIAL', params: { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }, pinMap: [['1', '1'], ['2', '2']] }], model: null },
+    symbol: sym('diode'), packages: [{ family: 'AXIAL', params: { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_1N4148 },
   { key: 'diode/1n5819', name: 'Диод Шоттки 1N5819', category: 'diode', refPrefix: 'VD', description: 'Диод Шоттки 1 А, 40 В', generic: false, partNumber: '1N5819',
     ratings: { reverseVoltage: q(40, 'V'), current: q(1, 'A') },
-    symbol: sym('diode'), packages: [{ family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }, pinMap: [['1', '1'], ['2', '2']] }], model: null },
+    symbol: sym('diode'), packages: [{ family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_1N5819 },
   { key: 'zener/1n4733a', name: 'Стабилитрон 1N4733A (5,1 В, 1 Вт)', category: 'zener', refPrefix: 'VD', description: 'Стабилитрон 5,1 В, 1 Вт', generic: false, partNumber: '1N4733A',
     values: { zenerVoltage: q(5.1, 'V') }, ratings: { power: q(1, 'W') }, tolerancePct: 5,
-    symbol: sym('zener'), packages: [{ family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }, pinMap: [['1', '1'], ['2', '2']] }], model: null },
+    symbol: sym('zener'), packages: [{ family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_1N4733A },
   { key: 'zener/bzx55c5v1', name: 'Стабилитрон BZX55C5V1 (5,1 В, 0,5 Вт)', category: 'zener', refPrefix: 'VD', description: 'Стабилитрон 5,1 В, 0,5 Вт', generic: false, partNumber: 'BZX55C5V1',
     values: { zenerVoltage: q(5.1, 'V') }, ratings: { power: q(0.5, 'W') }, tolerancePct: 5,
-    symbol: sym('zener'), packages: [{ family: 'AXIAL', params: { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }, pinMap: [['1', '1'], ['2', '2']] }], model: null },
+    symbol: sym('zener'), packages: [{ family: 'AXIAL', params: { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_BZX55C5V1 },
   { key: 'bridge/generic', name: 'Диодный мост (типовой)', category: 'bridge', refPrefix: 'VD', description: 'Однофазный выпрямительный мост. Корпус не задан: разводка выводов у мостов разных серий разная — добавьте корпус по даташиту своей детали.', generic: true,
     ratings: { reverseVoltage: q(1000, 'V'), current: q(1, 'A') },
     symbol: sym('bridge'), packages: [], model: null },
@@ -155,25 +169,25 @@ const DEFS: Def[] = [
   // ---------- Транзисторы ----------
   { key: 'bjt/bc547', name: 'Транзистор BC547 (n-p-n)', category: 'bjt', refPrefix: 'VT', description: 'Маломощный n-p-n транзистор общего применения', generic: false, partNumber: 'BC547', marking: 'BC547',
     ratings: { vce: q(45, 'V'), current: q(0.1, 'A'), power: q(0.5, 'W') },
-    symbol: sym('npn'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: null },
+    symbol: sym('npn'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: SM.Q_BC547B },
   { key: 'bjt/bc557', name: 'Транзистор BC557 (p-n-p)', category: 'bjt', refPrefix: 'VT', description: 'Маломощный p-n-p транзистор общего применения', generic: false, partNumber: 'BC557', marking: 'BC557',
     ratings: { vce: q(45, 'V'), current: q(0.1, 'A'), power: q(0.5, 'W') },
-    symbol: sym('pnp'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: null },
+    symbol: sym('pnp'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: SM.Q_BC557B },
   { key: 'bjt/2n3904', name: 'Транзистор 2N3904 (n-p-n)', category: 'bjt', refPrefix: 'VT', description: 'Маломощный n-p-n транзистор', generic: false, partNumber: '2N3904',
     ratings: { vce: q(40, 'V'), current: q(0.2, 'A'), power: q(0.625, 'W') },
-    symbol: sym('npn'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: null },
+    symbol: sym('npn'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: SM.Q_2N3904 },
   { key: 'bjt/2n3906', name: 'Транзистор 2N3906 (p-n-p)', category: 'bjt', refPrefix: 'VT', description: 'Маломощный p-n-p транзистор', generic: false, partNumber: '2N3906',
     ratings: { vce: q(40, 'V'), current: q(0.2, 'A'), power: q(0.625, 'W') },
-    symbol: sym('pnp'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: null },
+    symbol: sym('pnp'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: SM.Q_2N3906 },
   { key: 'mos/irf540n', name: 'MOSFET IRF540N (n-канал)', category: 'mosfet', refPrefix: 'VT', description: 'Мощный n-канальный MOSFET 100 В, 33 А', generic: false, partNumber: 'IRF540N',
     ratings: { vds: q(100, 'V'), current: q(33, 'A'), rdsOn: q(0.044, 'Ω') },
-    symbol: sym('nmos'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['1', '1'], ['2', '2'], ['3', '3']] }], model: null },
+    symbol: sym('nmos'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['1', '1'], ['2', '2'], ['3', '3']] }], model: SM.M_IRF540N },
   { key: 'mos/irlz44n', name: 'MOSFET IRLZ44N (n-канал, логический уровень)', category: 'mosfet', refPrefix: 'VT', description: 'n-канальный MOSFET с управлением от 5 В логики', generic: false, partNumber: 'IRLZ44N',
     ratings: { vds: q(55, 'V'), current: q(47, 'A'), rdsOn: q(0.022, 'Ω') },
-    symbol: sym('nmos'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['1', '1'], ['2', '2'], ['3', '3']] }], model: null },
+    symbol: sym('nmos'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['1', '1'], ['2', '2'], ['3', '3']] }], model: SM.M_IRLZ44N },
   { key: 'mos/2n7000', name: 'MOSFET 2N7000 (n-канал, малый)', category: 'mosfet', refPrefix: 'VT', description: 'Маломощный n-канальный MOSFET 60 В, 0,2 А', generic: false, partNumber: '2N7000',
     ratings: { vds: q(60, 'V'), current: q(0.2, 'A') },
-    symbol: sym('nmos'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: null },
+    symbol: sym('nmos'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: SM.M_2N7000 },
   { key: 'thy/bt151', name: 'Тиристор BT151-500R', category: 'thyristor', refPrefix: 'VS', description: 'Тиристор 500 В, 12 А (действующее значение)', generic: false, partNumber: 'BT151-500R',
     ratings: { reverseVoltage: q(500, 'V'), current: q(12, 'A') },
     symbol: sym('thyristor'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: null },
@@ -186,20 +200,20 @@ const DEFS: Def[] = [
     ratings: { supplyMin: q(4.5, 'V'), supplyMax: q(16, 'V'), current: q(0.2, 'A') }, temperature: { minC: 0, maxC: 70 },
     symbol: ic('NE555', [['2', 'TR', 'input', 'запуск (ниже 1/3 Uпит)'], ['6', 'THR', 'input', 'порог (выше 2/3 Uпит)'], ['4', 'R', 'input', 'сброс (активный низкий)'], ['5', 'CV', 'input', 'управляющее напряжение'],
       ['3', 'Q', 'output', 'выход'], ['7', 'DIS', 'output', 'разряд (открытый коллектор)'], ['8', 'VCC', 'power-in', 'питание +4,5…16 В'], ['1', 'GND', 'ground', 'общий']]),
-    packages: [{ family: 'DIP', params: { pins: 8 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 8 }, pinMap: 'identity' }], model: null },
+    packages: [{ family: 'DIP', params: { pins: 8 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 8 }, pinMap: 'identity' }], model: SM.IC_NE555 },
   { key: 'ic/lm358', name: 'Сдвоенный ОУ LM358', category: 'ic-analog', refPrefix: 'DA', description: 'Два операционных усилителя с однополярным питанием', generic: false, partNumber: 'LM358',
     ratings: { supplyMin: q(3, 'V'), supplyMax: q(32, 'V') },
     symbol: ic('LM358', [['3', '+IN A', 'input'], ['2', '−IN A', 'input'], ['5', '+IN B', 'input'], ['6', '−IN B', 'input'],
       ['1', 'OUT A', 'output'], ['7', 'OUT B', 'output'], ['8', 'V+', 'power-in', 'питание 3…32 В'], ['4', 'GND', 'ground', 'общий / V−']]),
-    packages: [{ family: 'DIP', params: { pins: 8 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 8 }, pinMap: 'identity' }], model: null },
+    packages: [{ family: 'DIP', params: { pins: 8 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 8 }, pinMap: 'identity' }], model: SM.IC_LM358 },
   { key: 'ic/lm317', name: 'Регулируемый стабилизатор LM317', category: 'ic-analog', refPrefix: 'DA', description: 'Линейный регулируемый стабилизатор 1,25…37 В, 1,5 А', generic: false, partNumber: 'LM317T',
     ratings: { outputMin: q(1.25, 'V'), outputMax: q(37, 'V'), current: q(1.5, 'A') },
     symbol: ic('LM317', [['3', 'IN', 'power-in', 'вход'], ['2', 'OUT', 'power-out', 'выход'], ['1', 'ADJ', 'input', 'регулировка']]),
-    packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: 'identity' }], model: null },
+    packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: 'identity' }], model: SM.IC_LM317 },
   { key: 'ic/l7805', name: 'Стабилизатор L7805 (+5 В)', category: 'ic-analog', refPrefix: 'DA', description: 'Линейный стабилизатор +5 В, 1,5 А', generic: false, partNumber: 'L7805CV',
     ratings: { supplyMax: q(35, 'V'), current: q(1.5, 'A') },
     symbol: ic('7805', [['1', 'IN', 'power-in', 'вход 7…35 В'], ['3', 'OUT', 'power-out', 'выход +5 В'], ['2', 'GND', 'ground', 'общий']]),
-    packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: 'identity' }], model: null },
+    packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: 'identity' }], model: SM.IC_L7805 },
   { key: 'ic/74hc00', name: '4 элемента 2И-НЕ 74HC00', category: 'ic-digital', refPrefix: 'DD', description: 'Четыре логических элемента 2И-НЕ, КМОП', generic: false, partNumber: '74HC00',
     ratings: { supplyMin: q(2, 'V'), supplyMax: q(6, 'V') },
     symbol: ic('74HC00', [['1', '1A', 'input'], ['2', '1B', 'input'], ['4', '2A', 'input'], ['5', '2B', 'input'], ['9', '3A', 'input'], ['10', '3B', 'input'], ['12', '4A', 'input'], ['13', '4B', 'input'],

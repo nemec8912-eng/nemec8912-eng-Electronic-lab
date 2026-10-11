@@ -108,7 +108,8 @@ describe('Загрузка и миграции', () => {
     assert.deepEqual(r.doc.pcb.tracks.map((t) => [t.from, t.to]), [[null, null]]);
     const axial = r.doc.library.packages.find((p) => p.name.startsWith('Выводной'))!;
     assert.deepEqual(axial.pads.map((p) => [p.number, p.x, p.y, p.drill]), [['A', 0, 0, 0.9], ['B', 2.54, 0, 0.9]]);
-    assert.deepEqual(r.doc.simulation, { tran: { stopS: 0.01, stepS: 1e-5, startFromZero: true } });
+    assert.deepEqual(r.doc.simulation.tran, { stopS: 0.01, stepS: 1e-5, startFromZero: true });
+    assert.equal(r.doc.simulation.analysis, 'tran', 'v4 → v5: анализ по умолчанию — переходный процесс, как раньше');
     const sig = linkSignature(r.doc) as Record<string, unknown>;
     assert.equal((sig.nets as unknown[]).length, 3);
     assert.deepEqual(r.doc.schematic.nets, v1.schematic.nets);

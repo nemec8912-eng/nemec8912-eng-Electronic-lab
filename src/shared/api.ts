@@ -85,8 +85,8 @@ export interface ElabApi {
     build(token: string, symbol: string, footprints: { online: string[]; files: boolean }): Promise<Result<KicadPreviewDto | null>>;
   };
   sim: {
-    /** Расчёт текущего состояния документа (рабочая точка и переходный процесс). */
-    run(doc: ProjectDoc, opts: { tran: boolean }): Promise<Result<SimResult>>;
+    /** Расчёт текущего состояния документа: рабочая точка и выбранный анализ (по умолчанию — из настроек проекта). */
+    run(doc: ProjectDoc, opts: { analysis?: 'op' | 'tran' | 'dc' | 'ac' }): Promise<Result<SimResult>>;
   };
   files: {
     exportProject(doc: ProjectDoc): Promise<Result<{ path: string; bytes: number } | null>>;

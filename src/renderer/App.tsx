@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addAnnotation, removeAnnotation, renameProject, setDescription, updateAnnotation } from '../core/factory';
 import { newId } from '../core/ids';
-import { setProbe, setTranSettings } from '../core/instruments';
+import { setProbe, setSimSettings, setTranSettings } from '../core/instruments';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import { addTrack, copperSvg, deleteTrack, movePlacement, rotatePlacement, setBoard, syncFromSchematic } from '../core/pcb';
 import { deleteItems, kindOf, placeBundle, renameRefDes, renumber, rotateItems, setValue } from '../core/schematic';
@@ -333,11 +333,11 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
     if (selection.some((id) => !kindOf(doc, id))) setSelection((sel) => sel.filter((id) => kindOf(doc, id)));
   }, [doc, selection]);
 
-  const runSim = async (tran: boolean) => {
+  const runSim = async () => {
     setRunning(true);
     try {
       const d = editorRef.current.doc;
-      const result = await unwrap(api().sim.run(d, { tran }));
+      const result = await unwrap(api().sim.run(d, {}));
       setSim({ result, key: circuitKey(d) });
     } catch (e) {
       await dialogs.alert('Расчёт не выполнен', errorText(e));
@@ -591,6 +591,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             onRun={runSim}
             onProbe={(color, pin) => editor.apply(pin ? 'Щуп' : 'Снять щуп', (d) => setProbe(d, color, pin))}
             onTranSettings={(patch) => editor.apply('Настройки расчёта', (d) => setTranSettings(d, patch))}
+            onSimSettings={(patch) => editor.apply('Настройки расчёта', (d) => setSimSettings(d, patch))}
           />
         </main>
       )}

@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import { createProject } from '../src/core/factory';
 import { BUILTIN_PARTS } from '../src/core/library';
 import type { PinRef, ProjectDoc, Wire, WireEnd } from '../src/core/model';
-import { connectPins, placeBuiltin, setValue } from '../src/core/schematic';
+import { connectPins, placeBuiltin, placeBundle, setValue } from '../src/core/schematic';
+import { builtinCatalog } from '../src/catalog/builtin';
 import { locateNgspice } from '../src/sim/runner';
 
 export const CAT = {
@@ -28,7 +29,19 @@ export class Builder {
     this.doc = r.doc;
     return r.id;
   }
+  /** Деталь встроенного справочника по партномеру или названию. */
+  part(nameOrPn: string, x: number, y: number): string {
+    const b = builtinCatalog().find((x) => x.part.partNumber === nameOrPn || x.part.name === nameOrPn);
+    if (!b) throw new Error(`Нет детали ${nameOrPn}`);
+    const r = placeBundle(this.doc, b, { x, y });
+    this.doc = r.doc;
+    return r.id;
+  }
   value(id: string, key: string, value: number, unit: string) { this.doc = setValue(this.doc, id, key, { value, unit }); }
+  /** Резистор заданного номинала. */
+  res(ohms: number, x: number, y: number): string { const id = this.place('R', x, y); this.value(id, 'resistance', ohms, 'Ω'); return id; }
+  /** Источник постоянного напряжения; «−» сразу на землю g. */
+  vsrc(volts: number, x: number, y: number, g: string): string { const id = this.place('V', x, y); this.value(id, 'voltage', volts, 'V'); this.wire(p(id, '-'), p(g, '1')); return id; }
   wire(a: PinRef, b: PinRef) {
     const r = connectPins(this.doc, a, b);
     if (r.error) throw new Error(r.error);

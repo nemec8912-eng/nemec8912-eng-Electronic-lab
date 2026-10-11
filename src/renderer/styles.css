@@ -335,3 +335,14 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .canvas-hint { pointer-events: none; right: 10px; flex-wrap: wrap; }
 .canvas-hint .btn { pointer-events: auto; }
 .canvas-hint .hint-text { flex: 1 1 200px; min-width: 0; }
+
+/* ---------- Этап 4: расчёт ---------- */
+.analysis-seg { margin-bottom: 6px; }
+.trace-grid { stroke: #22352a; stroke-width: 0.6; }
+.trace-cursor { stroke: #e8e8e8; stroke-width: 0.6; stroke-dasharray: 2 2; }
+.plot-readout { font-family: "Consolas", "Courier New", monospace; color: var(--text); margin: 2px 0; }
+.plot-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 4px; }
+.plot-legend i { display: inline-block; width: 12px; height: 3px; margin-right: 4px; vertical-align: middle; }
+.sweep { margin: 6px 0; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+.sweep summary { cursor: pointer; font-size: 13px; }
+.pin-currents { text-align: left !important; font-size: 12px; }

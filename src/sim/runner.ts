@@ -12,8 +12,10 @@ import { parseRaw, RawParseError, type RawPlot } from './raw';
 
 export const NGSPICE_TIMEOUT_MS = 30_000;
 
+export type PlotKind = 'op' | 'tran' | 'dc' | 'ac';
+
 export interface RunOutput {
-  plots: { op?: RawPlot; tran?: RawPlot };
+  plots: Partial<Record<PlotKind, RawPlot>>;
   log: string;
   version: string | null;
   warnings: string[];
@@ -37,7 +39,7 @@ export function classifyNgspiceOutput(log: string): { code: string; message: str
   return null;
 }
 
-export async function runNgspice(ngspicePath: string, netlist: string, opts: { timeoutMs?: number; expect: Array<'op' | 'tran'> }): Promise<RunOutput> {
+export async function runNgspice(ngspicePath: string, netlist: string, opts: { timeoutMs?: number; expect: PlotKind[] }): Promise<RunOutput> {
   if (!existsSync(ngspicePath)) throw new AppError('no-simulator', `Симулятор ngspice не найден: ${ngspicePath}`);
   const dir = await fs.mkdtemp(path.join(tmpdir(), 'elab-sim-'));
   try {

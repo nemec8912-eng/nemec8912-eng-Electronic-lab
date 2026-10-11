@@ -1,0 +1,769 @@
+{
+ "schemaVersion": 5,
+ "id": "425fc58e-edfc-471e-87ef-e49338445b7b",
+ "name": "Плата v5",
+ "description": "",
+ "createdAt": "2026-10-11T20:18:02.815Z",
+ "updatedAt": "2026-10-11T20:18:02.822Z",
+ "revision": 12,
+ "schematic": {
+  "instances": [
+   {
+    "id": "89e639c7-4299-49d7-9463-963a484f2a3a",
+    "partId": "910a7ef7-3a5c-4608-8de5-a4922dc2b4e6",
+    "refDes": "GND1",
+    "position": {
+     "x": 0,
+     "y": 300
+    },
+    "rotation": 0,
+    "mirrored": false,
+    "values": {}
+   },
+   {
+    "id": "4401480e-3cf9-493d-88bf-8adf36906ed1",
+    "partId": "e4bf2440-5dc9-4396-bde3-865f60b2f4ab",
+    "refDes": "V1",
+    "position": {
+     "x": 0,
+     "y": 100
+    },
+    "rotation": 0,
+    "mirrored": false,
+    "values": {
+     "voltage": {
+      "value": 5,
+      "unit": "V"
+     }
+    }
+   },
+   {
+    "id": "8b24458c-b6d7-4f94-98e7-fecdef56d82a",
+    "partId": "cd3676d8-5426-495f-add2-00ea0f557975",
+    "refDes": "R1",
+    "position": {
+     "x": 150,
+     "y": 0
+    },
+    "rotation": 0,
+    "mirrored": false,
+    "values": {
+     "resistance": {
+      "value": 1000,
+      "unit": "Ω"
+     }
+    }
+   },
+   {
+    "id": "f51ec566-7da5-445e-ad2e-036909875900",
+    "partId": "742745da-28a1-45f9-b1a0-6854ecd98fd2",
+    "refDes": "C1",
+    "position": {
+     "x": 300,
+     "y": 150
+    },
+    "rotation": 0,
+    "mirrored": false,
+    "values": {
+     "capacitance": {
+      "value": 1e-7,
+      "unit": "F"
+     }
+    }
+   }
+  ],
+  "nets": [
+   {
+    "id": "f8d00f44-6bed-4570-b6ce-b9322519b90b",
+    "name": "GND",
+    "connections": [
+     {
+      "instanceId": "89e639c7-4299-49d7-9463-963a484f2a3a",
+      "pin": "1"
+     },
+     {
+      "instanceId": "4401480e-3cf9-493d-88bf-8adf36906ed1",
+      "pin": "-"
+     },
+     {
+      "instanceId": "f51ec566-7da5-445e-ad2e-036909875900",
+      "pin": "2"
+     }
+    ]
+   },
+   {
+    "id": "f798de4d-0923-4ac5-ad80-7253861e06c4",
+    "name": null,
+    "connections": [
+     {
+      "instanceId": "4401480e-3cf9-493d-88bf-8adf36906ed1",
+      "pin": "+"
+     },
+     {
+      "instanceId": "8b24458c-b6d7-4f94-98e7-fecdef56d82a",
+      "pin": "1"
+     }
+    ]
+   },
+   {
+    "id": "08d45dfd-b51b-44bc-badb-df49c9da88cb",
+    "name": null,
+    "connections": [
+     {
+      "instanceId": "8b24458c-b6d7-4f94-98e7-fecdef56d82a",
+      "pin": "2"
+     },
+     {
+      "instanceId": "f51ec566-7da5-445e-ad2e-036909875900",
+      "pin": "1"
+     }
+    ]
+   }
+  ],
+  "wires": [
+   {
+    "id": "5395423f-70aa-4603-9ea7-f5924fedfdb8",
+    "a": {
+     "kind": "pin",
+     "instanceId": "4401480e-3cf9-493d-88bf-8adf36906ed1",
+     "pin": "-"
+    },
+    "b": {
+     "kind": "pin",
+     "instanceId": "89e639c7-4299-49d7-9463-963a484f2a3a",
+     "pin": "1"
+    },
+    "points": [
+     {
+      "x": 0,
+      "y": 130
+     },
+     {
+      "x": 0,
+      "y": 290
+     }
+    ],
+    "manual": false
+   },
+   {
+    "id": "ddeb3faf-7665-4600-8ab6-62007fd6f86b",
+    "a": {
+     "kind": "pin",
+     "instanceId": "4401480e-3cf9-493d-88bf-8adf36906ed1",
+     "pin": "+"
+    },
+    "b": {
+     "kind": "pin",
+     "instanceId": "8b24458c-b6d7-4f94-98e7-fecdef56d82a",
+     "pin": "1"
+    },
+    "points": [
+     {
+      "x": 0,
+      "y": 70
+     },
+     {
+      "x": 120,
+      "y": 70
+     },
+     {
+      "x": 120,
+      "y": 0
+     }
+    ],
+    "manual": false
+   },
+   {
+    "id": "838df6d6-0889-4b52-ae79-55c5df974124",
+    "a": {
+     "kind": "pin",
+     "instanceId": "8b24458c-b6d7-4f94-98e7-fecdef56d82a",
+     "pin": "2"
+    },
+    "b": {
+     "kind": "pin",
+     "instanceId": "f51ec566-7da5-445e-ad2e-036909875900",
+     "pin": "1"
+    },
+    "points": [
+     {
+      "x": 180,
+      "y": 0
+     },
+     {
+      "x": 270,
+      "y": 0
+     },
+     {
+      "x": 270,
+      "y": 150
+     }
+    ],
+    "manual": false
+   },
+   {
+    "id": "5603c80d-13f4-4d7a-b4b5-03f488630cd9",
+    "a": {
+     "kind": "pin",
+     "instanceId": "f51ec566-7da5-445e-ad2e-036909875900",
+     "pin": "2"
+    },
+    "b": {
+     "kind": "pin",
+     "instanceId": "89e639c7-4299-49d7-9463-963a484f2a3a",
+     "pin": "1"
+    },
+    "points": [
+     {
+      "x": 330,
+      "y": 150
+     },
+     {
+      "x": 330,
+      "y": 290
+     },
+     {
+      "x": 0,
+      "y": 290
+     }
+    ],
+    "manual": false
+   }
+  ],
+  "junctions": [],
+  "labels": [],
+  "groups": [],
+  "annotations": [],
+  "sheet": {
+   "size": "A4",
+   "orientation": "landscape",
+   "frame": true,
+   "author": ""
+  }
+ },
+ "library": {
+  "symbols": [
+   {
+    "name": "Земля",
+    "standard": "IEC 60617 / ГОСТ 2.721",
+    "graphic": "ground",
+    "box": null,
+    "pins": [
+     {
+      "number": "1",
+      "name": "GND",
+      "electricalType": "ground",
+      "x": 0,
+      "y": -10,
+      "description": ""
+     }
+    ],
+    "id": "2c4a5f2d-bd8f-4df5-9bb5-a1dd77b03901"
+   },
+   {
+    "name": "Источник ЭДС",
+    "standard": "IEC 60617 / ГОСТ 2.728",
+    "graphic": "iec-dc-source",
+    "box": null,
+    "pins": [
+     {
+      "number": "+",
+      "name": "+",
+      "electricalType": "power-out",
+      "x": 0,
+      "y": -30,
+      "description": ""
+     },
+     {
+      "number": "-",
+      "name": "−",
+      "electricalType": "power-out",
+      "x": 0,
+      "y": 30,
+      "description": ""
+     }
+    ],
+    "id": "544a623f-9fd5-430f-aed8-5c461aff1a61"
+   },
+   {
+    "name": "Резистор",
+    "standard": "IEC 60617 / ГОСТ 2.728",
+    "graphic": "iec-resistor",
+    "box": null,
+    "pins": [
+     {
+      "number": "1",
+      "name": "1",
+      "electricalType": "passive",
+      "x": -30,
+      "y": 0,
+      "description": ""
+     },
+     {
+      "number": "2",
+      "name": "2",
+      "electricalType": "passive",
+      "x": 30,
+      "y": 0,
+      "description": ""
+     }
+    ],
+    "id": "3f86178f-421c-4bb2-bceb-0d00d5878c34"
+   },
+   {
+    "name": "Конденсатор",
+    "standard": "IEC 60617 / ГОСТ 2.728",
+    "graphic": "iec-capacitor",
+    "box": null,
+    "pins": [
+     {
+      "number": "1",
+      "name": "1",
+      "electricalType": "passive",
+      "x": -30,
+      "y": 0,
+      "description": ""
+     },
+     {
+      "number": "2",
+      "name": "2",
+      "electricalType": "passive",
+      "x": 30,
+      "y": 0,
+      "description": ""
+     }
+    ],
+    "id": "28f78831-3a1e-4a26-8ded-97f072cc069d"
+   }
+  ],
+  "packages": [
+   {
+    "name": "Клеммник 2 конт., шаг 5,08 мм",
+    "family": "THT",
+    "pin1Marker": null,
+    "mount": "THT",
+    "pitchMm": 5.08,
+    "numbering": null,
+    "generator": null,
+    "body": {
+     "x": -2.5,
+     "y": -4,
+     "w": 10.08,
+     "h": 8
+    },
+    "pads": [
+     {
+      "number": "1",
+      "x": 0,
+      "y": 0,
+      "shape": "round",
+      "w": 1.8,
+      "h": 1.8,
+      "drill": 0.9
+     },
+     {
+      "number": "2",
+      "x": 5.08,
+      "y": 0,
+      "shape": "round",
+      "w": 1.8,
+      "h": 1.8,
+      "drill": 0.9
+     }
+    ],
+    "id": "72f7aeee-4057-4f14-aafa-94a0b57c6478"
+   },
+   {
+    "name": "Выводной, шаг 10,16 мм (0,4\")",
+    "family": "THT",
+    "pin1Marker": null,
+    "mount": "THT",
+    "pitchMm": 10.16,
+    "numbering": null,
+    "generator": null,
+    "body": {
+     "x": 2.2,
+     "y": -1.25,
+     "w": 5.76,
+     "h": 2.5
+    },
+    "pads": [
+     {
+      "number": "1",
+      "x": 0,
+      "y": 0,
+      "shape": "round",
+      "w": 1.8,
+      "h": 1.8,
+      "drill": 0.9
+     },
+     {
+      "number": "2",
+      "x": 10.16,
+      "y": 0,
+      "shape": "round",
+      "w": 1.8,
+      "h": 1.8,
+      "drill": 0.9
+     }
+    ],
+    "id": "990d8d27-4eed-4aa2-8bf4-a50a1bfd0f10"
+   },
+   {
+    "name": "Радиальный, шаг 5,08 мм",
+    "family": "THT",
+    "pin1Marker": null,
+    "mount": "THT",
+    "pitchMm": 5.08,
+    "numbering": null,
+    "generator": null,
+    "body": {
+     "x": -1,
+     "y": -3,
+     "w": 7.08,
+     "h": 6
+    },
+    "pads": [
+     {
+      "number": "1",
+      "x": 0,
+      "y": 0,
+      "shape": "round",
+      "w": 1.8,
+      "h": 1.8,
+      "drill": 0.9
+     },
+     {
+      "number": "2",
+      "x": 5.08,
+      "y": 0,
+      "shape": "round",
+      "w": 1.8,
+      "h": 1.8,
+      "drill": 0.9
+     }
+    ],
+    "id": "1c90c379-c690-4b65-bbb1-6aa42db97c54"
+   }
+  ],
+  "models": [
+   {
+    "name": "Опорный узел 0",
+    "kind": "ground",
+    "text": "",
+    "source": "ngspice: узел 0",
+    "verified": true,
+    "id": "ee25bbee-f7f0-46a0-9332-7b0cd32788ca"
+   },
+   {
+    "name": "Идеальный источник напряжения",
+    "kind": "spice-primitive",
+    "text": "V {n:+} {n:-} DC {v:voltage}",
+    "source": "ngspice: элемент V",
+    "verified": true,
+    "id": "ff63d0d9-cd1e-4a58-bfb5-5869ac2e0c7a"
+   },
+   {
+    "name": "Идеальный резистор",
+    "kind": "spice-primitive",
+    "text": "R {n:1} {n:2} {v:resistance}",
+    "source": "ngspice: элемент R",
+    "verified": true,
+    "id": "cdc020d4-1ee0-4697-bc34-3d478426ff8a"
+   },
+   {
+    "name": "Идеальный конденсатор",
+    "kind": "spice-primitive",
+    "text": "C {n:1} {n:2} {v:capacitance}",
+    "source": "ngspice: элемент C",
+    "verified": true,
+    "id": "157d849a-caf8-4b41-ac37-8f0bc826253e"
+   }
+  ],
+  "parts": [
+   {
+    "name": "Земля (общий провод)",
+    "category": "reference",
+    "refPrefix": "GND",
+    "description": "Опорный узел схемы (0 В)",
+    "marking": null,
+    "tolerancePct": null,
+    "temperature": null,
+    "polarized": false,
+    "datasheetUrl": null,
+    "values": {},
+    "manufacturer": null,
+    "partNumber": null,
+    "ratings": {},
+    "origin": {
+     "catalogPartId": "3e9d2c41-4f50-4162-9d8e-9f0a1b2c3d44",
+     "source": "встроенная идеальная деталь",
+     "license": null,
+     "verified": true,
+     "checkedAt": null,
+     "notes": "Идеальная модель: без допусков, паразитных параметров и нагрева."
+    },
+    "id": "910a7ef7-3a5c-4608-8de5-a4922dc2b4e6",
+    "symbolId": "2c4a5f2d-bd8f-4df5-9bb5-a1dd77b03901",
+    "modelId": "ee25bbee-f7f0-46a0-9332-7b0cd32788ca",
+    "packages": []
+   },
+   {
+    "name": "Источник постоянного напряжения",
+    "category": "source",
+    "refPrefix": "V",
+    "description": "Идеальный источник ЭДС",
+    "marking": null,
+    "tolerancePct": null,
+    "temperature": null,
+    "polarized": false,
+    "datasheetUrl": null,
+    "values": {
+     "voltage": {
+      "value": 5,
+      "unit": "V"
+     }
+    },
+    "manufacturer": null,
+    "partNumber": null,
+    "ratings": {},
+    "origin": {
+     "catalogPartId": "2d8c1b30-3e4f-4051-8c7d-8e9f0a1b2c33",
+     "source": "встроенная идеальная деталь",
+     "license": null,
+     "verified": true,
+     "checkedAt": null,
+     "notes": "Идеальная модель: без допусков, паразитных параметров и нагрева."
+    },
+    "id": "e4bf2440-5dc9-4396-bde3-865f60b2f4ab",
+    "symbolId": "544a623f-9fd5-430f-aed8-5c461aff1a61",
+    "modelId": "ff63d0d9-cd1e-4a58-bfb5-5869ac2e0c7a",
+    "packages": [
+     {
+      "packageId": "72f7aeee-4057-4f14-aafa-94a0b57c6478",
+      "pinMap": [
+       {
+        "symbolPin": "+",
+        "pad": "1"
+       },
+       {
+        "symbolPin": "-",
+        "pad": "2"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "Резистор",
+    "category": "resistor",
+    "refPrefix": "R",
+    "description": "Идеальный резистор",
+    "marking": null,
+    "tolerancePct": null,
+    "temperature": null,
+    "polarized": false,
+    "datasheetUrl": null,
+    "values": {
+     "resistance": {
+      "value": 10000,
+      "unit": "Ω"
+     }
+    },
+    "manufacturer": null,
+    "partNumber": null,
+    "ratings": {
+     "power": {
+      "value": 0.25,
+      "unit": "W"
+     }
+    },
+    "origin": {
+     "catalogPartId": "0b6a9f1e-1c2d-4e3f-8a5b-6c7d8e9f0a11",
+     "source": "встроенная идеальная деталь",
+     "license": null,
+     "verified": true,
+     "checkedAt": null,
+     "notes": "Идеальная модель: без допусков, паразитных параметров и нагрева."
+    },
+    "id": "cd3676d8-5426-495f-add2-00ea0f557975",
+    "symbolId": "3f86178f-421c-4bb2-bceb-0d00d5878c34",
+    "modelId": "cdc020d4-1ee0-4697-bc34-3d478426ff8a",
+    "packages": [
+     {
+      "packageId": "990d8d27-4eed-4aa2-8bf4-a50a1bfd0f10",
+      "pinMap": [
+       {
+        "symbolPin": "1",
+        "pad": "1"
+       },
+       {
+        "symbolPin": "2",
+        "pad": "2"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "Конденсатор неполярный",
+    "category": "capacitor",
+    "refPrefix": "C",
+    "description": "Идеальный конденсатор",
+    "marking": null,
+    "tolerancePct": null,
+    "temperature": null,
+    "polarized": false,
+    "datasheetUrl": null,
+    "values": {
+     "capacitance": {
+      "value": 1e-7,
+      "unit": "F"
+     }
+    },
+    "manufacturer": null,
+    "partNumber": null,
+    "ratings": {
+     "voltage": {
+      "value": 50,
+      "unit": "V"
+     }
+    },
+    "origin": {
+     "catalogPartId": "1c7b0a2f-2d3e-4f40-9b6c-7d8e9f0a1b22",
+     "source": "встроенная идеальная деталь",
+     "license": null,
+     "verified": true,
+     "checkedAt": null,
+     "notes": "Идеальная модель: без допусков, паразитных параметров и нагрева."
+    },
+    "id": "742745da-28a1-45f9-b1a0-6854ecd98fd2",
+    "symbolId": "28f78831-3a1e-4a26-8ded-97f072cc069d",
+    "modelId": "157d849a-caf8-4b41-ac37-8f0bc826253e",
+    "packages": [
+     {
+      "packageId": "1c90c379-c690-4b65-bbb1-6aa42db97c54",
+      "pinMap": [
+       {
+        "symbolPin": "1",
+        "pad": "1"
+       },
+       {
+        "symbolPin": "2",
+        "pad": "2"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "pcb": {
+  "board": {
+   "id": "19543760-c20c-4b02-89e0-149ecc6cfa97",
+   "widthMm": 50,
+   "heightMm": 30,
+   "layers": 1
+  },
+  "placements": [
+   {
+    "id": "88f39dde-a72b-4838-8297-7bd77e3bb1ed",
+    "instanceId": "4401480e-3cf9-493d-88bf-8adf36906ed1",
+    "packageId": "72f7aeee-4057-4f14-aafa-94a0b57c6478",
+    "position": {
+     "x": 6.35,
+     "y": 7.62
+    },
+    "rotation": 0,
+    "side": "top"
+   },
+   {
+    "id": "19ff199c-dafc-45ce-9c90-02f55b0e3f53",
+    "instanceId": "8b24458c-b6d7-4f94-98e7-fecdef56d82a",
+    "packageId": "990d8d27-4eed-4aa2-8bf4-a50a1bfd0f10",
+    "position": {
+     "x": 22.86,
+     "y": 7.62
+    },
+    "rotation": 0,
+    "side": "top"
+   },
+   {
+    "id": "1caf172a-b5c0-4de6-9436-36d8a38b18b1",
+    "instanceId": "f51ec566-7da5-445e-ad2e-036909875900",
+    "packageId": "1c90c379-c690-4b65-bbb1-6aa42db97c54",
+    "position": {
+     "x": 6.35,
+     "y": 20.32
+    },
+    "rotation": 0,
+    "side": "top"
+   }
+  ],
+  "tracks": [
+   {
+    "id": "57f4b602-3134-4604-8180-b9fe91c6065d",
+    "netId": "08d45dfd-b51b-44bc-badb-df49c9da88cb",
+    "layer": "bottom",
+    "widthMm": 0.8,
+    "from": {
+     "placementId": "19ff199c-dafc-45ce-9c90-02f55b0e3f53",
+     "pad": "2"
+    },
+    "to": {
+     "placementId": "1caf172a-b5c0-4de6-9436-36d8a38b18b1",
+     "pad": "1"
+    },
+    "points": [
+     {
+      "x": 33.019999999999996,
+      "y": 7.62
+     },
+     {
+      "x": 6.35,
+      "y": 20.32
+     }
+    ]
+   }
+  ],
+  "vias": []
+ },
+ "instruments": {
+  "settings": {}
+ },
+ "simulation": {
+  "tran": {
+   "stopS": 0.01,
+   "stepS": 0.00001,
+   "startFromZero": true
+  },
+  "analysis": "tran",
+  "dc": {
+   "sourceId": null,
+   "start": 0,
+   "stop": 10,
+   "step": 0.1
+  },
+  "ac": {
+   "fStartHz": 10,
+   "fStopHz": 1000000,
+   "pointsPerDecade": 20
+  },
+  "sweep": {
+   "instanceId": null,
+   "param": "",
+   "values": []
+  }
+ },
+ "tests": [],
+ "attachments": [],
+ "changelog": [
+  {
+   "id": "8978b905-0151-4b67-b323-9bd89e175ab6",
+   "at": "2026-10-11T20:18:02.815Z",
+   "revision": 0,
+   "action": "create",
+   "summary": "Проект «Плата v5» создан"
+  }
+ ]
+}

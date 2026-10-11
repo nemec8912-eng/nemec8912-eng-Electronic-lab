@@ -1,13 +1,14 @@
 /**
- * Модель документа проекта, schemaVersion 5 (изменения по версиям — docs/ARCHITECTURE.md, раздел 2:
- * v2 — геометрия и расчёт, v3 — сведения каталога, v4 — граф связности, v5 — анализы и прогон).
+ * Модель документа проекта, schemaVersion 6 (изменения по версиям — docs/ARCHITECTURE.md, раздел 2:
+ * v2 — геометрия и расчёт, v3 — сведения каталога, v4 — граф связности, v5 — анализы и прогон,
+ * v6 — плата: правила проектирования, единицы, концы дорожек на площадках и переходных отверстиях).
  * Единственный источник истины для схемы, библиотеки, платы, испытаний и истории.
  * Описание полей и инвариантов — docs/ARCHITECTURE.md, раздел 2.
  */
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 5 as const;
+export const CURRENT_SCHEMA_VERSION = 6 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -209,12 +210,41 @@ export const PartDefSchema = z.object({
 
 export const PadRefSchema = z.object({ placementId: Id, pad: z.string().min(1).max(16) }).strict();
 
+/** Правила проектирования платы, мм. */
+export const DesignRulesSchema = z.object({
+  /** Ширина новой дорожки. */
+  trackMm: Finite.positive(),
+  /** Минимальная ширина дорожки. */
+  minTrackMm: Finite.positive(),
+  /** Минимальный зазор между медью разных цепей. */
+  clearanceMm: Finite.nonnegative(),
+  /** Минимальный отступ меди от края платы. */
+  edgeMm: Finite.nonnegative(),
+  /** Переходное отверстие: сверло и диаметр площадки. */
+  viaDrillMm: Finite.positive(),
+  viaDiameterMm: Finite.positive(),
+  /** Минимальное сверло. */
+  minDrillMm: Finite.positive(),
+  /** Минимальный поясок меди вокруг отверстия ((площадка − отверстие) / 2). */
+  minAnnularMm: Finite.nonnegative(),
+}).strict();
+
+/** Конец дорожки: площадка корпуса или переходное отверстие. */
+export const TrackEndSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('pad'), placementId: Id, pad: z.string().min(1).max(16) }).strict(),
+  z.object({ kind: z.literal('via'), viaId: Id }).strict(),
+]);
+
 export const PcbSchema = z.object({
   board: z.object({
     id: Id,
     widthMm: Finite.positive(),
     heightMm: Finite.positive(),
+    /** 1 — односторонняя (медь снизу, выводные детали сверху), 2 — двухсторонняя. */
     layers: z.union([z.literal(1), z.literal(2)]),
+    /** Единицы отображения; в документе всё хранится в мм. */
+    units: z.enum(['mm', 'inch']),
+    rules: DesignRulesSchema,
   }).strict().nullable(),
   placements: z.array(z.object({
     id: Id, instanceId: Id, packageId: Id, position: PointSchema, rotation: Rotation,
@@ -222,14 +252,20 @@ export const PcbSchema = z.object({
   }).strict()),
   tracks: z.array(z.object({
     id: Id, netId: Id, layer: z.enum(['top', 'bottom']), widthMm: Finite.positive(),
-    from: PadRefSchema.nullable(),
-    to: PadRefSchema.nullable(),
+    from: TrackEndSchema.nullable(),
+    to: TrackEndSchema.nullable(),
+    /** Ломаная от начала до конца (первая и последняя точки — на концах). */
     points: z.array(PointSchema).min(2),
   }).strict()),
   vias: z.array(z.object({
     id: Id, netId: Id, position: PointSchema, drillMm: Finite.positive(), diameterMm: Finite.positive(),
   }).strict()),
 }).strict();
+
+/** Правила по умолчанию — для домашнего изготовления (ЛУТ, фоторезист): широкие дорожки и зазоры. */
+export const DEFAULT_RULES: DesignRules = {
+  trackMm: 0.8, minTrackMm: 0.4, clearanceMm: 0.4, edgeMm: 0.5, viaDrillMm: 0.8, viaDiameterMm: 1.6, minDrillMm: 0.5, minAnnularMm: 0.25,
+};
 
 // ---------- Испытания, вложения, журнал изменений ----------
 
@@ -329,6 +365,8 @@ export type Quantity = z.infer<typeof QuantitySchema>;
 export type Annotation = z.infer<typeof AnnotationSchema>;
 export type PinRef = z.infer<typeof PinRefSchema>;
 export type PadRef = z.infer<typeof PadRefSchema>;
+export type TrackEnd = z.infer<typeof TrackEndSchema>;
+export type DesignRules = z.infer<typeof DesignRulesSchema>;
 export type ComponentInstance = z.infer<typeof ComponentInstanceSchema>;
 export type Net = z.infer<typeof NetSchema>;
 export type Wire = z.infer<typeof WireSchema>;
@@ -344,6 +382,8 @@ export type PartDef = z.infer<typeof PartDefSchema>;
 export type Pcb = z.infer<typeof PcbSchema>;
 export type Placement = Pcb['placements'][number];
 export type Track = Pcb['tracks'][number];
+export type Via = Pcb['vias'][number];
+export type Board = NonNullable<Pcb['board']>;
 export type SimulationSettings = z.infer<typeof SimulationSettingsSchema>;
 export type ChangeEntry = z.infer<typeof ChangeEntrySchema>;
 export type ProjectDoc = z.infer<typeof ProjectDocSchema>;

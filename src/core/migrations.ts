@@ -1,7 +1,7 @@
 /**
  * Миграции документа проекта и единая точка загрузки: миграция → проверка структуры → проверка целостности.
  */
-import { CURRENT_SCHEMA_VERSION, DEFAULT_SHEET, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_RULES, DEFAULT_SHEET, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
 import { rebuildNets } from './connectivity';
 import { newId as cryptoId } from './ids';
 import { checkIntegrity, type IntegrityIssue } from './integrity';
@@ -113,6 +113,29 @@ const migrations: Migration[] = [
       const r = raw as Record<string, any>;
       const d = structuredClone(DEFAULT_SIMULATION);
       return { ...r, schemaVersion: 5, simulation: { ...d, ...(r.simulation ?? {}), analysis: d.analysis, dc: d.dc, ac: d.ac, sweep: d.sweep } };
+    },
+  },
+  {
+    /**
+     * v5 → v6 (этап 6): у платы появляются единицы и правила проектирования (прежние зазор 0,4 мм,
+     * дорожка от 0,4 мм и 0,8 мм по умолчанию, отступ от края 0,5 мм сохраняются); концы дорожек
+     * становятся «площадка или переходное отверстие». Разводка и размещение не меняются.
+     */
+    from: 5,
+    to: 6,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      const pcb = r.pcb ?? {};
+      const end = (e: any) => (e ? { kind: 'pad', placementId: e.placementId, pad: e.pad } : null);
+      return {
+        ...r,
+        schemaVersion: 6,
+        pcb: {
+          ...pcb,
+          board: pcb.board ? { ...pcb.board, units: 'mm', rules: { ...DEFAULT_RULES } } : null,
+          tracks: (pcb.tracks ?? []).map((t: Record<string, any>) => ({ ...t, from: end(t.from), to: end(t.to) })),
+        },
+      };
     },
   },
 ];

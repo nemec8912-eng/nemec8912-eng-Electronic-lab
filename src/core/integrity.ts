@@ -179,9 +179,11 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
     }
   }
   const placements = new Map(doc.pcb.placements.map((p) => [p.id, p]));
+  const vias = new Set(doc.pcb.vias.map((v) => v.id));
   for (const t of doc.pcb.tracks) {
     for (const end of [t.from, t.to]) {
       if (!end) continue;
+      if (end.kind === 'via') { if (!vias.has(end.viaId)) dangling(t.id, 'from/to.viaId', end.viaId); continue; }
       const pl = placements.get(end.placementId);
       if (!pl) { dangling(t.id, 'from/to.placementId', end.placementId); continue; }
       const pkg = packages.get(pl.packageId);

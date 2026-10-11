@@ -2,7 +2,7 @@
 
 Документ описывает границы модулей, модель данных, формат файлов и хранилище. Изменения архитектуры — только через новый ADR в `docs/adr/` и с согласия пользователя.
 
-Решения: [ADR-0001 — оболочка, офлайн, портативность](adr/0001-desktop-shell-and-portability.md), [ADR-0002 — подключение ngspice](adr/0002-ngspice-integration.md), [ADR-0003 — каталог и импорт из KiCad](adr/0003-catalog-and-kicad-import.md).
+Решения: [ADR-0001 — оболочка, офлайн, портативность](adr/0001-desktop-shell-and-portability.md), [ADR-0002 — подключение ngspice](adr/0002-ngspice-integration.md), [ADR-0003 — каталог и импорт из KiCad](adr/0003-catalog-and-kicad-import.md), [ADR-0004 — граф связности схемы, ERC и лист](adr/0004-schematic-graph.md).
 
 ## 1. Модули и границы
 
@@ -46,6 +46,18 @@
 | `src/catalog-import/*` | Разбор файлов KiCad и перевод в комплект детали (`kicad.ts`, `sexpr.ts` — без сети); получение файлов с gitlab.com или с диска (`source.ts`) — **единственное место с сетью** |
 | `src/storage/store.ts` | + личный каталог: чтение с проверкой, атомарная запись с `.bak`, добавление детали из проекта |
 | `src/renderer/CatalogView.tsx`, `PartEditor.tsx`, `KicadImport.tsx` | Экран каталога, редактор деталей и микросхем, импорт из KiCad |
+
+Добавлено на этапе 3 (редактор схем):
+
+| Модуль | Ответственность |
+|---|---|
+| `src/core/connectivity.ts` | Граф связности: вершины — выводы, узлы, метки; рёбра — провода; метки с одним именем и выводы земли объединяют цепь; пересчёт сетей с сохранением их UUID; проверка расхождения сетей с графом |
+| `src/core/schematic.ts` | Операции редактора: провод с изгибами и ветвлением (деление провода узлом), метки цепей и питания, выделение рамкой, перемещение/поворот/отражение группой, копирование и вставка, группы, удаление с уборкой графа, перенумерация |
+| `src/core/erc.ts` | Проверка электрических правил по графу и типам выводов: уровень, место, объяснение |
+| `src/core/netlist.ts` | Список соединений — общий интерфейс к расчёту и плате (детали, цепи, выводы, площадки) |
+| `src/core/graphics.ts` | Обозначения как простые фигуры — один рисунок для полотна, каталога и листа |
+| `src/core/sheet.ts` | Лист в мм с рамкой и основной надписью, масштаб, признак обрезки |
+| `src/renderer/SchematicCanvas.tsx`, `SchematicTools.tsx` | Полотно с инструментами; панель ERC; окно экспорта и печати (PDF и печать — через скрытое окно главного процесса) |
 
 Дальнейшие модули (по этапам): полноценный редактор и ERC (этап 3), анализы AC и параметрические (этап 4), приборы (этап 5), двухслойная плата и Gerber (этап 6), журнал испытаний (этап 7). Все работают с тем же документом и ссылаются на сущности только по UUID и номерам выводов.
 
@@ -102,6 +114,10 @@ ProjectDoc
 `schemaVersion: 3`: у детали — префикс позиционного обозначения, назначение, маркировка, номинал (`values`), допуск, пределы, температура, полярность, ссылка на даташит, источник с лицензией и отметкой «сверено» (`origin.license/verified/checkedAt/notes`); у вывода символа — функция (`description`), у символа — прямоугольник микросхемы (`box`); у корпуса — монтаж, шаг, нумерация, параметры генератора. Модель детали может отсутствовать (`modelId: null`) — такая деталь рисуется и разводится, но не рассчитывается. Миграция v2 → v3 проверена на фикстуре `tests/fixtures/project-v2.json`.
 
 **Деталь каталога в проекте** — копия комплекта с новыми UUID; `origin.catalogPartId` указывает на деталь каталога. Повторное размещение той же детали использует уже встроенную копию. Деталь из чужого проекта добавляется в личный каталог кнопкой «Добавить в мой каталог» (с сохранением каталожного UUID, если он свободен).
+
+### Формат v4 (этап 3)
+
+`schemaVersion: 4`: провод — ребро графа (`a`, `b` — вывод, узел, метка или свободный конец; `points`; `manual`), узлы (`junctions`), метки цепей (`labels`, вид `net`/`power`), группы (`groups`), лист (`sheet`). Сети (`nets`) — производные от графа и обязаны с ним совпадать (проверка `nets-mismatch`). Пересечение проводов без узла соединением не является. Миграция v3 → v4 сохраняет связи, которые в v3 держались не на проводах, явными метками с именем сети (фикстуры `project-v3.json`, `project-v3-rc.json`). Подробно — [ADR-0004](adr/0004-schematic-graph.md).
 
 ## 3. Миграции
 
@@ -162,7 +178,7 @@ data/
 
 Все вызовы асинхронные, ответ `{ ok: true, value } | { ok: false, error: { code, message, details? } }`.
 
-`app.info/setDirty/openExternal`, `projects.list/create/open/save/autosave/discardRecovery/rename/duplicate/saveAs/delete`, `checkpoints.list/create/restore`, `catalog.list/save/remove/fromProject`, `kicad.openOnline/openFile/describe/build`, `sim.run`, `files.exportProject/importProject/resolveImport/backupAll/restoreBackup/saveSvg`. Диалоги выбора файлов показывает главный процесс; в тестах они подменяются.
+`app.info/setDirty/openExternal`, `projects.list/create/open/save/autosave/discardRecovery/rename/duplicate/saveAs/delete`, `checkpoints.list/create/restore`, `catalog.list/save/remove/fromProject`, `kicad.openOnline/openFile/describe/build`, `sim.run`, `files.exportProject/importProject/resolveImport/backupAll/restoreBackup/saveSvg/saveDrawing/savePdf/print`. Диалоги выбора файлов показывает главный процесс; в тестах они подменяются.
 
 ## 9. Безопасность и офлайн
 

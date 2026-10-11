@@ -510,7 +510,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
               flagged={ercOpen && ercPick ? new Set(ercPick.refs) : undefined}
               markers={ercOpen ? ercIssues.filter((i) => i.at && i.severity !== 'info').map((i) => ({ key: i.key, at: i.at!, severity: i.severity })) : undefined}
               focus={focus}
-              hint="Вывод → вывод — провод · W — провод с изгибами · L — метка · R — поворот · X — отражение · Delete — удалить · рамка — выделение · двойной щелчок — заметка"
+              hint="Вывод → вывод — провод · W провод · L метка · R поворот · X отражение · Del удалить · F всё"
               toolbarExtra={(
                 <>
                   <button className={`btn small ${ercOpen ? 'on' : ''}`} aria-pressed={ercOpen} onClick={() => setErcOpen((o) => !o)}>Проверка (ERC)</button>

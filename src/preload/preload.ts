@@ -55,6 +55,9 @@ const api: ElabApi = {
     backupAll: () => call(IPC.backupAll),
     restoreBackup: () => call(IPC.restoreBackup),
     saveSvg: (name, svg) => call(IPC.saveSvg, name, svg),
+    saveDrawing: (name, kind, data) => call(IPC.saveDrawing, name, kind, data),
+    savePdf: (name, svg, w, h) => call(IPC.savePdf, name, svg, w, h),
+    print: (svg, w, h) => call(IPC.print, svg, w, h),
   },
 };
 

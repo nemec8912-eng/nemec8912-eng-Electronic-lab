@@ -6,7 +6,8 @@ import { loadDocument } from '../../src/core/migrations';
 import { remapIds } from '../../src/core/remap';
 import { connectPins, deleteInstance, deleteWire, hitPin, moveInstance, netOfPin, pinPosition, renameRefDes, rotateInstance } from '../../src/core/schematic';
 import { buildNetlist, spiceNumber } from '../../src/sim/netlist';
-import { Builder, p, rcCircuit } from '../sim-helpers';
+import { Builder, p, pinOf, rcCircuit, touches } from '../sim-helpers';
+import { wireNetId } from '../../src/core/connectivity';
 
 const TRAN = { stopS: 0.005, stepS: 1e-5, startFromZero: true };
 
@@ -32,7 +33,7 @@ describe('Редактор схемы: операции', () => {
     b.wire(p(r2, '1'), p(r3, '1'));
     assert.equal(b.doc.schematic.nets.length, 1);
     assert.equal(b.doc.schematic.nets[0]!.connections.length, 4);
-    assert.ok(b.doc.schematic.wires.every((w) => w.netId === b.doc.schematic.nets[0]!.id));
+    assert.ok(b.doc.schematic.wires.every((w) => wireNetId(b.doc, w) === b.doc.schematic.nets[0]!.id));
     assert.deepEqual(checkIntegrity(b.doc), []);
   });
 
@@ -56,7 +57,7 @@ describe('Редактор схемы: операции', () => {
     assert.notEqual(netOfPin(d, p(r1, '2'))!.id, netOfPin(d, p(r3, '1'))!.id);
     assert.deepEqual(checkIntegrity(d), []);
     // последний провод сети — сеть исчезает
-    const d2 = deleteWire(d, d.schematic.wires.find((w) => w.from!.instanceId === r1)!.id);
+    const d2 = deleteWire(d, d.schematic.wires.find((w) => touches(w, r1))!.id);
     assert.equal(netOfPin(d2, p(r1, '2')), undefined);
   });
 
@@ -66,7 +67,7 @@ describe('Редактор схемы: операции', () => {
     const moved = moveInstance(doc, r, { x: 140, y: 80 });
     const after = pinPosition(moved, p(r, '1'))!;
     assert.deepEqual([after.x - before.x, after.y - before.y], [40, 30]);
-    const w = moved.schematic.wires.find((x) => x.to?.instanceId === r || x.from?.instanceId === r)!;
+    const w = moved.schematic.wires.find((x) => touches(x, r))!;
     const ends = [w.points[0], w.points.at(-1)];
     assert.ok(ends.some((e) => e!.x === after.x && e!.y === after.y), 'конец провода в новой точке вывода');
     const rot = rotateInstance(moved, r);
@@ -79,7 +80,7 @@ describe('Редактор схемы: операции', () => {
     const { doc, r, v } = rcCircuit();
     const d = deleteInstance(doc, r);
     assert.ok(!d.schematic.instances.some((i) => i.id === r));
-    assert.ok(!d.schematic.wires.some((w) => w.from?.instanceId === r || w.to?.instanceId === r));
+    assert.ok(!d.schematic.wires.some((w) => touches(w, r)));
     assert.equal(netOfPin(d, p(v, '+')), undefined, 'V1.+ был соединён только с R1');
     assert.deepEqual(checkIntegrity(d), []);
   });
@@ -220,7 +221,7 @@ describe('Трассировка проводов', () => {
     const ws = b.doc.schematic.wires;
     const segs = (pts: { x: number; y: number }[]) => pts.slice(1).map((q, i) => [pts[i]!, q] as const);
     for (let i = 0; i < ws.length; i++) for (let j = i + 1; j < ws.length; j++) {
-      if (ws[i]!.netId === ws[j]!.netId) continue;
+      if (wireNetId(b.doc, ws[i]!) === wireNetId(b.doc, ws[j]!)) continue;
       for (const [a1, a2] of segs(ws[i]!.points)) for (const [b1, b2] of segs(ws[j]!.points)) {
         const vert = a1.x === a2.x && b1.x === b2.x && a1.x === b1.x;
         const hor = a1.y === a2.y && b1.y === b2.y && a1.y === b1.y;
@@ -230,8 +231,8 @@ describe('Трассировка проводов', () => {
     }
     // концы проводов — точно на выводах
     for (const w of ws) {
-      assert.deepEqual(w.points[0], pinPosition(b.doc, w.from!));
-      assert.deepEqual(w.points.at(-1), pinPosition(b.doc, w.to!));
+      assert.deepEqual(w.points[0], pinPosition(b.doc, pinOf(w.a)!));
+      assert.deepEqual(w.points.at(-1), pinPosition(b.doc, pinOf(w.b)!));
     }
   });
 });

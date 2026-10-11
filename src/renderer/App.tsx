@@ -1,11 +1,13 @@
 /** Главный компонент: начальный экран со списком проектов или рабочее место открытого проекта. */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addAnnotation, removeAnnotation, renameProject, setDescription, updateAnnotation } from '../core/factory';
 import { newId } from '../core/ids';
 import { setProbe, setTranSettings } from '../core/instruments';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import { addTrack, copperSvg, deleteTrack, movePlacement, rotatePlacement, setBoard, syncFromSchematic } from '../core/pcb';
-import { connectPins, deleteInstance, deleteWire, moveInstance, placeBundle, renameRefDes, rotateInstance, setValue } from '../core/schematic';
+import { deleteItems, kindOf, placeBundle, renameRefDes, renumber, rotateItems, setValue } from '../core/schematic';
+import { runErc, type ErcIssue } from '../core/erc';
+import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
 import { BoardPanel } from './BoardPanel';
 import { TestPanel } from './TestPanel';
@@ -16,7 +18,8 @@ import { CatalogView } from './CatalogView';
 import { CatalogPanel, PropertiesPanel } from './Panels';
 import { useCatalog, type CatalogState } from './useCatalog';
 import { ProjectList } from './ProjectList';
-import { SchematicCanvas, type Selection } from './SchematicCanvas';
+import { SchematicCanvas } from './SchematicCanvas';
+import { ErcPanel, ExportDialog } from './SchematicTools';
 import { useEditor, type Editor } from './useEditor';
 
 type Toast = { id: number; text: string; kind: 'ok' | 'error' };
@@ -311,7 +314,11 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   const editor = useEditor(opened.doc, opened.savedRevision);
   const { doc } = editor;
   const [tab, setTab] = useState<Tab>('schematic');
-  const [selection, setSelection] = useState<Selection>(null);
+  const [selection, setSelection] = useState<string[]>([]);
+  const [ercOpen, setErcOpen] = useState(false);
+  const [ercPick, setErcPick] = useState<ErcIssue | null>(null);
+  const [focus, setFocus] = useState<{ at: { x: number; y: number }; seq: number } | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [placing, setPlacing] = useState<string | null>(null);
   const [boardSel, setBoardSel] = useState<{ kind: 'track' | 'placement'; id: string } | null>(null);
   const [sim, setSim] = useState<{ result: SimResult; key: string } | null>(null);
@@ -320,13 +327,11 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   const editorRef = useRef(editor);
   editorRef.current = editor;
 
-  const selected = (() => {
-    if (!selection) return null;
-    if (selection.kind === 'note') { const note = doc.schematic.annotations.find((a) => a.id === selection.id); return note ? { kind: 'note' as const, note } : null; }
-    if (selection.kind === 'inst') { const inst = doc.schematic.instances.find((a) => a.id === selection.id); return inst ? { kind: 'inst' as const, inst } : null; }
-    const wire = doc.schematic.wires.find((a) => a.id === selection.id);
-    return wire ? { kind: 'wire' as const, wire } : null;
-  })();
+  const ercIssues = useMemo(() => (ercOpen ? runErc(doc) : []), [ercOpen, doc]);
+  // Выделение, ставшее недействительным (удалено, отменено), очищается.
+  useEffect(() => {
+    if (selection.some((id) => !kindOf(doc, id))) setSelection((sel) => sel.filter((id) => kindOf(doc, id)));
+  }, [doc, selection]);
 
   const runSim = async (tran: boolean) => {
     setRunning(true);
@@ -396,29 +401,21 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       if (typing) return;
       if (mod && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); editorRef.current.undo(); }
       else if (mod && (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey))) { e.preventDefault(); editorRef.current.redo(); }
-      else if (e.key === 'Escape') setPlacing(null);
       else if (e.key === 'Delete' || e.key === 'Backspace') {
         const ed = editorRef.current;
-        if (tab === 'schematic' && selection) {
-          e.preventDefault();
-          if (selection.kind === 'note') ed.apply('Удаление заметки', (d) => removeAnnotation(d, selection.id));
-          if (selection.kind === 'inst') ed.apply('Удаление детали', (d) => deleteInstance(d, selection.id));
-          if (selection.kind === 'wire') ed.apply('Удаление провода', (d) => deleteWire(d, selection.id));
-          setSelection(null);
-        } else if (tab === 'board' && boardSel?.kind === 'track') {
+        if (tab === 'board' && boardSel?.kind === 'track') {
           e.preventDefault();
           ed.apply('Удаление дорожки', (d) => deleteTrack(d, boardSel.id));
           setBoardSel(null);
         }
       } else if (e.code === 'KeyR' && !mod) {
         const ed = editorRef.current;
-        if (tab === 'schematic' && selection?.kind === 'inst') ed.apply('Поворот детали', (d) => rotateInstance(d, selection.id));
         if (tab === 'board' && boardSel?.kind === 'placement') ed.apply('Поворот детали на плате', (d) => rotatePlacement(d, boardSel.id));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, selection, boardSel, tab]);
+  }, [save, boardSel, tab]);
 
   const projectActions = {
     back: () => { void close(); },
@@ -464,7 +461,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
     try {
       const restored = await unwrap(api().checkpoints.restore(editorRef.current.doc, cp.id));
       editorRef.current.apply(`Возврат к «${cp.label}»`, () => restored);
-      setSelection(null);
+      setSelection([]);
       await loadCheckpoints();
     } catch (e) {
       await dialogs.alert('Не удалось вернуть версию', errorText(e));
@@ -487,52 +484,79 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       {tab === 'schematic' && (
         <main className="workspace">
           <CatalogPanel catalog={catalog} placing={placing} onPick={setPlacing} onOpenCatalog={() => setTab('catalog')} />
-          <section className="center">
+          <section className="center column">
             <SchematicCanvas
               doc={doc}
               mode="edit"
               selection={selection}
               onSelect={setSelection}
+              onEdit={editor.apply}
+              onError={(t) => toast(t, 'error')}
               placing={placing}
+              onCancelPlace={() => setPlacing(null)}
               onPlace={(partId, p) => {
                 const bundle = catalog.byId(partId);
                 if (!bundle) { toast('Деталь не найдена в каталоге', 'error'); setPlacing(null); return; }
                 const id = newId();
                 editor.apply(`Размещение: ${bundle.part.name}`, (d) => placeBundle(d, bundle, p, id).doc);
-                setSelection({ kind: 'inst', id });
+                setSelection([id]);
                 setPlacing(null);
               }}
-              onConnect={(a, b) => {
-                const r = connectPins(editorRef.current.doc, a, b);
-                if (r.error) toast(r.error, 'error');
-                else editor.apply('Провод', (d) => connectPins(d, a, b).doc);
-              }}
-              onMoveInstance={(id, p, dragId) => editor.apply('Перемещение детали', (d) => moveInstance(d, id, p), dragId)}
               onAddNote={(p) => {
                 const id = newId();
                 editor.apply('Добавление заметки', (d) => addAnnotation(d, p, 'Заметка', id).doc);
-                setSelection({ kind: 'note', id });
+                setSelection([id]);
               }}
-              onMoveNote={(id, p, dragId) => editor.apply('Перемещение заметки', (d) => updateAnnotation(d, id, { position: p }), dragId)}
-              hint={placing ? 'Щёлкните, чтобы поставить деталь (Esc — отмена)' : 'Вывод → вывод — провод · R — поворот · Delete — удалить · двойной щелчок — заметка'}
+              flagged={ercOpen && ercPick ? new Set(ercPick.refs) : undefined}
+              markers={ercOpen ? ercIssues.filter((i) => i.at && i.severity !== 'info').map((i) => ({ key: i.key, at: i.at!, severity: i.severity })) : undefined}
+              focus={focus}
+              hint="Вывод → вывод — провод · W — провод с изгибами · L — метка · R — поворот · X — отражение · Delete — удалить · рамка — выделение · двойной щелчок — заметка"
+              toolbarExtra={(
+                <>
+                  <button className={`btn small ${ercOpen ? 'on' : ''}`} aria-pressed={ercOpen} onClick={() => setErcOpen((o) => !o)}>Проверка (ERC)</button>
+                  <button className="btn small" onClick={() => {
+                    const r = renumber(editorRef.current.doc);
+                    if (!r.changes.length) { toast('Нумерация уже по порядку'); return; }
+                    editor.apply('Перенумерация', () => r.doc);
+                    toast(`Перенумеровано: ${r.changes.map((c) => `${c.from}→${c.to}`).join(', ')}`);
+                  }} title="Позиционные обозначения по порядку: слева направо, сверху вниз">Перенумеровать</button>
+                  <button className="btn small" onClick={() => setExportOpen(true)}>Экспорт / печать…</button>
+                  <button className="btn small" onClick={async () => {
+                    try {
+                      const r = await unwrap(api().files.saveDrawing(`${editorRef.current.doc.name} — список соединений`, 'txt', connectionListText(editorRef.current.doc)));
+                      if (r) toast(`Список соединений сохранён: ${r.path}`);
+                    } catch (e) { await dialogs.alert('Не сохранено', errorText(e)); }
+                  }}>Список соединений</button>
+                </>
+              )}
             />
+            {ercOpen && (
+              <ErcPanel issues={ercIssues} onClose={() => { setErcOpen(false); setErcPick(null); }} onPick={(i) => {
+                setErcPick(i);
+                const ids = i.refs.filter((id) => kindOf(editorRef.current.doc, id));
+                if (ids.length) setSelection(ids);
+                if (i.at) setFocus({ at: i.at, seq: Date.now() });
+              }} />
+            )}
           </section>
           <PropertiesPanel
             doc={doc}
-            selected={selected}
+            selection={selection}
+            onSelect={setSelection}
+            onEdit={editor.apply}
             checkpoints={checkpoints}
             onRename={(name) => editor.apply('Переименование проекта', (d) => renameProject(d, name))}
             onDescription={(t) => editor.apply('Изменение описания', (d) => setDescription(d, t), 'description')}
             onNoteText={(id, t) => editor.apply('Изменение текста заметки', (d) => updateAnnotation(d, id, { text: t }), `note-text:${id}`)}
-            onNoteDelete={(id) => { editor.apply('Удаление заметки', (d) => removeAnnotation(d, id)); setSelection(null); }}
+            onNoteDelete={(id) => { editor.apply('Удаление заметки', (d) => removeAnnotation(d, id)); setSelection([]); }}
             onInstValue={(id, key, value, unit) => editor.apply('Изменение номинала', (d) => setValue(d, id, key, { value, unit }))}
             onInstRefDes={(id, ref) => {
               const r = renameRefDes(editorRef.current.doc, id, ref);
               if (!r.error) editor.apply('Позиционное обозначение', (d) => renameRefDes(d, id, ref).doc);
               return r.error;
             }}
-            onInstRotate={(id) => editor.apply('Поворот детали', (d) => rotateInstance(d, id))}
-            onInstDelete={(id) => { editor.apply('Удаление детали', (d) => deleteInstance(d, id)); setSelection(null); }}
+            onInstRotate={(id) => editor.apply('Поворот детали', (d) => rotateItems(d, new Set([id])))}
+            onInstDelete={(id) => { editor.apply('Удаление детали', (d) => deleteItems(d, new Set([id]))); setSelection([]); }}
             onAddToCatalog={async (partId) => {
               try {
                 const saved = await unwrap(api().catalog.fromProject(editorRef.current.doc, partId));
@@ -542,10 +566,14 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
                 await dialogs.alert('Деталь не добавлена в каталог', errorText(e));
               }
             }}
-            onWireDelete={(id) => { editor.apply('Удаление провода', (d) => deleteWire(d, id)); setSelection(null); }}
+            onWireDelete={(id) => { editor.apply('Удаление провода', (d) => deleteItems(d, new Set([id]))); setSelection([]); }}
             onCreateCheckpoint={createCheckpoint}
             onRestoreCheckpoint={restoreCheckpoint}
           />
+          {exportOpen && (
+            <ExportDialog doc={doc} toast={toast} onClose={() => setExportOpen(false)}
+              onSheet={(patch) => editor.apply('Настройки листа', (d) => ({ ...d, schematic: { ...d.schematic, sheet: { ...d.schematic.sheet, ...patch } } }), 'sheet')} />
+          )}
         </main>
       )}
       {tab === 'catalog' && (

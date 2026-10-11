@@ -49,6 +49,26 @@ function findNgspice(): string | null {
   return locateNgspice({ env: process.env.ELAB_NGSPICE, resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath, appRoot: app.getAppPath() });
 }
 
+/**
+ * Лист схемы в скрытом окне (файл во временной папке, без сети и скриптов) — для PDF и печати.
+ * Размер страницы задаётся в мм через @page, поля нулевые: масштаб 1:1 сохраняется.
+ */
+async function renderSheet<T>(svg: string, w: number, h: number, act: (wc: any) => Promise<T>): Promise<T> {
+  if (!svg.includes('<svg') || !(w > 0 && w <= 2000 && h > 0 && h <= 2000)) throw new AppError('bad-sheet', 'Нечего печатать');
+  const dir = await fs.mkdtemp(path.join(app.getPath('temp'), 'elab-sheet-'));
+  const file = path.join(dir, 'sheet.html');
+  const body = svg.replace(/^<\?xml[^>]*>\s*/, '');
+  await fs.writeFile(file, `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${w}mm ${h}mm;margin:0}html,body{margin:0;padding:0;background:#fff}svg{display:block;width:${w}mm;height:${h}mm}</style></head><body>${body}</body></html>`, 'utf8');
+  const win = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+  try {
+    await win.loadFile(file);
+    return await act(win.webContents);
+  } finally {
+    win.destroy();
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 export function registerIpc(ctx: MainContext): void {
   const pendingImports = new Map<string, ElabReadResult>();
   const store = () => ctx.getStore();
@@ -232,6 +252,34 @@ export function registerIpc(ctx: MainContext): void {
     return { path: p };
   }));
 
+  const DRAW_FILTERS: Record<'svg' | 'png' | 'txt' | 'pdf', { name: string; extensions: string[] }> = {
+    svg: { name: 'Рисунок SVG', extensions: ['svg'] },
+    png: { name: 'Изображение PNG', extensions: ['png'] },
+    txt: { name: 'Текст', extensions: ['txt'] },
+    pdf: { name: 'Документ PDF', extensions: ['pdf'] },
+  };
+  ipcMain.handle(IPC.saveDrawing, wrap(async (name: string, kind: 'svg' | 'png' | 'txt', data: string | Uint8Array) => {
+    const filter = DRAW_FILTERS[kind];
+    if (!filter) throw new AppError('bad-kind', 'Неизвестный формат');
+    const buf = typeof data === 'string' ? Buffer.from(kind === 'svg' && !data.startsWith('<?xml') ? `<?xml version="1.0" encoding="UTF-8"?>\n${data}` : data, 'utf8') : Buffer.from(data);
+    if (!buf.length || buf.length > 200 * 1024 * 1024) throw new AppError('bad-data', 'Нечего сохранять');
+    if (kind === 'png' && buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new AppError('bad-data', 'Повреждённое изображение');
+    const p = await askSavePath('Сохранить', `${safeFileName(String(name ?? 'схема'), 'схема')}.${filter.extensions[0]}`, filter);
+    if (!p) return null;
+    await writeChecked(p, buf);
+    return { path: p, bytes: buf.length };
+  }));
+  ipcMain.handle(IPC.savePdf, wrap(async (name: string, svg: string, w: number, h: number) => {
+    const pdf: Uint8Array = await renderSheet(String(svg), Number(w), Number(h), (wc) => wc.printToPDF({ preferCSSPageSize: true, printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } }));
+    const p = await askSavePath('Сохранить PDF', `${safeFileName(String(name ?? 'схема'), 'схема')}.pdf`, DRAW_FILTERS.pdf);
+    if (!p) return null;
+    await writeChecked(p, Buffer.from(pdf));
+    return { path: p, bytes: pdf.length };
+  }));
+  ipcMain.handle(IPC.print, wrap(async (svg: string, w: number, h: number) => renderSheet(String(svg), Number(w), Number(h), (wc) =>
+    new Promise<{ printed: boolean; reason: string | null }>((resolve) => {
+      wc.print({ silent: false, printBackground: true, margins: { marginType: 'none' } }, (ok: boolean, reason: string) => resolve({ printed: ok, reason: ok ? null : reason || null }));
+    }))));
   ipcMain.handle(IPC.restoreBackup, wrap(async () => {
     const p = await askOpenPath('Восстановить резервную копию', BACKUP_FILTER);
     if (!p) return null;

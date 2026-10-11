@@ -7,7 +7,7 @@ import { canRedo, canUndo, initHistory, pushState, redo, undo } from '../../src/
 import { isUuid, newId } from '../../src/core/ids';
 import { checkIntegrity } from '../../src/core/integrity';
 import { loadDocument } from '../../src/core/migrations';
-import { CURRENT_SCHEMA_VERSION } from '../../src/core/model';
+import { CURRENT_SCHEMA_VERSION, type Net } from '../../src/core/model';
 import { remapDocs, remapIds } from '../../src/core/remap';
 import { linkSignature, makeRichDoc } from '../helpers';
 
@@ -104,7 +104,7 @@ describe('Загрузка и миграции', () => {
     const r = loadDocument(v1);
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     assert.equal(r.migratedFrom, 1);
-    assert.deepEqual(r.doc.schematic.wires.map((w) => [w.from, w.to]), [[null, null]]);
+    assert.deepEqual(r.doc.schematic.wires.filter((w) => w.a.kind === 'free').map((w) => [w.a.kind, w.b.kind]), [['free', 'free']], 'провод v1 без концов — графика со свободными концами');
     assert.deepEqual(r.doc.pcb.tracks.map((t) => [t.from, t.to]), [[null, null]]);
     const axial = r.doc.library.packages.find((p) => p.name.startsWith('Выводной'))!;
     assert.deepEqual(axial.pads.map((p) => [p.number, p.x, p.y, p.drill]), [['A', 0, 0, 0.9], ['B', 2.54, 0, 0.9]]);
@@ -194,7 +194,7 @@ describe('Миграция v2 → v3 (сведения каталога)', () =>
     const r = loadDocument(raw);
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     assert.equal(r.migratedFrom, 2);
-    assert.equal(r.doc.schemaVersion, 3);
+    assert.equal(r.doc.schemaVersion, CURRENT_SCHEMA_VERSION);
     const part = r.doc.library.parts[0]!;
     assert.equal(part.refPrefix, 'R');
     assert.equal(part.origin.verified, false, 'старые сведения не считаются проверенными');
@@ -204,5 +204,35 @@ describe('Миграция v2 → v3 (сведения каталога)', () =>
     assert.equal(r.doc.library.packages.find((p) => p.name.startsWith('Выводной'))!.mount, 'THT');
     assert.equal(r.doc.library.symbols[0]!.pins[0]!.description, '');
     assert.equal(r.doc.schematic.nets.length, raw.schematic.nets.length);
+  });
+});
+
+describe('Миграция v3 → v4 (граф связности)', () => {
+  test('RC-цепь v3: провода стали рёбрами графа, сети и их UUID те же, меток не добавлено', () => {
+    const raw = fixture('project-v3-rc.json');
+    const r = loadDocument(raw);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    assert.equal(r.migratedFrom, 3);
+    assert.equal(r.doc.schematic.labels.length, 0);
+    assert.equal(r.doc.schematic.wires.length, raw.schematic.wires.length);
+    assert.ok(r.doc.schematic.wires.every((w) => w.a.kind === 'pin' && w.b.kind === 'pin' && !w.manual));
+    const sorted = (nets: Array<{ id: string; name: string | null; connections: Array<{ instanceId: string; pin: string }> }>) =>
+      nets.map((n) => ({ id: n.id, name: n.name, pins: n.connections.map((c) => `${c.instanceId}#${c.pin}`).sort() })).sort((a, b) => a.id.localeCompare(b.id));
+    assert.deepEqual(sorted(r.doc.schematic.nets), sorted(raw.schematic.nets));
+    assert.deepEqual(r.doc.schematic.sheet, { size: 'A4', orientation: 'landscape', frame: true, author: '' });
+  });
+
+  test('сети v3 без проводов и с именами сохраняются метками; UUID и состав сетей не меняются', () => {
+    const raw = fixture('project-v3.json');
+    const r = loadDocument(raw);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    assert.deepEqual(r.doc.schematic.labels.map((l) => l.name).sort(), ['GND', 'IN', 'OUT']);
+    const docNets: Net[] = r.doc.schematic.nets;
+    for (const n of raw.schematic.nets as Net[]) {
+      const m: Net = docNets.find((x) => x.id === n.id)!;
+      assert.equal(m.name, n.name);
+      assert.deepEqual(m.connections.map((c) => c.pin).sort(), n.connections.map((c) => c.pin).sort());
+    }
+    assert.deepEqual(r.doc.pcb.tracks.map((t) => t.netId), raw.pcb.tracks.map((t: { netId: string }) => t.netId), 'дорожки по-прежнему ссылаются на те же сети');
   });
 });

@@ -1,12 +1,12 @@
 /** Создание документа и базовые операции изменения (без побочных эффектов). */
 import { newId } from './ids';
-import { CURRENT_SCHEMA_VERSION, DEFAULT_SIMULATION, type Annotation, type ProjectDoc, type Point } from './model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_SHEET, DEFAULT_SIMULATION, type Annotation, type ProjectDoc, type Point } from './model';
 
 export const CHANGELOG_LIMIT = 2000;
 
 export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | 'pcb' | 'instruments' | 'simulation' | 'tests' | 'attachments' | 'changelog'> {
   return {
-    schematic: { instances: [], nets: [], wires: [], annotations: [] },
+    schematic: { instances: [], nets: [], wires: [], junctions: [], labels: [], groups: [], annotations: [], sheet: { ...DEFAULT_SHEET } },
     library: { symbols: [], parts: [], packages: [], models: [] },
     pcb: { board: null, placements: [], tracks: [], vias: [] },
     instruments: { settings: {} },

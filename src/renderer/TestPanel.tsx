@@ -94,7 +94,7 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
         <SchematicCanvas
           doc={doc}
           mode="probe"
-          selection={null}
+          selection={[]}
           onSelect={() => undefined}
           onPinClick={(pin) => onProbe(active, pin)}
           probes={probes}

@@ -1,7 +1,9 @@
 /**
  * Миграции документа проекта и единая точка загрузки: миграция → проверка структуры → проверка целостности.
  */
-import { CURRENT_SCHEMA_VERSION, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_SHEET, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
+import { rebuildNets } from './connectivity';
+import { newId as cryptoId } from './ids';
 import { checkIntegrity, type IntegrityIssue } from './integrity';
 import { emptyCollections } from './factory';
 
@@ -92,7 +94,90 @@ const migrations: Migration[] = [
       return { ...r, schemaVersion: 3, library: upgradeLibraryV2toV3(r.library ?? {}) };
     },
   },
+  {
+    /**
+     * v3 → v4 (этап 3): провода становятся рёбрами графа (концы — вывод, узел, метка или свободный);
+     * появляются узлы, метки цепей, группы и лист. Сети становятся производными от графа. Если сеть v3
+     * держалась не на проводах (части без провода между собой) или имела имя, связь сохраняется явно —
+     * метками с именем сети у каждой такой части. Ничего не теряется и не соединяется заново.
+     */
+    from: 3,
+    to: 4,
+    migrate: (raw) => migrateV3toV4(raw as Record<string, any>),
+  },
 ];
+
+function migrateV3toV4(r: Record<string, any>): Record<string, unknown> {
+  const sch = r.schematic ?? {};
+  const lib = r.library ?? {};
+  const wires = (sch.wires ?? []).map((w: Record<string, any>) => {
+    const end = (e: any) => (e ? { kind: 'pin', instanceId: e.instanceId, pin: e.pin } : { kind: 'free' });
+    return { id: w.id, a: end(w.from), b: end(w.to), points: w.points, manual: !w.from || !w.to };
+  });
+  const labels: Array<Record<string, unknown>> = [];
+  const pk = (p: { instanceId: string; pin: string }) => `${p.instanceId}#${p.pin}`;
+  // Связность только по проводам v3.
+  const parent = new Map<string, string>();
+  const find = (k: string): string => { let x = k; while (parent.get(x) && parent.get(x) !== x) x = parent.get(x)!; return x; };
+  const wired = new Set<string>();
+  for (const w of sch.wires ?? []) {
+    if (!w.from || !w.to) continue;
+    const a = pk(w.from), b = pk(w.to);
+    wired.add(a); wired.add(b);
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    parent.set(find(a), find(b));
+  }
+  const groundParts = new Set((lib.parts ?? []).filter((p: any) => (lib.models ?? []).some((m: any) => m.id === p.modelId && m.kind === 'ground')).map((p: any) => p.id));
+  const instById = new Map((sch.instances ?? []).map((i: any) => [i.id, i]));
+  const pinPos = (ref: { instanceId: string; pin: string }) => {
+    const inst: any = instById.get(ref.instanceId);
+    const part = (lib.parts ?? []).find((p: any) => p.id === inst?.partId);
+    const sym = (lib.symbols ?? []).find((x: any) => x.id === part?.symbolId);
+    const pin = sym?.pins?.find((x: any) => x.number === ref.pin);
+    if (!inst || !pin) return null;
+    const x0 = inst.mirrored ? -pin.x : pin.x, y0 = pin.y;
+    const rot = inst.rotation;
+    const [x, y] = rot === 90 ? [-y0, x0] : rot === 180 ? [-x0, -y0] : rot === 270 ? [y0, -x0] : [x0, y0];
+    return { x: inst.position.x + x, y: inst.position.y + y };
+  };
+  let auto = 0;
+  const used = new Set((sch.nets ?? []).map((n: any) => n.name).filter(Boolean));
+  for (const net of sch.nets ?? []) {
+    const parts = new Map<string, Array<{ instanceId: string; pin: string }>>();
+    for (const c of net.connections ?? []) {
+      const k = wired.has(pk(c)) ? `w:${find(pk(c))}` : `s:${pk(c)}`;
+      parts.set(k, [...(parts.get(k) ?? []), c]);
+    }
+    const list = [...parts.values()];
+    const hasGround = (g: Array<{ instanceId: string }>) => g.some((c) => groundParts.has((instById.get(c.instanceId) as any)?.partId));
+    let name: string | null = net.name ?? null;
+    const need = (g: Array<{ instanceId: string; pin: string }>) =>
+      list.length > 1 || (name !== null && !(name === 'GND' && hasGround(g))) || (g.length === 1 && !wired.has(pk(g[0]!)));
+    if (!list.some(need)) continue;
+    if (name === null || /\s/.test(name)) {
+      do { auto += 1; name = `N${auto}`; } while (used.has(name));
+      used.add(name);
+    }
+    for (const g of list) {
+      const at = pinPos(g[0]!);
+      if (!at) continue;
+      const id = cryptoId();
+      const pos = { x: at.x, y: at.y - 20 };
+      labels.push({ id, name, kind: 'net', position: pos, rotation: 0 });
+      wires.push({ id: cryptoId(), a: { kind: 'pin', instanceId: g[0]!.instanceId, pin: g[0]!.pin }, b: { kind: 'label', labelId: id }, points: [at, pos], manual: true });
+    }
+  }
+  const doc = {
+    ...r,
+    schemaVersion: 4,
+    schematic: {
+      instances: sch.instances ?? [], nets: sch.nets ?? [], wires, junctions: [], labels, groups: [],
+      annotations: sch.annotations ?? [], sheet: { ...DEFAULT_SHEET },
+    },
+  };
+  return rebuildNets(doc as unknown as ProjectDoc) as unknown as Record<string, unknown>;
+}
 
 /** Перевод библиотечных сущностей v2 → v3 (общий для проекта и личного каталога). */
 export function upgradeLibraryV2toV3(lib: Record<string, any>): Record<string, any> {

@@ -2,7 +2,7 @@
 import * as path from 'node:path';
 import { createProject } from '../src/core/factory';
 import { BUILTIN_PARTS } from '../src/core/library';
-import type { PinRef, ProjectDoc } from '../src/core/model';
+import type { PinRef, ProjectDoc, Wire, WireEnd } from '../src/core/model';
 import { connectPins, placeBuiltin, setValue } from '../src/core/schematic';
 import { locateNgspice } from '../src/sim/runner';
 
@@ -37,6 +37,11 @@ export class Builder {
 }
 
 export const p = (instanceId: string, pin: string): PinRef => ({ instanceId, pin });
+
+/** Провод подключён к выводу детали. */
+export const touches = (w: Wire, instanceId: string) => (w.a.kind === 'pin' && w.a.instanceId === instanceId) || (w.b.kind === 'pin' && w.b.instanceId === instanceId);
+/** Концы провода как выводы (или null). */
+export const pinOf = (e: WireEnd): PinRef | null => (e.kind === 'pin' ? { instanceId: e.instanceId, pin: e.pin } : null);
 
 /** Источник V → R → C → земля; R=10 кОм, C=100 нФ (τ = 1 мс), V = 5 В. */
 export function rcCircuit() {

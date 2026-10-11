@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { setValue } from '../../src/core/schematic';
+import { deleteInstance, setValue } from '../../src/core/schematic';
 import { AppError } from '../../src/core/result';
 import { netOfPin } from '../../src/core/schematic';
 import { valueAt } from '../../src/sim/results';
@@ -82,8 +82,7 @@ describe('Эталонные задачи ngspice', { skip }, () => {
 
   test('схема с ошибкой не отправляется в ngspice, причина объяснена', async () => {
     const { doc, g } = rcCircuit();
-    const d = { ...doc, schematic: { ...doc.schematic, instances: doc.schematic.instances.filter((i) => i.id !== g) } };
-    const res = await simulate({ ...d, schematic: { ...d.schematic, nets: d.schematic.nets.map((n) => ({ ...n, connections: n.connections.filter((x) => x.instanceId !== g) })), wires: d.schematic.wires.filter((w) => w.from?.instanceId !== g && w.to?.instanceId !== g) } }, NG);
+    const res = await simulate(deleteInstance(doc, g), NG);
     assert.equal(res.status, 'blocked');
     assert.ok(res.issues.some((i) => i.code === 'no-ground'));
     assert.equal(res.op, null);

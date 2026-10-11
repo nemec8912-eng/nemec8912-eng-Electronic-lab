@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 3 as const;
+export const CURRENT_SCHEMA_VERSION = 4 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -45,16 +45,55 @@ export const NetSchema = z.object({
 }).strict();
 
 /**
- * Провод — графика соединения двух выводов. Электрическая связность — в сетях (nets);
- * концы from/to говорят, какое соединение провод изображает. null — провод из формата v1 без концов.
+ * Конец провода — вершина графа связности: вывод детали, узел (точка ветвления), метка цепи или
+ * свободный конец (провод ни к чему не подключён — об этом предупреждает ERC).
+ */
+export const WireEndSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('pin'), instanceId: Id, pin: z.string().min(1).max(16) }).strict(),
+  z.object({ kind: z.literal('junction'), junctionId: Id }).strict(),
+  z.object({ kind: z.literal('label'), labelId: Id }).strict(),
+  z.object({ kind: z.literal('free') }).strict(),
+]);
+
+/**
+ * Провод — ребро графа связности между двумя концами; points — ломаная от a до b (первая и последняя
+ * точки совпадают с концами). manual — ломаную задал пользователь: при перемещении концов меняются
+ * только крайние отрезки. Пересечение проводов без узла соединением не является.
  */
 export const WireSchema = z.object({
   id: Id,
-  netId: Id,
-  from: PinRefSchema.nullable(),
-  to: PinRefSchema.nullable(),
-  points: z.array(PointSchema).min(2),
+  a: WireEndSchema,
+  b: WireEndSchema,
+  points: z.array(PointSchema).min(2).max(500),
+  manual: z.boolean(),
 }).strict();
+
+/** Узел — точка соединения нескольких проводов (на схеме — жирная точка при трёх и более проводах). */
+export const JunctionSchema = z.object({ id: Id, position: PointSchema }).strict();
+
+/**
+ * Метка цепи: все метки с одинаковым именем — одна цепь. kind = power — метка питания («+5V», «VCC»):
+ * рисуется символом питания, но напряжения сама не создаёт (для расчёта нужен источник).
+ */
+export const NetLabelSchema = z.object({
+  id: Id,
+  name: z.string().min(1).max(64),
+  kind: z.enum(['net', 'power']),
+  position: PointSchema,
+  rotation: Rotation,
+}).strict();
+
+/** Группа объектов схемы: выделяется и перемещается целиком. Объект — не более чем в одной группе. */
+export const GroupSchema = z.object({ id: Id, memberIds: z.array(Id).min(1).max(10_000) }).strict();
+
+/** Лист схемы: формат для печати и экспорта, рамка с основной надписью. */
+export const SheetSchema = z.object({
+  size: z.enum(['A4', 'A3', 'A2']),
+  orientation: z.enum(['landscape', 'portrait']),
+  frame: z.boolean(),
+  author: z.string().max(100),
+}).strict();
+export const DEFAULT_SHEET = { size: 'A4', orientation: 'landscape', frame: true, author: '' } as const;
 
 export const AnnotationSchema = z.object({
   id: Id,
@@ -248,7 +287,11 @@ export const ProjectDocSchema = z.object({
     instances: z.array(ComponentInstanceSchema),
     nets: z.array(NetSchema),
     wires: z.array(WireSchema),
+    junctions: z.array(JunctionSchema),
+    labels: z.array(NetLabelSchema),
+    groups: z.array(GroupSchema),
     annotations: z.array(AnnotationSchema),
+    sheet: SheetSchema,
   }).strict(),
   library: z.object({
     symbols: z.array(SymbolDefSchema),
@@ -272,6 +315,11 @@ export type PadRef = z.infer<typeof PadRefSchema>;
 export type ComponentInstance = z.infer<typeof ComponentInstanceSchema>;
 export type Net = z.infer<typeof NetSchema>;
 export type Wire = z.infer<typeof WireSchema>;
+export type WireEnd = z.infer<typeof WireEndSchema>;
+export type Junction = z.infer<typeof JunctionSchema>;
+export type NetLabel = z.infer<typeof NetLabelSchema>;
+export type Group = z.infer<typeof GroupSchema>;
+export type Sheet = z.infer<typeof SheetSchema>;
 export type SymbolDef = z.infer<typeof SymbolDefSchema>;
 export type PackageDef = z.infer<typeof PackageDefSchema>;
 export type SimModel = z.infer<typeof SimModelSchema>;

@@ -2,6 +2,7 @@
  * Проверка ссылочной целостности документа (инварианты из ARCHITECTURE.md, раздел 2).
  * Ничего не исправляет — только сообщает. Исправлять молча запрещено правилами проекта.
  */
+import { netsMismatch } from './connectivity';
 import type { ProjectDoc } from './model';
 
 export interface IntegrityIssue {
@@ -11,7 +12,9 @@ export interface IntegrityIssue {
     | 'unknown-pin'
     | 'duplicate-pin-map'
     | 'pin-in-several-nets'
-    | 'duplicate-refdes';
+    | 'duplicate-refdes'
+    | 'nets-mismatch'
+    | 'group';
   message: string;
   ids: string[];
 }
@@ -25,6 +28,9 @@ export function collectEntityIds(doc: ProjectDoc): Array<{ id: string; where: st
   add(doc.schematic.instances, 'schematic.instances');
   add(doc.schematic.nets, 'schematic.nets');
   add(doc.schematic.wires, 'schematic.wires');
+  add(doc.schematic.junctions, 'schematic.junctions');
+  add(doc.schematic.labels, 'schematic.labels');
+  add(doc.schematic.groups, 'schematic.groups');
   add(doc.schematic.annotations, 'schematic.annotations');
   add(doc.library.symbols, 'library.symbols');
   add(doc.library.parts, 'library.parts');
@@ -121,15 +127,37 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
       pinOwner.set(key, net.id);
     }
   }
-  const netById = new Map(doc.schematic.nets.map((n) => [n.id, n]));
+  // Провода: концы ссылаются на существующие выводы, узлы и метки.
+  const junctionIds = new Set(doc.schematic.junctions.map((j) => j.id));
+  const labelIds = new Set(doc.schematic.labels.map((l) => l.id));
+  let wireRefsOk = true;
   for (const w of doc.schematic.wires) {
-    const net = netById.get(w.netId);
-    if (!net) { dangling(w.id, 'netId', w.netId); continue; }
-    for (const end of [w.from, w.to]) {
-      if (!end) continue;
-      if (!net.connections.some((c) => c.instanceId === end.instanceId && c.pin === end.pin)) {
-        issues.push({ code: 'dangling-ref', message: `Провод ${w.id}: вывод ${instances.get(end.instanceId)?.refDes ?? end.instanceId}.${end.pin} не входит в его сеть`, ids: [w.id] });
-      }
+    for (const end of [w.a, w.b]) {
+      if (end.kind === 'pin') {
+        const inst = instances.get(end.instanceId);
+        if (!inst) { dangling(w.id, 'конец провода (деталь)', end.instanceId); wireRefsOk = false; continue; }
+        const part = parts.get(inst.partId);
+        const sym = part ? symbols.get(part.symbolId) : undefined;
+        if (sym && !sym.pins.some((p) => p.number === end.pin)) {
+          issues.push({ code: 'unknown-pin', message: `Провод ${w.id}: у ${inst.refDes} нет вывода «${end.pin}»`, ids: [w.id, inst.id] });
+          wireRefsOk = false;
+        }
+      } else if (end.kind === 'junction' && !junctionIds.has(end.junctionId)) { dangling(w.id, 'конец провода (узел)', end.junctionId); wireRefsOk = false; }
+      else if (end.kind === 'label' && !labelIds.has(end.labelId)) { dangling(w.id, 'конец провода (метка)', end.labelId); wireRefsOk = false; }
+    }
+  }
+  // Сети — производные от графа и обязаны с ним совпадать.
+  if (wireRefsOk && issues.length === 0) {
+    for (const m of netsMismatch(doc)) issues.push({ code: 'nets-mismatch', message: m, ids: [] });
+  }
+  // Группы: члены существуют, объект — не более чем в одной группе.
+  const inGroup = new Map<string, string>();
+  for (const g of doc.schematic.groups) {
+    for (const m of g.memberIds) {
+      if (!seen.has(m)) dangling(g.id, 'memberIds', m);
+      const prev = inGroup.get(m);
+      if (prev && prev !== g.id) issues.push({ code: 'group', message: `Объект ${m} входит в несколько групп`, ids: [prev, g.id] });
+      inGroup.set(m, g.id);
     }
   }
   for (const a of doc.schematic.annotations) {

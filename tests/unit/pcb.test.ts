@@ -4,7 +4,7 @@ import { checkIntegrity } from '../../src/core/integrity';
 import type { ProjectDoc } from '../../src/core/model';
 import { addTrack, allPads, copperSvg, deleteTrack, drc, movePlacement, padsOf, ratsnest, rotatePlacement, setBoard, syncFromSchematic } from '../../src/core/pcb';
 import { deleteInstance, deleteWire } from '../../src/core/schematic';
-import { Builder, p } from '../sim-helpers';
+import { Builder, p, touches } from '../sim-helpers';
 
 /** Делитель: V1 + → R1 → R2 → GND, V1 − → GND. */
 function divider() {
@@ -124,7 +124,7 @@ describe('Плата: DRC и вывод 1:1', () => {
     const pv = placementOf(doc, v).id, p1 = placementOf(doc, r1).id;
     doc = addTrack(doc, { placementId: pv, pad: '1' }, { placementId: p1, pad: '1' }).doc;
     // Удалим провод V1+ — R1.1 в схеме
-    const wire = doc.schematic.wires.find((w) => w.from?.instanceId === v || w.to?.instanceId === v)!;
+    const wire = doc.schematic.wires.find((w) => touches(w, v))!;
     doc = deleteWire(doc, wire.id);
     assert.deepEqual(checkIntegrity(doc), [], 'дорожка исчезнувшей цепи не мешает сохранению');
     const s = syncFromSchematic(doc);

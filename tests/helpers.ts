@@ -19,6 +19,7 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
   let doc = createProject(name);
   const symR = newId(), pkg0805 = newId(), pkgAxial = newId(), modelR = newId(), partR = newId();
   const r1 = newId(), r2 = newId(), netIn = newId(), netMid = newId(), netGnd = newId(), pl1 = newId(), pl2 = newId();
+  const lblIn = newId(), lblOut = newId(), lblGnd = newId(), jMid = newId();
   doc = {
     ...doc,
     library: {
@@ -57,8 +58,22 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
         { id: netMid, name: 'OUT', connections: [{ instanceId: r1, pin: '2' }, { instanceId: r2, pin: '1' }] },
         { id: netGnd, name: 'GND', connections: [{ instanceId: r2, pin: '2' }] },
       ],
-      wires: [{ id: newId(), netId: netMid, from: { instanceId: r1, pin: '2' }, to: { instanceId: r2, pin: '1' }, points: [{ x: 100, y: 130 }, { x: 100, y: 170 }] }],
+      wires: [
+        { id: newId(), a: { kind: 'pin', instanceId: r1, pin: '2' }, b: { kind: 'junction', junctionId: jMid }, points: [{ x: 130, y: 100 }, { x: 130, y: 140 }], manual: true },
+        { id: newId(), a: { kind: 'junction', junctionId: jMid }, b: { kind: 'pin', instanceId: r2, pin: '1' }, points: [{ x: 130, y: 140 }, { x: 130, y: 170 }, { x: 100, y: 170 }], manual: true },
+        { id: newId(), a: { kind: 'pin', instanceId: r1, pin: '1' }, b: { kind: 'label', labelId: lblIn }, points: [{ x: 70, y: 100 }, { x: 50, y: 100 }], manual: true },
+        { id: newId(), a: { kind: 'junction', junctionId: jMid }, b: { kind: 'label', labelId: lblOut }, points: [{ x: 130, y: 140 }, { x: 160, y: 140 }], manual: true },
+        { id: newId(), a: { kind: 'pin', instanceId: r2, pin: '2' }, b: { kind: 'label', labelId: lblGnd }, points: [{ x: 100, y: 230 }, { x: 100, y: 250 }], manual: true },
+      ],
+      junctions: [{ id: jMid, position: { x: 130, y: 140 } }],
+      labels: [
+        { id: lblIn, name: 'IN', kind: 'net', position: { x: 50, y: 100 }, rotation: 0 },
+        { id: lblOut, name: 'OUT', kind: 'net', position: { x: 160, y: 140 }, rotation: 0 },
+        { id: lblGnd, name: 'GND', kind: 'power', position: { x: 100, y: 250 }, rotation: 0 },
+      ],
+      groups: [{ id: newId(), memberIds: [r1, r2] }],
       annotations: [],
+      sheet: { size: 'A4', orientation: 'landscape', frame: true, author: '' },
     },
     pcb: {
       board: { id: newId(), widthMm: 50, heightMm: 30, layers: 1 },

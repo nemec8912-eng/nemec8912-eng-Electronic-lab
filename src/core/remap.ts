@@ -16,7 +16,11 @@ export function remapDocs(docs: ProjectDoc[]): { docs: ProjectDoc[]; map: Map<st
   for (const d of docs) for (const { id } of collectEntityIds(d)) if (!map.has(id)) map.set(id, newId());
 
   const walk = (value: unknown, key: string | null): unknown => {
-    if (Array.isArray(value)) return value.map((v) => walk(v, null));
+    if (Array.isArray(value)) {
+      // Списки ссылок (memberIds) переназначаются поэлементно.
+      if (key !== null && key.endsWith('Ids')) return value.map((v) => (typeof v === 'string' ? map.get(v) ?? v : walk(v, null)));
+      return value.map((v) => walk(v, null));
+    }
     if (value && typeof value === 'object') {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) out[k] = walk(v, k);

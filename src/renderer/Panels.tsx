@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { categoryLabel, searchBundles } from '../core/catalog';
 import { formatQuantity, modelParams, PARAMS, parseQuantity, RATINGS } from '../core/library';
-import type { Annotation, CheckpointInfo, ComponentInstance, ProjectDoc, Wire } from '../core/model';
-import { symbolOf } from '../core/schematic';
+import type { Annotation, CheckpointInfo, ComponentInstance, NetLabel, ProjectDoc, Wire } from '../core/model';
+import { graphOf, netDisplayName, wireNetId } from '../core/connectivity';
+import { deleteItems, groupItems, kindOf, mirrorItems, renameLabel, rotateItems, symbolOf, ungroupItems } from '../core/schematic';
 import { fmtDateTime } from './api';
 import { Badges } from './CatalogView';
 import type { CatalogState } from './useCatalog';
@@ -40,7 +41,10 @@ export function CatalogPanel({ catalog, placing, onPick, onOpenCatalog }: {
 
 interface PropsPanelProps {
   doc: ProjectDoc;
-  selected: { kind: 'note'; note: Annotation } | { kind: 'inst'; inst: ComponentInstance } | { kind: 'wire'; wire: Wire } | null;
+  selection: string[];
+  /** Правка через историю (Undo/Redo). */
+  onEdit(label: string, fn: (d: ProjectDoc) => ProjectDoc, coalesceKey?: string): void;
+  onSelect(ids: string[]): void;
   checkpoints: CheckpointInfo[];
   onRename(name: string): void;
   onDescription(text: string): void;
@@ -64,14 +68,109 @@ const KIND_LABEL: Record<CheckpointInfo['kind'], string> = {
 };
 
 export function PropertiesPanel(p: PropsPanelProps) {
-  const s = p.selected;
+  const sch = p.doc.schematic;
+  const one = p.selection.length === 1 ? p.selection[0]! : null;
+  const note = one ? sch.annotations.find((x) => x.id === one) : undefined;
+  const inst = one ? sch.instances.find((x) => x.id === one) : undefined;
+  const wire = one ? sch.wires.find((x) => x.id === one) : undefined;
+  const label = one ? sch.labels.find((x) => x.id === one) : undefined;
+  const junction = one ? sch.junctions.find((x) => x.id === one) : undefined;
+  const live = p.selection.filter((id) => kindOf(p.doc, id));
   return (
     <aside className="panel right" aria-label="Свойства">
-      {s?.kind === 'note' && <NoteProps note={s.note} onText={p.onNoteText} onDelete={p.onNoteDelete} />}
-      {s?.kind === 'inst' && <InstProps key={s.inst.id} {...p} inst={s.inst} />}
-      {s?.kind === 'wire' && <WireProps doc={p.doc} wire={s.wire} onDelete={p.onWireDelete} />}
-      {!s && <ProjectProps {...p} />}
+      {note && <NoteProps note={note} onText={p.onNoteText} onDelete={p.onNoteDelete} />}
+      {inst && <InstProps key={inst.id} {...p} inst={inst} />}
+      {wire && <WireProps doc={p.doc} wire={wire} onDelete={p.onWireDelete} />}
+      {label && <LabelProps key={label.id} doc={p.doc} label={label} onEdit={p.onEdit} onSelect={p.onSelect} />}
+      {junction && <JunctionProps doc={p.doc} id={junction.id} />}
+      {live.length > 1 && <MultiProps doc={p.doc} ids={live} onEdit={p.onEdit} onSelect={p.onSelect} />}
+      {live.length === 0 && <ProjectProps {...p} />}
     </aside>
+  );
+}
+
+function NetInfo({ doc, netId }: { doc: ProjectDoc; netId: string | null }) {
+  const net = netId ? doc.schematic.nets.find((n) => n.id === netId) : undefined;
+  if (!net) return <dl className="meta"><dt>Цепь</dt><dd>не подключена ни к одному выводу</dd></dl>;
+  const pins = net.connections.map((c) => {
+    const inst = doc.schematic.instances.find((i) => i.id === c.instanceId);
+    return inst ? `${inst.refDes}.${c.pin}` : c.pin;
+  }).sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }));
+  return (
+    <dl className="meta">
+      <dt>Цепь</dt><dd data-testid="net-name">{netDisplayName(doc, net)}</dd>
+      <dt>Выводы</dt><dd data-testid="net-pins">{pins.join(', ')}</dd>
+    </dl>
+  );
+}
+
+function LabelProps({ doc, label, onEdit, onSelect }: { doc: ProjectDoc; label: NetLabel; onEdit: PropsPanelProps['onEdit']; onSelect(ids: string[]): void }) {
+  const [name, setName] = useState(label.name);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => setName(label.name), [label.name]);
+  const commit = () => {
+    const r = renameLabel(doc, label.id, name);
+    if (r.error) { setErr(r.error); return; }
+    setErr(null);
+    if (name.trim() !== label.name) onEdit(`Метка ${name.trim()}`, (d) => renameLabel(d, label.id, name).doc);
+  };
+  const same = doc.schematic.labels.filter((l) => l.name === label.name).length;
+  return (
+    <div>
+      <h3>{label.kind === 'power' ? 'Метка питания' : 'Метка цепи'}</h3>
+      <label className="field">
+        <span>Имя цепи</span>
+        <input aria-label="Имя метки" value={name} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+        {err && <em className="error-text small">{err}</em>}
+      </label>
+      <label className="check"><input type="checkbox" checked={label.kind === 'power'} onChange={(e) => {
+        const kind = e.target.checked ? 'power' as const : 'net' as const;
+        onEdit('Вид метки', (d) => ({ ...d, schematic: { ...d.schematic, labels: d.schematic.labels.map((l) => (l.id === label.id ? { ...l, kind } : l)) } }));
+      }} /> Метка питания (символ питания)</label>
+      <NetInfo doc={doc} netId={graphOf(doc).netOfVertex.get(`l:${label.id}`) ?? null} />
+      <p className="muted small">Меток «{label.name}» на схеме: {same}. {label.kind === 'power' ? 'Метка питания называет цепь, но напряжения не создаёт — для расчёта нужен источник.' : 'Все метки с этим именем — одна цепь.'}</p>
+      <div className="row">
+        <button className="btn" onClick={() => onEdit('Поворот', (d) => rotateItems(d, new Set([label.id])))}>Повернуть</button>
+        <button className="btn danger" onClick={() => { onEdit('Удаление метки', (d) => deleteItems(d, new Set([label.id]))); onSelect([]); }}>Удалить</button>
+      </div>
+    </div>
+  );
+}
+
+function JunctionProps({ doc, id }: { doc: ProjectDoc; id: string }) {
+  const g = graphOf(doc);
+  return (
+    <div>
+      <h3>Узел</h3>
+      <p className="muted small">Точка соединения проводов: {g.degree.get(`j:${id}`) ?? 0}. Узел с тремя и более проводами отмечен точкой.</p>
+      <NetInfo doc={doc} netId={g.netOfVertex.get(`j:${id}`) ?? null} />
+    </div>
+  );
+}
+
+function MultiProps({ doc, ids, onEdit, onSelect }: { doc: ProjectDoc; ids: string[]; onEdit: PropsPanelProps['onEdit']; onSelect(ids: string[]): void }) {
+  const count = (k: string) => ids.filter((id) => kindOf(doc, id) === k).length;
+  const set = new Set(ids);
+  const grouped = doc.schematic.groups.some((g) => g.memberIds.every((m) => set.has(m)) && g.memberIds.length === ids.filter((i) => g.memberIds.includes(i)).length && g.memberIds.length === ids.length);
+  return (
+    <div>
+      <h3>Выделено: {ids.length}</h3>
+      <dl className="meta">
+        {count('inst') > 0 && <><dt>Деталей</dt><dd>{count('inst')}</dd></>}
+        {count('wire') > 0 && <><dt>Проводов</dt><dd>{count('wire')}</dd></>}
+        {count('label') > 0 && <><dt>Меток</dt><dd>{count('label')}</dd></>}
+        {count('junction') > 0 && <><dt>Узлов</dt><dd>{count('junction')}</dd></>}
+        {count('note') > 0 && <><dt>Заметок</dt><dd>{count('note')}</dd></>}
+      </dl>
+      {grouped && <p className="muted small">Это группа: выделяется и перемещается целиком.</p>}
+      <div className="row">
+        <button className="btn" onClick={() => onEdit('Поворот', (d) => rotateItems(d, set))}>Повернуть</button>
+        <button className="btn" onClick={() => onEdit('Отражение', (d) => mirrorItems(d, set))}>Отразить</button>
+        {!grouped && <button className="btn" onClick={() => onEdit('Группа', (d) => groupItems(d, set))}>Сгруппировать</button>}
+        {grouped && <button className="btn" onClick={() => onEdit('Разгруппировать', (d) => ungroupItems(d, set))}>Разгруппировать</button>}
+        <button className="btn danger" onClick={() => { onEdit('Удаление', (d) => deleteItems(d, set)); onSelect([]); }}>Удалить</button>
+      </div>
+    </div>
   );
 }
 
@@ -197,16 +296,21 @@ function SourceVoltage({ inst, onCommit }: { inst: ComponentInstance; onCommit(v
 }
 
 function WireProps({ doc, wire, onDelete }: { doc: ProjectDoc; wire: Wire; onDelete(id: string): void }) {
-  const net = doc.schematic.nets.find((n) => n.id === wire.netId);
-  const refOf = (id: string | undefined) => doc.schematic.instances.find((i) => i.id === id)?.refDes ?? '?';
+  const endText = (e: Wire['a']) => {
+    if (e.kind === 'pin') return `${doc.schematic.instances.find((i) => i.id === e.instanceId)?.refDes ?? '?'}.${e.pin}`;
+    if (e.kind === 'label') return `метка ${doc.schematic.labels.find((l) => l.id === e.labelId)?.name ?? '?'}`;
+    if (e.kind === 'junction') return 'узел';
+    return 'свободный конец';
+  };
   return (
     <div>
       <h3>Провод</h3>
       <dl className="meta">
-        <dt>Цепь</dt><dd>{net?.name ?? 'без имени'}</dd>
-        <dt>Соединяет</dt><dd>{wire.from && wire.to ? `${refOf(wire.from.instanceId)}.${wire.from.pin} — ${refOf(wire.to.instanceId)}.${wire.to.pin}` : '—'}</dd>
-        <dt>Выводов в цепи</dt><dd>{net?.connections.length ?? 0}</dd>
+        <dt>Соединяет</dt><dd>{endText(wire.a)} — {endText(wire.b)}</dd>
+        <dt>Форма</dt><dd>{wire.manual ? 'задана вручную' : 'прокладывается автоматически'}</dd>
       </dl>
+      <NetInfo doc={doc} netId={wireNetId(doc, wire)} />
+      <p className="muted small">Ответвление: инструмент «Провод» (W), щелчок по этому проводу. Пересечение проводов без точки — не соединение.</p>
       <button className="btn danger" onClick={() => onDelete(wire.id)}>Удалить провод</button>
     </div>
   );

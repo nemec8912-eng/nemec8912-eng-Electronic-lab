@@ -96,6 +96,12 @@ export interface ElabApi {
     restoreBackup(): Promise<Result<{ projects: number; safetyBackup: string | null } | null>>;
     /** Сохранить SVG (печать платы 1:1) через диалог выбора файла. */
     saveSvg(defaultName: string, svg: string): Promise<Result<{ path: string } | null>>;
+    /** Сохранить чертёж или текст: svg/txt — строка, png — байты. */
+    saveDrawing(defaultName: string, kind: 'svg' | 'png' | 'txt', data: string | Uint8Array): Promise<Result<{ path: string; bytes: number } | null>>;
+    /** Лист SVG → PDF заданного размера (мм) через движок печати Chromium. */
+    savePdf(defaultName: string, svg: string, widthMm: number, heightMm: number): Promise<Result<{ path: string; bytes: number } | null>>;
+    /** Печать листа через системный диалог печати. */
+    print(svg: string, widthMm: number, heightMm: number): Promise<Result<{ printed: boolean; reason: string | null }>>;
   };
 }
 
@@ -129,6 +135,9 @@ export const IPC = {
   catRemove: 'catalog:remove',
   catFromProject: 'catalog:from-project',
   saveSvg: 'files:save-svg',
+  saveDrawing: 'files:save-drawing',
+  savePdf: 'files:save-pdf',
+  print: 'files:print',
   kicadOpenOnline: 'kicad:open-online',
   kicadOpenFile: 'kicad:open-file',
   kicadBuild: 'kicad:build',

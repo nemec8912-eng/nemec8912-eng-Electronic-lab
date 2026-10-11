@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { graphOf } from '../core/connectivity';
 import { newId } from '../core/ids';
 import { labelPrims } from '../core/graphics';
-import type { MultimeterSettings } from '../core/instruments';
 import type { PinRef, Point, ProjectDoc, WireEnd } from '../core/model';
 import {
   addLabel, copyItems, deleteItems, drawWire, expandGroups, groupItems, hitVertex, hitWire, instanceBox, itemsInRect,
@@ -37,7 +36,8 @@ interface Props {
   onCancelPlace?(): void;
   onAddNote?(p: Point): void;
   onPinClick?(pin: PinRef): void;
-  probes?: MultimeterSettings;
+  /** Щупы приборов на выводах: класс цвета (red, black, ch1, ch2) и подпись. */
+  probes?: Array<{ pin: PinRef; cls: string; label: string }>;
   /** id сети → подпись (рассчитанное напряжение). */
   nodeLabels?: Record<string, string>;
   /** id объектов с проблемами (подсветка). */
@@ -318,7 +318,6 @@ export function SchematicCanvas(p: Props) {
 
   // ---------- Рисование ----------
   const gridPx = 10 * view.scale;
-  const probeAt = (color: 'red' | 'black') => { const ref = p.probes?.[color]; return ref ? pinPosition(doc, ref) : null; };
   const dots = junctionDots(doc);
   const freeEnds = doc.schematic.wires.flatMap((w) => [w.a.kind === 'free' ? w.points[0]! : null, w.b.kind === 'free' ? w.points[w.points.length - 1]! : null]).filter((x): x is Point => !!x);
   const preview = wire && cursor ? orthogonal([wire.startPt, ...wire.bends, snapPt(cursor)]) : null;
@@ -429,13 +428,15 @@ export function SchematicCanvas(p: Props) {
             if (!label || !pos) return null;
             return <text key={n.id} className="node-label" x={pos.x + 6} y={pos.y + 16} data-net-label={n.name ?? n.id}>{label}</text>;
           })}
-          {(['red', 'black'] as const).map((c) => {
-            const pos = probeAt(c);
+          {(p.probes ?? []).map((m, i) => {
+            const pos = pinPosition(doc, m.pin);
             if (!pos) return null;
+            const dx = i % 2 === 0 ? 18 : -18;
             return (
-              <g key={c} className={`probe ${c}`} transform={`translate(${pos.x} ${pos.y})`} pointerEvents="none">
-                <line x1={0} y1={0} x2={c === 'red' ? 18 : -18} y2={-28} />
+              <g key={`${m.cls}${i}`} className={`probe ${m.cls}`} data-probe={m.label} transform={`translate(${pos.x} ${pos.y})`} pointerEvents="none">
+                <line x1={0} y1={0} x2={dx} y2={-28} />
                 <circle cx={0} cy={0} r={5} />
+                <text x={dx} y={-32} textAnchor="middle">{m.label}</text>
               </g>
             );
           })}

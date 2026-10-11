@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addAnnotation, removeAnnotation, renameProject, setDescription, updateAnnotation } from '../core/factory';
 import { newId } from '../core/ids';
-import { setProbe, setSimSettings, setTranSettings } from '../core/instruments';
+import { setSimSettings, setTranSettings } from '../core/instruments';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import { addTrack, copperSvg, deleteTrack, movePlacement, rotatePlacement, setBoard, syncFromSchematic } from '../core/pcb';
 import { adoptModel, deleteItems, kindOf, placeBundle, renameRefDes, renumber, rotateItems, setValue } from '../core/schematic';
@@ -595,7 +595,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             resultKey={sim?.key ?? null}
             running={running}
             onRun={runSim}
-            onProbe={(color, pin) => editor.apply(pin ? 'Щуп' : 'Снять щуп', (d) => setProbe(d, color, pin))}
+            onEdit={(label, fn) => editor.apply(label, fn)}
             onTranSettings={(patch) => editor.apply('Настройки расчёта', (d) => setTranSettings(d, patch))}
             onSimSettings={(patch) => editor.apply('Настройки расчёта', (d) => setSimSettings(d, patch))}
           />

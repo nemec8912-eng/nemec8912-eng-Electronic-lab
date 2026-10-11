@@ -352,3 +352,44 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .test-charts h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 6px 0 4px; }
 .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 16px; }
 .trace { display: block; width: 100%; }
+
+/* ---------- Этап 5: приборы ---------- */
+.probe text { font: 600 10px/1 system-ui, sans-serif; stroke: none; }
+.probe.red text { fill: #d32f2f; } .probe.black text { fill: #111; }
+.probe.ch1 line, .probe.ch1 circle { stroke: #c9a400; } .probe.ch1 text { fill: #a58600; }
+.probe.ch2 line, .probe.ch2 circle { stroke: #1e88e5; } .probe.ch2 text { fill: #1e88e5; }
+.probe-btn.ch1.on { background: #c9a400; color: #fff; border-color: #c9a400; }
+.probe-btn.ch2.on { background: #1e88e5; color: #fff; border-color: #1e88e5; }
+.tabs-row { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.meter-modes { margin-bottom: 6px; }
+.mm-display.beep { box-shadow: 0 0 0 2px #ffd166 inset; }
+.beep-tag { font-size: 13px; font-weight: 400; }
+.warning-text { color: #a15c00; }
+.psu { border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; }
+.psu-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.psu-head .btn { margin-left: auto; }
+.psu-mode { font: 700 12px/1 monospace; padding: 3px 6px; border-radius: 3px; background: #ddd; color: #333; }
+.psu-mode.CV { background: #2e7d32; color: #fff; } .psu-mode.CC { background: #c62828; color: #fff; } .psu-mode.OFF { background: #555; color: #eee; }
+.psu-readout { display: flex; justify-content: space-between; font: 600 20px/1.2 "Consolas", "Courier New", monospace; background: #13261a; color: #b6f5c6; border-radius: 4px; padding: 6px 10px; margin-top: 4px; }
+.scope-ch, .scope-trig { border: 1px solid var(--line); border-radius: 4px; margin: 6px 0; padding: 4px 8px; }
+.scope-ch legend, .scope-trig legend { font-size: 12px; font-weight: 600; }
+.scope-ch.ch1 legend { color: #a58600; } .scope-ch.ch2 legend { color: #1e88e5; }
+.pin-of { display: block; color: var(--muted); margin: 2px 0; }
+.scope-body { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.scope-left { flex: 0 1 460px; min-width: 280px; }
+.scope-right { flex: 1 1 260px; min-width: 240px; }
+.scope-screen { width: 100%; max-width: 460px; display: block; background: #0d1a12; border-radius: 4px; cursor: crosshair; }
+.scope-screen .scope-bg { fill: #0d1a12; }
+.scope-screen .grid { stroke: #24402e; stroke-width: 1; stroke-dasharray: 2 3; }
+.scope-screen .axis { stroke: #3c6b4c; stroke-width: 1; }
+.scope-screen .trace { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.scope-screen .trace.ch1 { stroke: #ffd84d; } .scope-screen .trace.ch2 { stroke: #5fb4ff; }
+.scope-screen .trig-mark { fill: #ff8a65; }
+.scope-screen .trig-level.ch1 { fill: #ffd84d; } .scope-screen .trig-level.ch2 { fill: #5fb4ff; }
+.scope-screen .cursor-line { stroke: #e0e0e0; stroke-width: 1; stroke-dasharray: 5 3; }
+.scope-info { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0; }
+.ch-tag.ch1 { color: #a58600; font-weight: 600; } .ch-tag.ch2 { color: #1e88e5; font-weight: 600; }
+.test-charts .scope h3 { margin-top: 4px; }
+.scope-screen .zero-mark.ch1 path { fill: #ffd84d; } .scope-screen .zero-mark.ch2 path { fill: #5fb4ff; }
+.scope-screen .zero-mark text { font: 600 11px/1 system-ui, sans-serif; fill: #cfd8d3; }
+.test-charts:has(.scope) { max-height: 60%; }

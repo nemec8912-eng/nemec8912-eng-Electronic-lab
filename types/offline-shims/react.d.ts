@@ -12,6 +12,7 @@ declare module 'react' {
   export function useEffect(effect: () => void | (() => void) | Promise<void>, deps?: readonly unknown[]): void;
   export function useCallback<T extends (...args: any[]) => any>(fn: T, deps: readonly unknown[]): T;
   export function useMemo<T>(fn: () => T, deps: readonly unknown[]): T;
+  export const Fragment: (props: { key?: string | number; children?: ReactNode }) => ReactNode;
   export function useContext<T>(ctx: Context<T>): T;
   export interface Context<T> { Provider: (props: { value: T; children?: ReactNode }) => any }
   export function createContext<T>(value: T): Context<T>;

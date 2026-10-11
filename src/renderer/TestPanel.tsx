@@ -1,14 +1,15 @@
 /**
- * Вкладка «Тест» (этап 4): расчёт ngspice — рабочая точка, переходный процесс, развёртка по постоянному
- * току, частотный анализ, параметрический прогон; мультиметр DC V со щупами, графики по щупам, токи и
- * мощности деталей, проверки схемы и пределов деталей. Показания строятся только по результату расчёта
+ * Вкладка «Тест» (этапы 4–5): расчёт ngspice — рабочая точка, переходный процесс, развёртка по постоянному
+ * току, частотный анализ, параметрический прогон; приборы (мультиметр, осциллограф, ESR-метр, блок
+ * питания — Instruments.tsx), графики по щупам, токи и мощности деталей, проверки схемы и пределов деталей. Показания строятся только по результату расчёта
  * для текущей схемы; если схема изменилась — результат помечается устаревшим и показания не выводятся.
  */
 import { useMemo, useState } from 'react';
-import { multimeter, type ProbeColor } from '../core/instruments';
+import { multimeter, setProbeTarget, type ProbeTarget } from '../core/instruments';
 import { formatQuantity, modelParams, PARAMS, parseQuantity } from '../core/library';
 import type { PinRef, ProjectDoc, SimulationSettings } from '../core/model';
 import { netOfPin, symbolOf } from '../core/schematic';
+import { EsrPanel, MultimeterPanel, probeMarks, PsuPanel, QField, ScopeControls, ScopeScreen, type InstrumentTab } from './Instruments';
 import type { SimResult } from '../shared/api';
 import { circuitKey } from '../sim/key';
 import { transfer, type SweepRun } from '../sim/results';
@@ -25,19 +26,13 @@ interface Props {
   resultKey: string | null;
   running: boolean;
   onRun(): void;
-  onProbe(color: ProbeColor, pin: PinRef | null): void;
+  /** Правка документа из приборов (щупы, режимы, ручки БП) — через историю Undo/Redo. */
+  onEdit(label: string, fn: (d: ProjectDoc) => ProjectDoc): void;
   onTranSettings(patch: { stopS?: number; stepS?: number; startFromZero?: boolean }): void;
   onSimSettings(patch: Partial<Omit<SimulationSettings, 'tran'>>): void;
 }
 
 const ANALYSES: Array<[Analysis, string]> = [['op', 'Рабочая точка'], ['tran', 'Переходный процесс'], ['dc', 'Развёртка DC'], ['ac', 'Частотный (AC)']];
-
-const pinLabel = (doc: ProjectDoc, ref: PinRef | null) => {
-  if (!ref) return 'не подключён';
-  const inst = doc.schematic.instances.find((i) => i.id === ref.instanceId);
-  const pin = inst ? symbolOf(doc, inst)?.pins.find((p) => p.number === ref.pin) : undefined;
-  return inst ? `${inst.refDes}, вывод ${pin?.name ?? ref.pin}` : 'вывод удалён';
-};
 
 const modelOf = (doc: ProjectDoc, instanceId: string) => {
   const inst = doc.schematic.instances.find((i) => i.id === instanceId);
@@ -45,9 +40,19 @@ const modelOf = (doc: ProjectDoc, instanceId: string) => {
   return part?.modelId ? doc.library.models.find((m) => m.id === part.modelId) : undefined;
 };
 
-export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onProbe, onTranSettings, onSimSettings }: Props) {
-  const [active, setActive] = useState<ProbeColor>('red');
+const TABS: Array<[InstrumentTab, string]> = [['mm', 'Мультиметр'], ['scope', 'Осциллограф'], ['esr', 'ESR-метр'], ['psu', 'Блок питания']];
+const FIRST_TARGET: Record<InstrumentTab, ProbeTarget | null> = { mm: 'mm.red', scope: 'scope.ch1', esr: 'esr.red', psu: null };
+const TARGET_TEXT: Record<ProbeTarget, string> = {
+  'mm.red': 'красный щуп мультиметра', 'mm.black': 'чёрный щуп мультиметра', 'scope.ch1': 'щуп CH1 осциллографа',
+  'scope.ch2': 'щуп CH2 осциллографа', 'esr.red': 'щуп «+» ESR-метра', 'esr.black': 'щуп «−» ESR-метра',
+};
+
+export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onEdit, onTranSettings, onSimSettings }: Props) {
+  const [tab, setTab] = useState<InstrumentTab>('mm');
+  const [target, setTarget] = useState<ProbeTarget>('mm.red');
   const probes = multimeter(doc);
+  const openTab = (t: InstrumentTab) => { setTab(t); const f = FIRST_TARGET[t]; if (f) setTarget(f); };
+  const marks = probeMarks(doc, tab);
   const key = useMemo(() => circuitKey(doc), [doc]);
   const fresh = result !== null && resultKey === key;
   const usable = fresh && result.status === 'ok';
@@ -60,15 +65,6 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
     const v = src[net.id];
     return v === undefined || !Number.isFinite(v) ? null : v;
   };
-
-  const reading = useMemo(() => {
-    if (!usable || !result.op) return null;
-    if (!probes.red || !probes.black) return { text: '— подключите оба щупа', value: null };
-    const a = netV(probes.red, result.op.node), b = netV(probes.black, result.op.node);
-    if (a === null || b === null) return { text: 'вывод не подключён к схеме — потенциал не определён', value: null };
-    return { text: formatQuantity(a - b, 'В', 4), value: a - b };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usable, result, probes.red, probes.black, doc]);
 
   const nodeLabels = useMemo(() => {
     if (!usable || !result.op) return undefined;
@@ -158,15 +154,20 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
           mode="probe"
           selection={[]}
           onSelect={() => undefined}
-          onPinClick={(pin) => onProbe(active, pin)}
-          probes={probes}
+          onPinClick={(pin) => { if (FIRST_TARGET[tab]) onEdit('Щуп', (d) => setProbeTarget(d, target, pin)); }}
+          probes={marks}
           nodeLabels={nodeLabels}
           flagged={flagged}
-          hint={`Щёлкните вывод — поставить ${active === 'red' ? 'красный' : 'чёрный'} щуп`}
+          hint={FIRST_TARGET[tab] ? `Щёлкните вывод — подключить ${TARGET_TEXT[target]}` : 'Ручки блока питания — на панели справа'}
           banner="Результаты — расчёт ngspice по моделям деталей. Модели приближённые; расчёт не гарантирует безопасность и работоспособность реальной платы."
         />
       </div>
-      {usable && result.analysis !== 'op' && (
+      {usable && tab === 'scope' && result.analysis === 'tran' && (
+        <div className="test-charts" aria-label="Графики">
+          <ScopeScreen doc={doc} result={result} onEdit={onEdit} />
+        </div>
+      )}
+      {usable && result.analysis !== 'op' && tab !== 'scope' && (
         <div className="test-charts" aria-label="Графики">
         {!curves && (
           <p className="muted small">Поставьте оба щупа, чтобы увидеть график «красный − чёрный».</p>
@@ -245,24 +246,23 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
           </section>
         )}
 
-        <section>
-          <h3>Мультиметр · DC V</h3>
-          <div className="probe-select" role="radiogroup" aria-label="Щуп">
-            {(['red', 'black'] as const).map((c) => (
-              <button key={c} role="radio" aria-checked={active === c} className={`btn small probe-btn ${c} ${active === c ? 'on' : ''}`} onClick={() => setActive(c)}>
-                {c === 'red' ? 'Красный (+)' : 'Чёрный (COM)'}
-              </button>
-            ))}
+        <section className="instruments">
+          <div className="tabs-row" role="tablist" aria-label="Приборы">
+            {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={`btn small ${tab === k ? 'on' : ''}`} onClick={() => openTab(k)}>{l}</button>)}
           </div>
-          <dl className="meta">
-            <dt>Красный</dt><dd data-testid="probe-red">{pinLabel(doc, probes.red)}</dd>
-            <dt>Чёрный</dt><dd data-testid="probe-black">{pinLabel(doc, probes.black)}</dd>
-          </dl>
-          <div className="mm-display" data-testid="mm-reading" aria-live="polite">
-            {reading ? reading.text : usable ? '—' : 'нет расчёта'}
-          </div>
-          <p className="muted small">Показание — разность потенциалов красного и чёрного щупа в рабочей точке (DC). Прибор идеальный: не нагружает схему. Режимы A, Ω, прозвонка — этап 5.</p>
-          <button className="btn small" onClick={() => { onProbe('red', null); onProbe('black', null); }}>Снять щупы</button>
+          {tab === 'mm' && <MultimeterPanel doc={doc} docKey={key} result={result} usable={usable} target={target} onTarget={setTarget} onEdit={onEdit} ngspice={ngspice} />}
+          {tab === 'scope' && (
+            <>
+              {sim.analysis !== 'tran' && (
+                <p className="muted small">Осциллограф показывает переходный процесс. <button className="btn small" onClick={() => onSimSettings({ analysis: 'tran' })}>Выбрать переходный процесс</button></p>
+              )}
+              {sim.analysis === 'tran' && !usable && <p className="muted small">Запустите тест — осциллограмма появится под схемой.</p>}
+              <ScopeControls doc={doc} target={target} onTarget={setTarget} onEdit={onEdit} />
+            </>
+          )}
+          {tab === 'esr' && <EsrPanel doc={doc} docKey={key} target={target} onTarget={setTarget} onEdit={onEdit} ngspice={ngspice} />}
+          {tab === 'psu' && <PsuPanel doc={doc} result={result} usable={usable} onEdit={onEdit} />}
+          {FIRST_TARGET[tab] && <button className="btn small" onClick={() => onEdit('Снять щупы', (d) => probeMarks(d, tab).reduce((acc, m) => setProbeTarget(acc, targetOf(tab, m.cls), null), d))}>Снять щупы</button>}
         </section>
 
         {fresh && result.limits.length > 0 && (
@@ -303,6 +303,12 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
   );
 }
 
+function targetOf(tab: InstrumentTab, cls: string): ProbeTarget {
+  if (tab === 'scope') return cls === 'ch2' ? 'scope.ch2' : 'scope.ch1';
+  if (tab === 'esr') return cls === 'black' ? 'esr.black' : 'esr.red';
+  return cls === 'black' ? 'mm.black' : 'mm.red';
+}
+
 function sourceUnit(doc: ProjectDoc, id: string): string {
   return /^I/i.test(modelOf(doc, id)?.text.trim() ?? '') ? 'А' : 'В';
 }
@@ -340,24 +346,6 @@ function AcSummary({ freq, db, phase }: { freq: number[]; db: number[]; phase: n
       {hi === null && lo === null && <><dt>Полоса −3 дБ</dt><dd>за пределами диапазона</dd></>}
       <dt>Фаза на {formatQuantity(freq[iMax]!, 'Гц', 3)}</dt><dd>{Math.round(phase[iMax] ?? NaN)}°</dd>
     </dl>
-  );
-}
-
-function QField({ label, value, unit, positive, onCommit }: { label: string; value: number; unit: string; positive?: boolean; onCommit(v: number): void }) {
-  return (
-    <label className="field inline">
-      <span>{label}</span>
-      <input
-        key={value}
-        aria-label={label}
-        defaultValue={formatQuantity(value, unit, 4)}
-        onBlur={(e) => {
-          const v = parseQuantity(e.target.value, unit);
-          if (v !== null && (!positive || v > 0)) onCommit(v); else e.target.value = formatQuantity(value, unit, 4);
-        }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      />
-    </label>
   );
 }
 

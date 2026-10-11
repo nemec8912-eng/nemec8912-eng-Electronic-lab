@@ -168,7 +168,7 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
       </div>
       {usable && result.analysis !== 'op' && (
         <div className="test-charts" aria-label="Графики">
-        {usable && result.analysis !== 'op' && !curves && (
+        {!curves && (
           <p className="muted small">Поставьте оба щупа, чтобы увидеть график «красный − чёрный».</p>
         )}
         {curves?.kind === 'tran' && (

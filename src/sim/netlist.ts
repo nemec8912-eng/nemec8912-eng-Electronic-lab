@@ -44,6 +44,17 @@ export interface Analyses {
   ac?: { fStartHz: number; fStopHz: number; pointsPerDecade: number } | null;
 }
 
+/** Анализы по настройкам проекта: рабочая точка всегда, плюс выбранный. */
+export function analysesFor(doc: ProjectDoc, analysis: 'op' | 'tran' | 'dc' | 'ac'): Analyses {
+  const s = doc.simulation;
+  return {
+    op: true,
+    tran: analysis === 'tran' ? s.tran : null,
+    dc: analysis === 'dc' ? { sourceId: s.dc.sourceId ?? '', start: s.dc.start, stop: s.dc.stop, step: s.dc.step } : null,
+    ac: analysis === 'ac' ? s.ac : null,
+  };
+}
+
 /** Число в виде, который ngspice разбирает однозначно: без суффиксов (в SPICE и «m», и «M» — это милли, мега — «meg»). */
 export function spiceNumber(v: number): string {
   if (!Number.isFinite(v)) throw new Error('нечисловое значение');

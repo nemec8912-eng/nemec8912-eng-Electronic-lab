@@ -2,7 +2,9 @@
 import { formatQuantity, PARAMS } from '../core/library';
 import type { ProjectDoc } from '../core/model';
 import { AppError } from '../core/result';
-import { buildNetlist, type Analyses } from './netlist';
+import { analysesFor, buildNetlist } from './netlist';
+
+export { analysesFor };
 import { checkLimits, mapAc, mapDc, mapOp, mapTran, type AnalysisKind, type SimResult, type SweepRun } from './results';
 import { runNgspice, type PlotKind } from './runner';
 
@@ -15,15 +17,6 @@ export interface SimulateOptions {
   sweep?: boolean;
 }
 
-export function analysesFor(doc: ProjectDoc, analysis: AnalysisKind): Analyses {
-  const s = doc.simulation;
-  return {
-    op: true,
-    tran: analysis === 'tran' ? s.tran : null,
-    dc: analysis === 'dc' ? { sourceId: s.dc.sourceId ?? '', start: s.dc.start, stop: s.dc.stop, step: s.dc.step } : null,
-    ac: analysis === 'ac' ? s.ac : null,
-  };
-}
 
 type RunPart = Pick<SimResult, 'status' | 'issues' | 'error' | 'op' | 'tran' | 'dc' | 'ac' | 'netlist' | 'warnings'> & { version: string | null };
 

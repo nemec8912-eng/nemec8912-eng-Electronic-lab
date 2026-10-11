@@ -7,3 +7,4 @@ playwright-report/
 *.tmp
 .DS_Store
 vendor/ngspice/
+dist-web/

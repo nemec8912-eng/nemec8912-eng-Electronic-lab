@@ -57,10 +57,11 @@ test('прототип: схема → ngspice → щупы → плата → �
     await page.getByRole('button', { name, exact: true }).click();
     await canvas.click({ position: { x, y } });
   };
-  await place('Источник постоянного напряжения', 120, 250);
-  await place('Резистор', 300, 150);
-  await place('Резистор', 300, 350);
-  await place('Земля (общий провод)', 120, 450);
+  // Координаты в пределах 340 пикселей по высоте: на маленьком экране Windows-раннера полотно низкое.
+  await place('Источник постоянного напряжения', 120, 200);
+  await place('Резистор', 300, 110);
+  await place('Резистор', 300, 250);
+  await place('Земля (общий провод)', 120, 330);
   for (const [a, b] of [['V1.+', 'R1.1'], ['R1.2', 'R2.1'], ['R2.2', 'GND1.GND'], ['V1.−', 'GND1.GND']] as const) {
     await pin(page, a).click({ force: true });
     await pin(page, b).click({ force: true });

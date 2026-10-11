@@ -151,6 +151,7 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
 
   return (
     <div className="test-tab">
+      <div className="test-main">
       <div className="test-canvas">
         <SchematicCanvas
           doc={doc}
@@ -164,6 +165,47 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
           hint={`Щёлкните вывод — поставить ${active === 'red' ? 'красный' : 'чёрный'} щуп`}
           banner="Результаты — расчёт ngspice по моделям деталей. Модели приближённые; расчёт не гарантирует безопасность и работоспособность реальной платы."
         />
+      </div>
+      {usable && result.analysis !== 'op' && (
+        <div className="test-charts" aria-label="Графики">
+        {usable && result.analysis !== 'op' && !curves && (
+          <p className="muted small">Поставьте оба щупа, чтобы увидеть график «красный − чёрный».</p>
+        )}
+        {curves?.kind === 'tran' && (
+          <section className="chart">
+            <h3>Осциллограмма (красный − чёрный)</h3>
+            <Plot x={curves.x} series={curves.series} xUnit="с" yUnit="В" ariaLabel="Осциллограмма" />
+          </section>
+        )}
+        {curves?.kind === 'dc' && (
+          <section className="chart">
+            <h3>Развёртка DC (красный − чёрный)</h3>
+            <Plot x={curves.x} series={curves.series} xUnit={sourceUnit(doc, result!.dc!.sourceId)} yUnit="В" ariaLabel="Развёртка DC" />
+            <p className="muted small">По оси X — значение источника {doc.schematic.instances.find((i) => i.id === result!.dc!.sourceId)?.refDes}.</p>
+          </section>
+        )}
+        {curves?.kind === 'ac' && (
+          <div className="chart-row">
+          <section className="chart">
+            <h3>АЧХ (красный − чёрный)</h3>
+            <Plot x={curves.x} series={curves.series} xUnit="Гц" yUnit="дБ" logX ariaLabel="АЧХ" yFormat={(v) => `${v.toFixed(Math.abs(v) < 10 ? 1 : 0).replace('.', ',')} дБ`} />
+            <AcSummary freq={curves.x} db={curves.series[0]?.y ?? []} phase={curves.phases[0]?.y ?? []} />
+          </section>
+          <section className="chart">
+            <h3>ФЧХ</h3>
+            <Plot x={curves.x} series={curves.phases} xUnit="Гц" yUnit="°" logX ariaLabel="ФЧХ" yFormat={(v) => `${Math.round(v)}°`} />
+            <p className="muted small">
+              {curves.srcAmp
+                ? `0 дБ — амплитуда источника ${curves.srcAmp.ref} (${formatQuantity(curves.srcAmp.value, 'В')}): показан коэффициент передачи.`
+                : '0 дБ — 1 В. Источников синуса несколько — показана амплитуда в дБ относительно 1 В.'}
+              {' '}Частотный анализ — малосигнальный (линеаризация в рабочей точке): ограничения и насыщение в нём не видны — для них нужен переходный процесс.
+            </p>
+          </section>
+          </div>
+        )}
+
+        </div>
+      )}
       </div>
       <aside className="test-side" aria-label="Приборы">
         <section>
@@ -222,38 +264,6 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onP
           <p className="muted small">Показание — разность потенциалов красного и чёрного щупа в рабочей точке (DC). Прибор идеальный: не нагружает схему. Режимы A, Ω, прозвонка — этап 5.</p>
           <button className="btn small" onClick={() => { onProbe('red', null); onProbe('black', null); }}>Снять щупы</button>
         </section>
-
-        {usable && result.analysis !== 'op' && !curves && (
-          <p className="muted small">Поставьте оба щупа, чтобы увидеть график «красный − чёрный».</p>
-        )}
-        {curves?.kind === 'tran' && (
-          <section>
-            <h3>Осциллограмма (красный − чёрный)</h3>
-            <Plot x={curves.x} series={curves.series} xUnit="с" yUnit="В" ariaLabel="Осциллограмма" />
-          </section>
-        )}
-        {curves?.kind === 'dc' && (
-          <section>
-            <h3>Развёртка DC (красный − чёрный)</h3>
-            <Plot x={curves.x} series={curves.series} xUnit={sourceUnit(doc, result!.dc!.sourceId)} yUnit="В" ariaLabel="Развёртка DC" />
-            <p className="muted small">По оси X — значение источника {doc.schematic.instances.find((i) => i.id === result!.dc!.sourceId)?.refDes}.</p>
-          </section>
-        )}
-        {curves?.kind === 'ac' && (
-          <section>
-            <h3>АЧХ (красный − чёрный)</h3>
-            <Plot x={curves.x} series={curves.series} xUnit="Гц" yUnit="дБ" logX ariaLabel="АЧХ" yFormat={(v) => `${v.toFixed(Math.abs(v) < 10 ? 1 : 0).replace('.', ',')} дБ`} />
-            <AcSummary freq={curves.x} db={curves.series[0]?.y ?? []} phase={curves.phases[0]?.y ?? []} />
-            <h3>ФЧХ</h3>
-            <Plot x={curves.x} series={curves.phases} xUnit="Гц" yUnit="°" logX ariaLabel="ФЧХ" yFormat={(v) => `${Math.round(v)}°`} />
-            <p className="muted small">
-              {curves.srcAmp
-                ? `0 дБ — амплитуда источника ${curves.srcAmp.ref} (${formatQuantity(curves.srcAmp.value, 'В')}): показан коэффициент передачи.`
-                : '0 дБ — 1 В. Источников синуса несколько — показана амплитуда в дБ относительно 1 В.'}
-              {' '}Частотный анализ — малосигнальный (линеаризация в рабочей точке): ограничения и насыщение в нём не видны — для них нужен переходный процесс.
-            </p>
-          </section>
-        )}
 
         {fresh && result.limits.length > 0 && (
           <section>

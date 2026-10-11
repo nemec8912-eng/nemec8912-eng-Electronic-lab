@@ -162,6 +162,7 @@ export function Badges({ b, personal }: { b: PartBundle; personal: boolean }) {
     <span className="badges">
       {personal && <span className="badge mine">мой</span>}
       {!b.model && <span className="badge warn">нет модели</span>}
+      {b.model && !b.model.verified && <span className="badge muted-badge">модель не проверена</span>}
       {!b.part.origin.verified && b.part.category !== 'reference' && <span className="badge muted-badge">не сверено</span>}
     </span>
   );

@@ -40,9 +40,10 @@ test('каталог: карточка, своя микросхема (DIP-8 + S
   await page.getByLabel('Поиск деталей').fill('NE555');
   await page.locator('.part-row', { hasText: 'Таймер NE555' }).click();
   const card = page.locator('.part-card');
-  await expect(card.locator('.badge', { hasText: 'нет модели' })).toBeVisible();
+  await expect(card.locator('.badge', { hasText: 'модель не проверена' })).toBeVisible();
   await expect(card.locator('.badge', { hasText: 'не сверено' })).toBeVisible();
-  await expect(card).toContainText('Нет SPICE-модели');
+  await expect(card).toContainText('NE555 (поведенческая)');
+  await expect(card).toContainText('пороги 1/3 и 2/3 питания');
   await expect(card.getByLabel('Корпус', { exact: true })).toContainText('SOIC-8');
   await expect(card.locator('.pins-table tbody tr')).toHaveCount(8);
   await expect(card.locator('.pkg-pad.first[data-pad-number="1"] rect')).toHaveCount(1); // ключ: квадратная площадка 1

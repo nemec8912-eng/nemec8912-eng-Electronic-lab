@@ -112,7 +112,8 @@ export function symbolPrims(symbol: SymbolDef): Prim[] {
       L(0, -30, 0, -15), { t: 'circle', cx: 0, cy: 0, r: 15 }, P('M -9 5 L -5 5 L -5 -5 L 1 -5 L 1 5 L 5 5 L 5 -5 L 9 -5', 'nofill'), T(7, -18, '+'), L(0, 15, 0, 30),
     ];
     case 'iec-current-source': return [
-      L(0, -30, 0, -15), { t: 'circle', cx: 0, cy: 0, r: 15 }, L(0, 10, 0, -10), P('M -4 -5 L 0 -10 L 4 -5', 'arrow'), L(0, 15, 0, 30),
+      // Источник тока (ГОСТ 2.728): стрелка с двойным острием — отличается от источника ЭДС.
+      L(0, -30, 0, -15), { t: 'circle', cx: 0, cy: 0, r: 15 }, L(0, 10, 0, -10), P('M -4 -5 L 0 -10 L 4 -5', 'arrow'), P('M -4 -1 L 0 -6 L 4 -1', 'arrow'), L(0, 15, 0, 30),
     ];
     case 'ground': return [L(0, -10, 0, 0), L(-12, 0, 12, 0, 'thick'), L(-8, 4, 8, 4), L(-4, 8, 4, 8)];
     default: return boxSymbol(symbol);

@@ -7,6 +7,7 @@
 import { z } from 'zod';
 import { checkIntegrity, type IntegrityIssue } from './integrity';
 import { isUuid } from './ids';
+import { checkModelTemplate, templatePins } from './spice';
 import { formatQuantity, parseQuantity, PARAMS, type BuiltinPart } from './library';
 import { upgradeLibraryV2toV3 } from './migrations';
 import {
@@ -194,6 +195,10 @@ export function lintBundle(b: PartBundle, others: PartDef[] = [], builtin: PartD
     const unused = pkg.pads.filter((x) => !mappedPads.has(x.number));
     if (unused.length) warn('pinmap', `${pkg.name}: площадки без вывода: ${unused.map((x) => x.number).join(', ')} (будут неподключёнными)`);
     if (pkg.pads.length > 2 && !pkg.pin1Marker) warn('packages', `${pkg.name}: не указан ключ первого вывода`);
+  }
+  if (b.model && (b.model.kind === 'spice-primitive' || b.model.kind === 'spice-subckt')) {
+    for (const e of checkModelTemplate(b.model.text)) err('model', `Модель: ${e}`);
+    for (const n of templatePins(b.model.text)) if (!nums.has(n)) err('model', `Модель подключается к выводу «${n}», которого нет у обозначения`);
   }
   if (!b.model) warn('model', 'Нет SPICE-модели — деталь не моделируется; схема с ней не рассчитывается');
   else if (!b.model.verified) warn('model', 'SPICE-модель не проверена');

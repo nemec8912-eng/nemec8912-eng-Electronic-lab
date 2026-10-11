@@ -237,3 +237,17 @@ describe('Миграция v3 → v4 (граф связности)', () => {
     assert.deepEqual(r.doc.pcb.tracks.map((t) => t.netId), raw.pcb.tracks.map((t: { netId: string }) => t.netId), 'дорожки по-прежнему ссылаются на те же сети');
   });
 });
+
+describe('Миграция v4 → v5 (настройки расчёта)', () => {
+  test('настройки переходного процесса сохраняются; анализ — переходный процесс; развёртка, AC и прогон — по умолчанию', () => {
+    const raw = fixture('project-v4.json');
+    const r = loadDocument(raw);
+    assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
+    assert.equal(r.migratedFrom, 4);
+    assert.deepEqual(r.doc.simulation.tran, { stopS: 0.005, stepS: 2e-6, startFromZero: false });
+    assert.equal(r.doc.simulation.analysis, 'tran');
+    assert.deepEqual(r.doc.simulation.dc, { sourceId: null, start: 0, stop: 10, step: 0.1 });
+    assert.deepEqual(r.doc.simulation.sweep, { instanceId: null, param: '', values: [] });
+    assert.deepEqual(r.doc.schematic, raw.schematic, 'схема не меняется');
+  });
+});

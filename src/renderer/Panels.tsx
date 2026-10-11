@@ -1,8 +1,8 @@
 /** Левая панель (каталог) и правая панель (свойства проекта / выбранного объекта). */
 import { useEffect, useMemo, useState } from 'react';
 import { categoryLabel, searchBundles } from '../core/catalog';
-import { formatQuantity, modelParams, PARAMS, parseQuantity, RATINGS } from '../core/library';
-import type { Annotation, CheckpointInfo, ComponentInstance, NetLabel, ProjectDoc, Wire } from '../core/model';
+import { formatQuantity, modelParams, paramInRange, PARAMS, parseQuantity, RATINGS } from '../core/library';
+import type { Annotation, CheckpointInfo, ComponentInstance, NetLabel, PartDef, ProjectDoc, SimModel, Wire } from '../core/model';
 import { graphOf, netDisplayName, wireNetId } from '../core/connectivity';
 import { deleteItems, groupItems, kindOf, mirrorItems, renameLabel, rotateItems, symbolOf, ungroupItems } from '../core/schematic';
 import { fmtDateTime } from './api';
@@ -56,6 +56,10 @@ interface PropsPanelProps {
   onInstDelete(id: string): void;
   /** Добавить деталь проекта в мой каталог. */
   onAddToCatalog(partId: string): void;
+  /** Модель той же детали в каталоге (если у копии в проекте её нет). */
+  catalogModelFor(part: PartDef): SimModel | null;
+  /** Скопировать модель из каталога в деталь проекта. */
+  onTakeModel(partId: string): void;
   onWireDelete(id: string): void;
   onCreateCheckpoint(): void;
   onRestoreCheckpoint(cp: CheckpointInfo): void;
@@ -198,7 +202,10 @@ function ValueField({ inst, paramKey, onCommit }: { inst: ComponentInstance; par
   const commit = () => {
     const v = parseQuantity(text, def.unitRu);
     if (v === null) { setError(`Не понял значение. Примеры: 10к, 4,7 мк, 0.1u, 2.2e-6`); return; }
-    if (!(v > def.min) || v > def.max) { setError(`Допустимо: больше ${formatQuantity(def.min, def.unitRu)} и не более ${formatQuantity(def.max, def.unitRu)}`); return; }
+    if (!paramInRange(paramKey, v)) {
+      setError(def.signed ? `Допустимо: от ${formatQuantity(def.min, def.unitRu)} до ${formatQuantity(def.max, def.unitRu)}` : `Допустимо: больше ${formatQuantity(def.min, def.unitRu)} и не более ${formatQuantity(def.max, def.unitRu)}`);
+      return;
+    }
     setError(null);
     onCommit(v);
   };
@@ -212,8 +219,9 @@ function ValueField({ inst, paramKey, onCommit }: { inst: ComponentInstance; par
   );
 }
 
-function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstDelete, onAddToCatalog }: PropsPanelProps & { inst: ComponentInstance }) {
+function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstDelete, onAddToCatalog, catalogModelFor, onTakeModel }: PropsPanelProps & { inst: ComponentInstance }) {
   const part = doc.library.parts.find((x) => x.id === inst.partId);
+  const catalogModel = part ? catalogModelFor(part) : null;
   const model = part?.modelId ? doc.library.models.find((m) => m.id === part.modelId) : undefined;
   const sym = symbolOf(doc, inst);
   const [ref, setRef] = useState(inst.refDes);
@@ -232,11 +240,7 @@ function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstD
           {refErr && <em className="error-text small">{refErr}</em>}
         </label>
       )}
-      {params.map((k) => PARAMS[k] && (
-        k === 'voltage'
-          ? <SourceVoltage key={k} inst={inst} onCommit={(v) => onInstValue(inst.id, k, v, PARAMS[k]!.unit)} />
-          : <ValueField key={k} inst={inst} paramKey={k} onCommit={(v) => onInstValue(inst.id, k, v, PARAMS[k]!.unit)} />
-      ))}
+      {params.map((k) => PARAMS[k] && <ValueField key={k} inst={inst} paramKey={k} onCommit={(v) => onInstValue(inst.id, k, v, PARAMS[k]!.unit)} />)}
       {part && (
         <dl className="meta">
           <dt>Категория</dt><dd>{categoryLabel(part.category)}</dd>
@@ -255,9 +259,16 @@ function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstD
         <dt>Сверено с даташитом</dt><dd>{part?.origin.verified ? 'да' : 'нет'}</dd>
       </dl>
       {part && part.category !== 'reference' && !model && (
-        <p className="stage-note small" data-testid="no-model-warning">Нет SPICE-модели — эта деталь не моделируется. Схему с ней можно рисовать и разводить на плате, но расчёт будет остановлен с объяснением.</p>
+        <p className="stage-note small" data-testid="no-model-warning">{part.category === 'ic-digital' || part.category === 'mcu'
+          ? 'Цифровые микросхемы и микроконтроллеры не моделируются: расчёт аналоговый, логика и прошивка не исполняются.'
+          : 'Нет SPICE-модели — эта деталь не моделируется. Схему с ней можно рисовать и разводить на плате, но расчёт будет остановлен с объяснением.'}</p>
       )}
-      {model?.kind === 'spice-primitive' && <p className="muted small">Модель идеальная: без допусков, паразитных параметров и тепловой модели.</p>}
+      {part && !model && catalogModel && (
+        <button className="btn small" onClick={() => onTakeModel(part.id)} title={catalogModel.source ?? ''}>Взять модель из каталога: {catalogModel.name}</button>
+      )}
+      {model && (model.verified && model.source?.startsWith('ngspice:')
+        ? <p className="muted small">Модель идеальная: без допусков, паразитных параметров и тепловой модели.</p>
+        : <p className="muted small" data-testid="model-note">Модель приближённая{model.verified ? '' : ', не проверена'}: {model.source ?? 'источник не указан'}.</p>)}
       {part && part.category !== 'reference' && (
         <button className="btn small" onClick={() => onAddToCatalog(part.id)} title="Сохранить копию этой детали (из проекта) в мой каталог">Добавить в мой каталог</button>
       )}
@@ -274,26 +285,6 @@ function RatingRow({ k, value }: { k: string; value: number }) {
   return <><dt>{r?.label ?? k}</dt><dd>{formatQuantity(value, r?.unitRu ?? '')}</dd></>;
 }
 
-function SourceVoltage({ inst, onCommit }: { inst: ComponentInstance; onCommit(v: number): void }) {
-  const cur = inst.values.voltage;
-  const shown = cur ? formatQuantity(cur.value, 'В', 4) : '';
-  const [text, setText] = useState(shown);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setText(shown); setError(null); }, [shown]);
-  return (
-    <label className="field">
-      <span>Напряжение</span>
-      <input aria-label="Напряжение" value={text} onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          const v = parseQuantity(text, 'В');
-          if (v === null || Math.abs(v) > 1e4) { setError('Не понял значение (пример: 12, 3,3, 500м)'); return; }
-          setError(null); onCommit(v);
-        }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
-      {error && <em className="error-text small">{error}</em>}
-    </label>
-  );
-}
 
 function WireProps({ doc, wire, onDelete }: { doc: ProjectDoc; wire: Wire; onDelete(id: string): void }) {
   const endText = (e: Wire['a']) => {

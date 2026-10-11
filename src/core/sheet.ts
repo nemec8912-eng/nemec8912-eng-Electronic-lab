@@ -18,7 +18,11 @@ export function instanceLabel(doc: ProjectDoc, inst: ComponentInstance): string[
   const lines = [inst.refDes];
   for (const [k, q] of Object.entries(inst.values)) {
     const def = PARAMS[k];
-    if (def) lines.push(formatQuantity(q.value, def.unitRu));
+    if (!def) continue;
+    if (k === 'offset' && q.value === 0) continue; // нулевая постоянная составляющая генератора — не загромождать
+    // У генераторов несколько величин: подписываем, что есть что (амплитуда, заполнение).
+    const prefix = k === 'amplitude' ? 'A ' : k === 'offset' ? '= ' : k === 'duty' ? 'D ' : '';
+    lines.push(prefix + formatQuantity(q.value, def.unitRu));
   }
   if ((part.category === 'capacitor' || part.category === 'capacitor-polar') && part.ratings.voltage) lines.push(formatQuantity(part.ratings.voltage.value, 'В'));
   if (lines.length === 1 && part.partNumber) lines.push(part.partNumber);

@@ -8,7 +8,7 @@ import { endKey, graphOf, rebuildNets } from './connectivity';
 import { touch } from './factory';
 import { newId } from './ids';
 import { builtinByCatalogId } from './library';
-import type { Annotation, ComponentInstance, Junction, Net, NetLabel, PinRef, Point, ProjectDoc, Quantity, SymbolDef, Wire, WireEnd } from './model';
+import type { Annotation, ComponentInstance, Junction, Net, NetLabel, PinRef, Point, ProjectDoc, Quantity, SimModel, SymbolDef, Wire, WireEnd } from './model';
 
 export const GRID = 10;
 export const snap = (v: number) => Math.round(v / GRID) * GRID;
@@ -762,4 +762,22 @@ export function junctionDots(doc: ProjectDoc): Point[] {
     if (pos) out.push(pos);
   }
   return out;
+}
+
+/**
+ * Скопировать модель (например, из каталога) в деталь проекта, у которой её нет. Модель получает новый id;
+ * остальные сведения детали в проекте не меняются (правка каталога не меняет проект молча).
+ */
+export function adoptModel(doc: ProjectDoc, partId: string, model: SimModel): ProjectDoc {
+  const part = doc.library.parts.find((p) => p.id === partId);
+  if (!part || part.modelId) return doc;
+  const copy = { ...structuredClone(model), id: newId() };
+  return touch({
+    ...doc,
+    library: {
+      ...doc.library,
+      models: [...doc.library.models, copy],
+      parts: doc.library.parts.map((p) => (p.id === partId ? { ...p, modelId: copy.id } : p)),
+    },
+  });
 }

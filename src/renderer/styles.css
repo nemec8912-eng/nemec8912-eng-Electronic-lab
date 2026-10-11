@@ -346,3 +346,9 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .sweep { margin: 6px 0; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
 .sweep summary { cursor: pointer; font-size: 13px; }
 .pin-currents { text-align: left !important; font-size: 12px; }
+.test-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.test-main .test-canvas { flex: 1; min-height: 160px; }
+.test-charts { flex: 0 1 auto; max-height: 48%; overflow: auto; background: var(--panel); border-top: 1px solid var(--line); padding: 4px 12px 8px; }
+.test-charts h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 6px 0 4px; }
+.chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 16px; }
+.trace { display: block; width: 100%; }

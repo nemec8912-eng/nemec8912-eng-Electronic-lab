@@ -3,10 +3,11 @@
  * «вывод ↔ площадка», модель, источник сведений. Проверки — сразу, ошибки не дают сохранить.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { checkModelTemplate, DEVICE_ROLES, parseUserModel, templateFromParsed } from '../core/spice';
 import { CATEGORIES, lintBundle, type PartBundle } from '../core/catalog';
 import { formatQuantity, PARAMS, parseQuantity, RATINGS } from '../core/library';
 import { newId } from '../core/ids';
-import type { PartDef } from '../core/model';
+import type { PartDef, SimModel } from '../core/model';
 import { FAMILIES, type GenParams } from '../core/packages';
 import {
   addPackage, IDEAL_MODELS, isIcLike, mapByNumber, removePackage, setCategory, setIcPins, setPinDescription, setPinPad, setVerified, VALUE_FOR_CATEGORY,
@@ -342,18 +343,104 @@ function PackagesSection({ b, setB }: { b: PartBundle; setB: SetB }) {
 function ModelSection({ b, setB }: { b: PartBundle; setB: SetB }) {
   const ideal = IDEAL_MODELS[b.part.category];
   const hasIdeal = Boolean(b.model && ideal && b.model.text === ideal.text && b.model.kind === ideal.kind);
+  const [mode, setMode] = useState<'keep' | 'user'>('keep');
+  const setModel = (m: Omit<SimModel, 'id'> | null) => setB((x) => {
+    if (!m) return { ...x, model: null, part: { ...x.part, modelId: null } };
+    const id = x.model?.id ?? newId();
+    return { ...x, model: { ...m, id }, part: { ...x.part, modelId: id } };
+  });
   return (
     <div>
       <p className="muted small">Модель для расчёта хранится отдельно от описания выводов: заполненная пиновка не делает деталь моделируемой.</p>
-      <label className="check"><input type="radio" name="model" checked={!b.model} onChange={() => setB((x) => ({ ...x, model: null, part: { ...x.part, modelId: null } }))} /> Нет модели — деталь не участвует в расчёте (схема с ней не рассчитывается, программа это сообщит)</label>
+      <label className="check"><input type="radio" name="model" checked={!b.model && mode === 'keep'} onChange={() => { setMode('keep'); setModel(null); }} /> Нет модели — деталь не участвует в расчёте (схема с ней не рассчитывается, программа это сообщит)</label>
       {ideal && (
-        <label className="check"><input type="radio" name="model" checked={hasIdeal} onChange={() => setB((x) => {
-          const id = x.model?.id ?? newId();
-          return { ...x, model: { ...ideal, id }, part: { ...x.part, modelId: id } };
-        })} /> {ideal.name}{ideal.kind === 'spice-primitive' ? ' — без допусков, паразитных параметров и нагрева' : ''}</label>
+        <label className="check"><input type="radio" name="model" checked={hasIdeal && mode === 'keep'} onChange={() => { setMode('keep'); setModel(ideal); }} /> {ideal.name}{ideal.kind === 'spice-primitive' ? ' — без допусков, паразитных параметров и нагрева' : ''}</label>
       )}
-      {b.model && !hasIdeal && <p className="small">Текущая модель: {b.model.name} ({b.model.verified ? 'проверена' : 'не проверена'}).</p>}
-      <p className="stage-note small">Подключение собственных SPICE-моделей (.model/.subckt из даташита) — на этапе 4 «Симуляция». Сейчас моделируются только идеальные R, C, L и источники.</p>
+      {b.model && !hasIdeal && (
+        <label className="check"><input type="radio" name="model" checked={mode === 'keep'} onChange={() => setMode('keep')} /> Текущая модель: {b.model.name}</label>
+      )}
+      <label className="check"><input type="radio" name="model" checked={mode === 'user'} onChange={() => setMode('user')} /> Своя SPICE-модель из даташита (.model или .subckt)</label>
+      {mode === 'user' && <UserModel b={b} onApply={(m) => { setModel(m); setMode('keep'); }} />}
+      {b.model && !hasIdeal && mode === 'keep' && (
+        <div className="model-box">
+          <dl className="meta">
+            <dt>Модель</dt><dd>{b.model.name}</dd>
+            <dt>Источник</dt><dd>{b.model.source ?? '—'}</dd>
+          </dl>
+          <label className="check"><input type="checkbox" checked={b.model.verified} onChange={(e) => setB((x) => (x.model ? { ...x, model: { ...x.model, verified: e.target.checked } } : x))} /> Модель проверена (сравнена с даташитом или измерениями)</label>
+          <details><summary>Текст модели для ngspice</summary><pre className="netlist">{b.model.text}</pre></details>
+        </div>
+      )}
+      <p className="muted small">Поддерживаются карточки .model диодов, биполярных и полевых транзисторов (D, NPN, PNP, NMOS, PMOS, VDMOS, NJF, PJF) и подсхемы .subckt, в том числе поведенческие. Команды расчёта и подключение файлов (.include, .lib, .control) в модели запрещены. Цифровые микросхемы и прошивки не моделируются.</p>
+    </div>
+  );
+}
+
+/** Вставка модели из даташита и сопоставление её выводов с выводами обозначения. */
+function UserModel({ b, onApply }: { b: PartBundle; onApply(m: Omit<SimModel, 'id'>): void }) {
+  const [text, setText] = useState('');
+  const [source, setSource] = useState('');
+  const [map, setMap] = useState<Record<string, string>>({});
+  const parsed = useMemo(() => (text.trim() ? parseUserModel(text) : null), [text]);
+  const roles = parsed?.ok
+    ? parsed.model.kind === 'model' ? DEVICE_ROLES[parsed.model.type].map((r) => ({ key: r.role, label: `${r.role} — ${r.label}` })) : parsed.model.ports.map((p) => ({ key: p, label: p }))
+    : [];
+  // Подсказка соответствия: по имени вывода обозначения (A, K, B, C, E, G, D, S, IN, OUT…), затем по номеру.
+  useEffect(() => {
+    if (!parsed?.ok) return;
+    const next: Record<string, string> = {};
+    for (const r of roles) {
+      const byName = b.symbol.pins.find((p) => p.name.toUpperCase() === r.key.toUpperCase());
+      const byNum = b.symbol.pins.find((p) => p.number === r.key);
+      const pin = byName ?? byNum;
+      if (pin) next[r.key] = pin.number;
+    }
+    setMap(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+  const tpl = parsed?.ok ? templateFromParsed(parsed.model, map) : null;
+  const problems = tpl ? [...(tpl.missing.length ? [`не сопоставлены: ${tpl.missing.join(', ')}`] : []), ...checkModelTemplate(tpl.text)] : [];
+  const dupPins = Object.values(map).filter((v, i, a) => v && a.indexOf(v) !== i);
+  return (
+    <div className="model-box">
+      <label className="field">
+        <span>Текст модели (вставьте из даташита или с сайта производителя)</span>
+        <textarea aria-label="Текст SPICE-модели" rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder={'.model 1N4148 D(IS=2.52n RS=0.568 N=1.752 ...)'} spellCheck={false} />
+      </label>
+      {parsed && !parsed.ok && <p className="error-text small">{parsed.error}</p>}
+      {parsed?.ok && (
+        <>
+          <p className="small">{parsed.model.kind === 'model' ? `Карточка .model «${parsed.model.name}», тип ${parsed.model.type}.` : `Подсхема «${parsed.model.name}», выводов: ${parsed.model.ports.length}.`} Сопоставьте выводы модели с выводами обозначения:</p>
+          <table className="pins-table edit" aria-label="Выводы модели">
+            <thead><tr><th>Вывод модели</th><th>Вывод обозначения</th></tr></thead>
+            <tbody>
+              {roles.map((r) => (
+                <tr key={r.key}>
+                  <td>{r.label}</td>
+                  <td>
+                    <select aria-label={`Вывод обозначения для ${r.key}`} value={map[r.key] ?? ''} onChange={(e) => setMap((m) => ({ ...m, [r.key]: e.target.value }))}>
+                      <option value="">— не выбран —</option>
+                      {b.symbol.pins.map((p) => <option key={p.number} value={p.number}>{p.number}{p.name && p.name !== p.number ? ` ${p.name}` : ''}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <label className="field">
+            <span>Источник модели</span>
+            <input aria-label="Источник модели" value={source} onChange={(e) => setSource(e.target.value)} placeholder="сайт производителя, файл модели, дата" />
+          </label>
+          {dupPins.length > 0 && <p className="error-text small">Один вывод обозначения выбран для нескольких выводов модели: {[...new Set(dupPins)].join(', ')}</p>}
+          {problems.length > 0 && <ul className="issues">{problems.map((x, i) => <li key={i} className="error">{x}</li>)}</ul>}
+          <button className="btn primary" disabled={!tpl || problems.length > 0 || dupPins.length > 0}
+            onClick={() => tpl && parsed.ok && onApply({
+              name: `${parsed.model.name} (из даташита)`, kind: parsed.model.kind === 'subckt' ? 'spice-subckt' : 'spice-primitive',
+              text: tpl.text, source: source.trim() || 'введено пользователем', verified: false,
+            })}>Применить модель</button>
+          <p className="muted small">Модель сохраняется с деталью и переносится вместе с проектом. Она помечается «не проверена», пока вы не отметите обратное.</p>
+        </>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
  * График результатов расчёта: время, развёртка DC или частота (логарифмическая ось), несколько кривых
  * (параметрический прогон), сетка с «круглыми» делениями и курсор с показаниями под мышью.
  */
-import { useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { formatQuantity } from '../core/library';
 
 export interface Series { label: string; y: number[]; color?: string }
@@ -30,7 +30,17 @@ export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, aria
   ariaLabel: string;
   yFormat?: (v: number) => string;
 }) {
-  const W = 320, H = height, L = 50, B = 22, T = 8, R = 10;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(320);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setWidth(Math.max(240, Math.round(el.clientWidth))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Ширина рисунка — по ширине места (текст не растягивается), высота задана.
+  const W = width, H = height, L = 50, B = 22, T = 8, R = 10;
   const svgRef = useRef<SVGSVGElement>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   const fy = yFormat ?? ((v: number) => formatQuantity(v, yUnit, 3));
@@ -55,8 +65,8 @@ export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, aria
       ? Array.from({ length: Math.floor(Math.log10(x1)) - Math.ceil(Math.log10(x0)) + 1 }, (_, i) => 10 ** (Math.ceil(Math.log10(x0)) + i))
       : niceTicks(x0, x1, 4);
     return { x0, x1, y0, y1, px, py, xt, yt: niceTicks(y0, y1, 4) };
-  }, [x, series, logX, H, yFormat]);
-  if (!geo) return <p className="muted small">Нет данных для графика</p>;
+  }, [x, series, logX, H, W, yFormat]);
+  if (!geo) return <div ref={boxRef}><p className="muted small">Нет данных для графика</p></div>;
   const { px, py, xt, yt } = geo;
   const step = Math.max(1, Math.floor(x.length / 700));
   const paths = series.map((s) => {
@@ -77,8 +87,8 @@ export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, aria
     setCursor(best);
   };
   return (
-    <div className="plot">
-      <svg ref={svgRef} className="trace" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={ariaLabel} onMouseMove={onMove} onMouseLeave={() => setCursor(null)}>
+    <div className="plot" ref={boxRef}>
+      <svg ref={svgRef} className="trace" viewBox={`0 0 ${W} ${H}`} style={{ height: H }} role="img" aria-label={ariaLabel} onMouseMove={onMove} onMouseLeave={() => setCursor(null)}>
         <rect x={L} y={T} width={W - L - R} height={H - T - B} className="trace-bg" />
         {xt.map((v) => <line key={`x${v}`} x1={px(v)} x2={px(v)} y1={T} y2={H - B} className="trace-grid" />)}
         {yt.map((v) => <line key={`y${v}`} x1={L} x2={W - R} y1={py(v)} y2={py(v)} className={v === 0 ? 'trace-zero' : 'trace-grid'} />)}

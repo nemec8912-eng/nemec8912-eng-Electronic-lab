@@ -5,7 +5,7 @@ import { newId } from '../core/ids';
 import { setProbe, setSimSettings, setTranSettings } from '../core/instruments';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import { addTrack, copperSvg, deleteTrack, movePlacement, rotatePlacement, setBoard, syncFromSchematic } from '../core/pcb';
-import { deleteItems, kindOf, placeBundle, renameRefDes, renumber, rotateItems, setValue } from '../core/schematic';
+import { adoptModel, deleteItems, kindOf, placeBundle, renameRefDes, renumber, rotateItems, setValue } from '../core/schematic';
 import { runErc, type ErcIssue } from '../core/erc';
 import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
@@ -565,6 +565,12 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
               } catch (e) {
                 await dialogs.alert('Деталь не добавлена в каталог', errorText(e));
               }
+            }}
+            catalogModelFor={(part) => (part.origin.catalogPartId ? catalog.byId(part.origin.catalogPartId)?.model ?? null : null)}
+            onTakeModel={(partId) => {
+              const part = editorRef.current.doc.library.parts.find((x) => x.id === partId);
+              const m = part?.origin.catalogPartId ? catalog.byId(part.origin.catalogPartId)?.model : null;
+              if (m) editor.apply(`Модель из каталога: ${m.name}`, (d) => adoptModel(d, partId, m));
             }}
             onWireDelete={(id) => { editor.apply('Удаление провода', (d) => deleteItems(d, new Set([id]))); setSelection([]); }}
             onCreateCheckpoint={createCheckpoint}

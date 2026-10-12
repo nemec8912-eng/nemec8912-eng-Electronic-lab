@@ -15,6 +15,8 @@ import type { BoardSel } from './BoardPanel';
 import { useDialogs } from './Dialogs';
 import { NewBoard, PourPanel, ShapeEditor } from './BoardShape';
 import { CncPanel } from './CncPanel';
+import { autoplace } from '../core/autoplace';
+import { autoroute, missingConnections } from '../core/autoroute';
 import type { CncPath } from '../core/cnc';
 
 interface Props {
@@ -157,6 +159,7 @@ export function BoardSide(p: Props) {
           </details>
         </section>
       ) : <NewBoard doc={doc} onEdit={p.onEdit} />}
+      {board && <AutoPanel doc={doc} onEdit={p.onEdit} confirm={(t, m, ok) => dialogs.confirm(t, m, ok)} />}
       {board && <PourPanel doc={doc} onEdit={p.onEdit} />}
 
       {(track || via || placement) && (
@@ -228,5 +231,46 @@ export function BoardSide(p: Props) {
       )}
       {board && <CncPanel doc={doc} onEdit={p.onEdit} toast={p.toast} onPreview={p.onCncPreview} />}
     </aside>
+  );
+}
+
+/** Авторасстановка и автотрассировка: одна правка каждая, отменяется Ctrl+Z. */
+function AutoPanel({ doc, onEdit, confirm }: { doc: ProjectDoc; onEdit(label: string, fn: (d: ProjectDoc) => ProjectDoc): void; confirm(title: string, message: string, ok: string): Promise<boolean> }) {
+  const [busy, setBusy] = useState<'place' | 'route' | null>(null);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean; revision: number } | null>(null);
+  const missing = missingConnections(doc).length;
+  const run = (kind: 'place' | 'route') => {
+    setBusy(kind);
+    setTimeout(() => {
+      try {
+        if (kind === 'place') {
+          const r = autoplace(doc);
+          if (r.placed) onEdit('Авторасстановка деталей', () => r.doc);
+          setMsg({ text: r.placed ? `Расставлено деталей: ${r.placed}.${r.notPlaced.length ? ` Не поместились: ${r.notPlaced.join(', ')} — увеличьте плату.` : ''} Отменить — Ctrl+Z.` : 'Нечего расставлять', ok: !r.notPlaced.length, revision: doc.revision + (r.placed ? 1 : 0) });
+        } else {
+          const r = autoroute(doc);
+          if (r.routed) onEdit('Автотрассировка', () => r.doc);
+          setMsg({
+            text: r.total === 0 ? 'Все соединения уже разведены.'
+              : `Разведено ${r.routed} из ${r.total}${r.vias ? `, переходов: ${r.vias}` : ''}.${r.failed.length ? ` Не удалось: ${r.failed.map((f) => `${f.from}–${f.to}`).join(', ')} — раздвиньте детали, увеличьте плату или сделайте её двухсторонней.` : ''}${r.routed ? ' Отменить — Ctrl+Z.' : ''}`,
+            ok: r.failed.length === 0, revision: doc.revision + (r.routed ? 1 : 0),
+          });
+        }
+      } finally { setBusy(null); }
+    }, 30);
+  };
+  return (
+    <section aria-label="Автоматически">
+      <h3>Автоматически</h3>
+      <div className="row wrap">
+        <button className="btn" disabled={busy !== null || !doc.pcb.placements.length} onClick={() => void (async () => {
+          if (doc.pcb.tracks.length && !(await confirm('Расставить детали заново?', 'Все детали будут переставлены, их дорожки удалены. Отменить можно Ctrl+Z.', 'Расставить'))) return;
+          run('place');
+        })()}>{busy === 'place' ? 'Расставляю…' : 'Расставить детали'}</button>
+        <button className="btn primary" disabled={busy !== null || missing === 0} onClick={() => run('route')}>{busy === 'route' ? 'Развожу…' : `Развести дорожки${missing ? ` (${missing})` : ''}`}</button>
+      </div>
+      {msg && msg.revision === doc.revision && <p className={`small ${msg.ok ? 'ok-text' : 'warning-text'}`} data-testid="auto-result">{msg.text}</p>}
+      <p className="muted small">Расстановка группирует связанные детали и тянет разъёмы к краю. Трассировка ведёт дорожки по правилам платы (ширина, зазор, край), уже проложенные дорожки не трогает.</p>
+    </section>
   );
 }

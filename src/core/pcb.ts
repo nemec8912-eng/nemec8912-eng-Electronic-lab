@@ -577,7 +577,7 @@ export function setTrackWidth(doc: ProjectDoc, id: string, widthMm: number): Pro
 // ---------- Связность и неразведённые соединения ----------
 
 /** Группы соединённой меди: ключ площадки или перехода → представитель группы. Учитываются только верные дорожки. */
-export function copperGroups(doc: ProjectDoc): (key: string) => string {
+export function copperGroups(doc: ProjectDoc, withPours = true): (key: string) => string {
   const parent = new Map<string, string>();
   const find = (k: string): string => { const p = parent.get(k) ?? k; if (p === k) return k; const r = find(p); parent.set(k, r); return r; };
   for (const t of doc.pcb.tracks) {
@@ -586,7 +586,7 @@ export function copperGroups(doc: ProjectDoc): (key: string) => string {
     if (a !== b) parent.set(a, b);
   }
   // Медная заливка соединяет всё, что касается одного её участка.
-  for (const r of pourResults(doc)) {
+  for (const r of withPours ? pourResults(doc) : []) {
     for (const c of r.components) {
       const keys = [...c.keys];
       for (let i = 1; i < keys.length; i++) { const a = find(keys[i]!), b = find(keys[0]!); if (a !== b) parent.set(a, b); }

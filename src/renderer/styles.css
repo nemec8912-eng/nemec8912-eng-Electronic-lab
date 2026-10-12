@@ -102,11 +102,11 @@ textarea { resize: vertical; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
 .card h2 { font-size: 16px; margin: 0 0 10px; }
 .row { display: flex; gap: 8px; }
-.projects { list-style: none; padding: 0; margin: 0; }
-.projects li { display: flex; align-items: center; gap: 10px; border-top: 1px solid #eef0f3; padding: 8px 0; }
+.projects, .examples-list { list-style: none; padding: 0; margin: 0; }
+.projects li, .examples-list li { display: flex; align-items: center; gap: 10px; border-top: 1px solid #eef0f3; padding: 8px 0; }
 .project-open { flex: 1; text-align: left; background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; display: flex; flex-direction: column; gap: 2px; }
 .project-open:hover:not(:disabled) { background: #f0f4fa; }
-.project-name { font-weight: 600; }
+.project-name, .example-name { font-weight: 600; }
 .project-meta { color: var(--muted); font-size: 12.5px; }
 .projects li.broken .project-meta { color: var(--danger); }
 .project-actions { display: flex; gap: 6px; }
@@ -460,3 +460,15 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .photo-modal img { max-width: 92vw; max-height: 90vh; }
 .diff { background: #f6f7f9; border-radius: 4px; padding: 6px 10px; margin-top: 6px; }
 .diff ul { margin: 0; padding-left: 18px; }
+.board-outline { fill: #2f6b3a; stroke: #e0d36b; stroke-width: 0.2; }
+.pour-fill { pointer-events: none; }
+.one-layer .pour-fill, .pour.bottom .pour-fill { fill: rgba(201, 138, 44, .55); }
+.two-layer .pour.top .pour-fill { fill: rgba(208, 73, 58, .5); }
+.two-layer .pour.bottom .pour-fill { fill: rgba(74, 134, 224, .5); }
+.two-layer .pour.inactive { opacity: .5; }
+.pours { list-style: none; padding: 0; margin: 4px 0; }
+.pours li { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; }
+.shape-editor { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.shape-editor .btn.primary { align-self: flex-start; }
+.part-editor-note { margin: 6px 12px; }
+.project-open.static { cursor: default; }

@@ -27,6 +27,8 @@ const api: ElabApi = {
     duplicate: (id, name) => call(IPC.duplicate, id, name),
     saveAs: (doc, name) => call(IPC.saveAs, doc, name),
     remove: (id) => call(IPC.remove, id),
+    examples: () => call(IPC.examples),
+    openExample: (file) => call(IPC.openExample, file),
   },
   checkpoints: {
     list: (projectId) => call(IPC.cpList, projectId),

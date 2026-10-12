@@ -77,6 +77,8 @@ writeFileSync(join(appDir, 'package.json'), JSON.stringify({
   name: pkg.name, productName: pkg.productName, version: pkg.version, main: pkg.main, private: true,
 }, null, 2));
 copyDir(join(root, 'dist'), join(appDir, 'dist'), (src) => !src.endsWith('.map'));
+// Примеры проектов — кнопка «Открыть копию» на начальном экране.
+copyDir(join(root, 'examples'), join(appDir, 'examples'));
 
 // Симулятор ngspice (ADR-0002): для Windows — официальная сборка из vendor/ngspice/win32-x64
 // (scripts/fetch-ngspice.mjs). Без неё пакет не собирается, кроме явного ELAB_ALLOW_NO_NGSPICE=1.

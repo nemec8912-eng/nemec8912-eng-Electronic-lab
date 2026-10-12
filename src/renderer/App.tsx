@@ -10,6 +10,9 @@ import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
 import { BoardPanel, type BoardSel } from './BoardPanel';
 import { JournalPanel } from './JournalPanel';
+import { PartEditor } from './PartEditor';
+import { bundleOf } from '../core/catalog';
+import { replaceProjectPart } from '../core/projectPart';
 import { TestPanel } from './TestPanel';
 import { circuitKey } from '../sim/key';
 import { api, errorText, fmtBytes, fmtDateTime, fmtTime, unwrap } from './api';
@@ -223,6 +226,13 @@ export function App() {
           ) : (
             <main className="start">
               <ProjectList projects={projects} loading={loading} onCreate={createProject} onOpen={openProject}
+                onOpenExample={async (file) => {
+                  try {
+                    const doc = await unwrap(api().projects.openExample(file));
+                    await refresh();
+                    await openProject(doc.id);
+                  } catch (e) { await showError('Пример не открыт', e); }
+                }}
                 onRename={listActions.rename} onDuplicate={listActions.duplicate} onDelete={listActions.remove} />
             </main>
           )}
@@ -319,6 +329,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   const [ercPick, setErcPick] = useState<ErcIssue | null>(null);
   const [focus, setFocus] = useState<{ at: { x: number; y: number }; seq: number } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [editPart, setEditPart] = useState<string | null>(null);
   const [placing, setPlacing] = useState<string | null>(null);
   const [boardSel, setBoardSel] = useState<BoardSel>(null);
   const [sim, setSim] = useState<{ result: SimResult; key: string } | null>(null);
@@ -463,14 +474,38 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       <nav className="tabs" role="tablist">
         <span className="project-title" title={doc.name}>{doc.name}</span>
         {([['schematic', 'Схема'], ['test', 'Тест'], ['board', 'Плата'], ['journal', 'Испытания'], ['catalog', 'Каталог']] as const).map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
+          <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => { setTab(k); setEditPart(null); }}>{label}</button>
         ))}
         <div className="toolbar tabs-right" role="toolbar" aria-label="Правка">
           <button className="btn small" disabled={!editor.canUndo} onClick={editor.undo} title={`Ctrl+Z${editor.undoLabel ? ` — ${editor.undoLabel}` : ''}`} aria-label="Отменить">↶ Отменить</button>
           <button className="btn small" disabled={!editor.canRedo} onClick={editor.redo} title={`Ctrl+Y${editor.redoLabel ? ` — ${editor.redoLabel}` : ''}`} aria-label="Повторить">↷ Повторить</button>
         </div>
       </nav>
-      {tab === 'schematic' && (
+      {editPart && (() => {
+        const b = bundleOf(doc.library, editPart);
+        if (!b) return null;
+        const users = doc.schematic.instances.filter((i) => i.partId === editPart).map((i) => i.refDes).join(', ');
+        return (
+          <PartEditor
+            key={editPart}
+            initial={b}
+            isNew={false}
+            others={[]}
+            builtin={[]}
+            saveLabel="Сохранить в проекте"
+            note={`Изменения — только в этом проекте (${users || 'деталь не стоит на схеме'}); общий каталог не меняется. История — Ctrl+Z, контрольные версии и журнал изменений. Перенести в каталог — кнопкой «Добавить в мой каталог».`}
+            onCancel={() => setEditPart(null)}
+            onSave={async (nb) => {
+              const r = replaceProjectPart(editorRef.current.doc, nb);
+              if (r.error) { await dialogs.alert('Деталь не изменена', r.error); return false; }
+              if (r.changes.length) { editor.apply(`Деталь «${nb.part.name}» в проекте`, (d) => replaceProjectPart(d, nb).doc); toast(`Изменено: ${r.changes.join('; ')}`); }
+              setEditPart(null);
+              return true;
+            }}
+          />
+        );
+      })()}
+      {!editPart && tab === 'schematic' && (
         <main className="workspace">
           <CatalogPanel catalog={catalog} placing={placing} onPick={setPlacing} onOpenCatalog={() => setTab('catalog')} />
           <section className="center column">
@@ -546,6 +581,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             }}
             onInstRotate={(id) => editor.apply('Поворот детали', (d) => rotateItems(d, new Set([id])))}
             onInstDelete={(id) => { editor.apply('Удаление детали', (d) => deleteItems(d, new Set([id]))); setSelection([]); }}
+            onEditPart={(partId) => setEditPart(partId)}
             onAddToCatalog={async (partId) => {
               // Перенос в общий каталог — только по подтверждению (ТЗ, этап 7): изменения детали в проекте
               // остаются локальными, пока пользователь сам не отправит их в каталог.

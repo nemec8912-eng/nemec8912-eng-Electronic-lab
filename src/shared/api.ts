@@ -62,6 +62,10 @@ export interface ElabApi {
     duplicate(id: string, name?: string): Promise<Result<ProjectDoc>>;
     saveAs(doc: ProjectDoc, name: string): Promise<Result<ProjectDoc>>;
     remove(id: string): Promise<Result<void>>;
+    /** Примеры проектов, поставляемые с программой. */
+    examples(): Promise<Result<Array<{ file: string; name: string; description: string }>>>;
+    /** Открыть пример: в папку данных записывается его копия (новые UUID), пример не меняется. */
+    openExample(file: string): Promise<Result<ProjectDoc>>;
   };
   checkpoints: {
     list(projectId: string): Promise<Result<CheckpointInfo[]>>;
@@ -145,6 +149,8 @@ export const IPC = {
   cpCreate: 'checkpoints:create',
   cpRestore: 'checkpoints:restore',
   cpGet: 'checkpoints:get',
+  examples: 'projects:examples',
+  openExample: 'projects:open-example',
   simExpected: 'sim:expected',
   attAdd: 'attachments:add',
   attRead: 'attachments:read',

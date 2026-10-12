@@ -170,6 +170,8 @@ export function webApi(): ElabApi {
         return ok(copy);
       },
       remove: async (id) => { del(`p/${id}`); del(`cp/${id}`); setIds(ids().filter((x) => x !== id)); return ok(undefined); },
+      examples: async () => ok([]),
+      openExample: noWeb,
     },
     checkpoints: {
       list: async (id) => ok(cps(id).map(({ doc: _d, ...info }) => info).reverse()),

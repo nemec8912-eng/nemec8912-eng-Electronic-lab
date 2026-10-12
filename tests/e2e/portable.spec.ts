@@ -29,6 +29,8 @@ test('портативный режим: данные рядом с програ
 
     let l = await launch({ executable: exe });
     await expect(l.page.locator('.statusbar')).toContainText(`Портативный режим: ${path.join(onFlash, 'data')}`);
+    // Примеры проектов входят в сборку
+    await expect(l.page.getByRole('list', { name: 'Примеры' }).locator('li')).toHaveCount(5);
     await l.page.getByLabel('Название нового проекта').fill('С флешки');
     await l.page.getByRole('button', { name: 'Создать', exact: true }).click();
     await l.page.locator('svg.canvas').dblclick({ position: { x: 60, y: 200 } });

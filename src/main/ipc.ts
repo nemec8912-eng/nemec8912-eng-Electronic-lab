@@ -14,7 +14,7 @@ const IMAGE_MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpe
 import { AppError, fail, ok, type Result } from '../core/result';
 import { IPC, type AppInfo, type ImportOutcome } from '../shared/api';
 import { createBackup, restoreBackup, verifyBackup } from '../storage/backup';
-import type { ElabReadResult } from '../storage/elab';
+import { readElab, type ElabReadResult } from '../storage/elab';
 import { safeFileName, timestampForFile, writeFileAtomic } from '../storage/fsutil';
 import { DataStore } from '../storage/store';
 import { simulate } from '../sim/simulate';
@@ -240,6 +240,25 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle(IPC.saveAs, wrap((doc: ProjectDoc, name: string) => store().saveAs(doc, String(name ?? ''))));
   ipcMain.handle(IPC.remove, wrap(async (id: string) => { await store().deleteProject(id); }));
 
+  // Примеры проектов: папка examples рядом с программой (в пакете — resources/app/examples).
+  const examplesDir = () => path.join(app.getAppPath(), 'examples');
+  ipcMain.handle(IPC.examples, wrap(async () => {
+    const files = (await fs.readdir(examplesDir()).catch(() => [] as string[])).filter((f) => f.endsWith('.elab')).sort();
+    const out: Array<{ file: string; name: string; description: string }> = [];
+    for (const file of files) {
+      try {
+        const r = await readElab(await fs.readFile(path.join(examplesDir(), file)));
+        out.push({ file, name: r.doc.name, description: r.doc.description });
+      } catch { /* повреждённый пример пропускается */ }
+    }
+    return out;
+  }));
+  ipcMain.handle(IPC.openExample, wrap(async (file: string) => {
+    const name = path.basename(String(file ?? ''));
+    if (!name.endsWith('.elab')) throw new AppError('bad-request', 'Неверное имя примера');
+    const read = await readElab(await fs.readFile(path.join(examplesDir(), name)));
+    return store().importProject(read, 'copy');
+  }));
   ipcMain.handle(IPC.cpList, wrap((id: string) => store().listCheckpoints(id)));
   ipcMain.handle(IPC.cpCreate, wrap((doc: ProjectDoc, label: string, kind?: string) => store().createCheckpoint(doc, String(label ?? ''), kind === 'test' ? 'test' : 'manual')));
   ipcMain.handle(IPC.cpGet, wrap(async (projectId: string, checkpointId: string) => (await store().readCheckpoint(String(projectId), String(checkpointId))).doc));
@@ -247,7 +266,7 @@ export function registerIpc(ctx: MainContext): void {
     const cp = await store().readCheckpoint(current.id, checkpointId);
     await store().createCheckpoint(current, `Перед возвратом к «${cp.label}»`, 'before-restore');
     // Журнал испытаний и вложения — история: возврат схемы и платы их не стирает.
-    return keepJournal(cp.doc, current);
+    return keepJournal(cp.doc, current, cp.label);
   }));
 
   ipcMain.handle(IPC.exportProject, wrap(async (doc: ProjectDoc) => {

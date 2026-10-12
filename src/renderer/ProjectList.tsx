@@ -1,5 +1,6 @@
 /** Начальный экран: список проектов и действия над ними. */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from './api';
 import type { ProjectSummary } from '../shared/api';
 import { fmtDateTime } from './api';
 
@@ -11,10 +12,13 @@ interface Props {
   onRename(p: ProjectSummary): void;
   onDuplicate(p: ProjectSummary): void;
   onDelete(p: ProjectSummary): void;
+  onOpenExample(file: string): void;
 }
 
-export function ProjectList({ projects, loading, onCreate, onOpen, onRename, onDuplicate, onDelete }: Props) {
+export function ProjectList({ projects, loading, onCreate, onOpen, onRename, onDuplicate, onDelete, onOpenExample }: Props) {
   const [name, setName] = useState('');
+  const [examples, setExamples] = useState<Array<{ file: string; name: string; description: string }>>([]);
+  useEffect(() => { api().projects.examples().then((r) => { if (r.ok) setExamples(r.value); }).catch(() => undefined); }, []);
   return (
     <div className="project-list">
       <section className="card">
@@ -24,6 +28,26 @@ export function ProjectList({ projects, loading, onCreate, onOpen, onRename, onD
           <button type="submit" className="btn primary">Создать</button>
         </form>
       </section>
+
+      {examples.length > 0 && (
+        <section className="card">
+          <h2>Примеры</h2>
+          <ul className="examples-list" aria-label="Примеры">
+            {examples.map((x) => (
+              <li key={x.file}>
+                <div className="project-open static">
+                  <span className="example-name">{x.name.replace(/^Пример — /, '')}</span>
+                  <span className="project-meta">{x.description}</span>
+                </div>
+                <div className="project-actions">
+                  <button className="btn small" onClick={() => onOpenExample(x.file)} aria-label={`Открыть пример ${x.name}`}>Открыть копию</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">Открывается копия примера — её можно менять, сам пример остаётся прежним.</p>
+        </section>
+      )}
 
       <section className="card">
         <h2>Проекты {loading ? '…' : `(${projects.length})`}</h2>

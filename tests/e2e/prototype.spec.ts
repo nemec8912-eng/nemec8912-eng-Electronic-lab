@@ -99,8 +99,8 @@ test('прототип: схема → ngspice → щупы → плата → �
   // Номинал изменился → старое показание не выводится, после перезапуска — новое
   await page.getByRole('tab', { name: 'Схема' }).click();
   await page.locator('[data-refdes="R2"] .inst-hit').click({ force: true });
-  await page.getByLabel('Сопротивление').fill('4,7к');
-  await page.getByLabel('Сопротивление').press('Enter');
+  await page.getByLabel('Сопротивление', { exact: true }).fill('4,7к');
+  await page.getByLabel('Сопротивление', { exact: true }).press('Enter');
   await expect(page.locator('[data-refdes="R2"] .inst-label')).toContainText('4,7 кОм');
   await page.getByRole('tab', { name: 'Тест' }).click();
   await expect(page.getByTestId('mm-reading')).toHaveText('нет расчёта');

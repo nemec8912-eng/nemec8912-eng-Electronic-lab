@@ -104,8 +104,8 @@ test('журнал испытаний: отказ, расчёт с допуск�
   // --- Изменить номинал R2 → 4,7 кОм ---
   await page.getByRole('tab', { name: 'Схема' }).click();
   await page.locator('[data-refdes="R2"] .inst-hit').click({ force: true });
-  await page.getByLabel('Сопротивление').fill('4,7к');
-  await page.getByLabel('Сопротивление').press('Enter');
+  await page.getByLabel('Сопротивление', { exact: true }).fill('4,7к');
+  await page.getByLabel('Сопротивление', { exact: true }).press('Enter');
   await expect(page.locator('[data-refdes="R2"] .inst-label')).toContainText('4,7 кОм');
   // Плата: номинал корпус не меняет — синхронизация сообщает, что плата соответствует схеме
   await page.getByRole('tab', { name: 'Плата' }).click();

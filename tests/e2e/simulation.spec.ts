@@ -107,11 +107,11 @@ test('светодиод от 12 В через 100 Ом: токи выводов
   const { page } = await launch({ dataDir: temp('e2e-led-') });
   await newProject(page, 'Светодиод');
   await place(page, '', 'Источник постоянного напряжения', 120, 200);
-  await page.getByLabel('Напряжение').fill('12');
-  await page.getByLabel('Напряжение').press('Enter');
+  await page.getByLabel('Напряжение', { exact: true }).fill('12');
+  await page.getByLabel('Напряжение', { exact: true }).press('Enter');
   await place(page, '', 'Резистор', 300, 110);
-  await page.getByLabel('Сопротивление').fill('100');
-  await page.getByLabel('Сопротивление').press('Enter');
+  await page.getByLabel('Сопротивление', { exact: true }).fill('100');
+  await page.getByLabel('Сопротивление', { exact: true }).press('Enter');
   await place(page, 'светодиод', 'Светодиод 5 мм красный', 450, 220);
   await expect(page.getByTestId('model-note')).toContainText('около 2 В при 20 мА');
   await place(page, '', 'Земля (общий провод)', 120, 330);

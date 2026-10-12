@@ -7,7 +7,7 @@
  * Сравнение с расчётом: |измерено − расчёт| ≤ разброс из-за допусков деталей + погрешность прибора.
  * Гипотезы причин строятся только из фактов записи и схемы и подаются как «что проверить», а не диагноз.
  */
-import { touch } from './factory';
+import { logChange, touch } from './factory';
 import { newId } from './ids';
 import { formatQuantity, PARAMS } from './library';
 import type { AttachmentRef, Measurement, MeasureTarget, PartEvent, ProjectDoc, TestRecord } from './model';
@@ -40,7 +40,7 @@ export function newRecord(doc: ProjectDoc, title: string, checkpointId: string |
 }
 
 export function addRecord(doc: ProjectDoc, rec: TestRecord): ProjectDoc {
-  return touch({ ...doc, tests: [...doc.tests, rec] });
+  return logChange(touch({ ...doc, tests: [...doc.tests, rec] }), 'test', `Испытание «${rec.title}» (ревизия ${rec.revision})`);
 }
 export function updateRecord(doc: ProjectDoc, id: string, patch: Partial<Omit<TestRecord, 'id' | 'createdAt'>>): ProjectDoc {
   const cur = doc.tests.find((t) => t.id === id);
@@ -55,7 +55,7 @@ export function deleteRecord(doc: ProjectDoc, id: string): ProjectDoc {
   if (!rec) return doc;
   const tests = doc.tests.filter((t) => t.id !== id);
   const used = new Set(tests.flatMap((t) => t.photoIds));
-  return touch({ ...doc, tests, attachments: doc.attachments.filter((a) => !rec.photoIds.includes(a.id) || used.has(a.id)) });
+  return logChange(touch({ ...doc, tests, attachments: doc.attachments.filter((a) => !rec.photoIds.includes(a.id) || used.has(a.id)) }), 'test-delete', `Запись журнала «${rec.title}» удалена`);
 }
 
 export function targetLabel(doc: ProjectDoc, t: MeasureTarget): string {
@@ -112,8 +112,8 @@ export function detachPhoto(doc: ProjectDoc, recordId: string, attachmentId: str
  * журнал испытаний, вложения и журнал изменений — текущие. Так «восстановить старую» не стирает
  * записи о том, что было сделано после неё.
  */
-export function keepJournal(restored: ProjectDoc, current: ProjectDoc): ProjectDoc {
-  return {
+export function keepJournal(restored: ProjectDoc, current: ProjectDoc, label?: string): ProjectDoc {
+  const merged: ProjectDoc = {
     ...restored,
     name: current.name,
     description: current.description,
@@ -122,6 +122,7 @@ export function keepJournal(restored: ProjectDoc, current: ProjectDoc): ProjectD
     changelog: current.changelog,
     revision: Math.max(restored.revision, current.revision),
   };
+  return logChange(merged, 'restore', `Схема, детали и плата возвращены к ревизии ${restored.revision}${label ? ` («${label}»)` : ''}; журнал испытаний сохранён`);
 }
 
 // ---------- Сравнение с расчётом ----------

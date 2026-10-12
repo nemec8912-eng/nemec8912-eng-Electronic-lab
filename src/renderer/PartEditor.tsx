@@ -21,7 +21,10 @@ type Section = 'main' | 'pins' | 'packages' | 'model' | 'origin';
 const SECTIONS: Array<[Section, string]> = [['main', 'Основное'], ['pins', 'Выводы'], ['packages', 'Корпуса'], ['model', 'Модель'], ['origin', 'Источник']];
 const FIELD_SECTION: Record<string, Section> = { name: 'main', partNumber: 'main', pins: 'pins', packages: 'packages', pinmap: 'packages', model: 'model', origin: 'origin', datasheet: 'origin' };
 
-export function PartEditor({ initial, isNew, others, builtin, onCancel, onSave }: {
+export function PartEditor({ initial, isNew, others, builtin, onCancel, onSave, saveLabel = 'Сохранить в мой каталог', note }: {
+  saveLabel?: string;
+  /** Пояснение под заголовком (например, «только в этом проекте»). */
+  note?: string;
   initial: PartBundle;
   isNew: boolean;
   others: PartDef[];
@@ -50,8 +53,9 @@ export function PartEditor({ initial, isNew, others, builtin, onCancel, onSave }
         <span className="grow" />
         <button className="btn" onClick={onCancel}>Отмена</button>
         <button className="btn primary" disabled={errors.length > 0 || saving} onClick={() => void save()}
-          title={errors.length ? 'Исправьте ошибки' : 'Сохранить в мой каталог'}>Сохранить в мой каталог</button>
+          title={errors.length ? 'Исправьте ошибки' : saveLabel}>{saveLabel}</button>
       </div>
+      {note && <p className="stage-note small part-editor-note">{note}</p>}
       <div className="editor-body">
         <nav className="editor-nav" role="tablist" aria-label="Разделы">
           {SECTIONS.map(([k, l]) => {

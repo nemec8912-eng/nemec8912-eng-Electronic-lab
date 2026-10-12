@@ -5,10 +5,10 @@
  */
 import { builtinBundle, type PartBundle } from './catalog';
 import { endKey, graphOf, rebuildNets } from './connectivity';
-import { touch } from './factory';
+import { logChange, touch } from './factory';
 import { dropInstrumentPins } from './instruments';
 import { newId } from './ids';
-import { builtinByCatalogId } from './library';
+import { builtinByCatalogId, formatQuantity, PARAMS } from './library';
 import type { Annotation, ComponentInstance, Junction, Net, NetLabel, PinRef, Point, ProjectDoc, Quantity, SimModel, SymbolDef, Wire, WireEnd } from './model';
 
 export const GRID = 10;
@@ -220,7 +220,9 @@ export function setValue(doc: ProjectDoc, id: string, key: string, q: Quantity):
   const cur = inst.values[key];
   if (cur && cur.value === q.value && cur.unit === q.unit) return doc;
   const instances = doc.schematic.instances.map((i) => (i.id === id ? { ...i, values: { ...i.values, [key]: q } } : i));
-  return touch({ ...doc, schematic: { ...doc.schematic, instances } });
+  const unit = PARAMS[key]?.unitRu ?? q.unit;
+  const what = `${inst.refDes}: ${(PARAMS[key]?.label ?? key).toLowerCase()} ${cur ? formatQuantity(cur.value, unit, 4) : '—'} → ${formatQuantity(q.value, unit, 4)}`;
+  return logChange(touch({ ...doc, schematic: { ...doc.schematic, instances } }), 'value', what);
 }
 
 export const REFDES_RE = /^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{0,31}$/;

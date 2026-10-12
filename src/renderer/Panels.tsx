@@ -56,6 +56,8 @@ interface PropsPanelProps {
   onInstDelete(id: string): void;
   /** Добавить деталь проекта в мой каталог. */
   onAddToCatalog(partId: string): void;
+  /** Изменить деталь только в этом проекте (характеристики, модель, корпуса). */
+  onEditPart(partId: string): void;
   /** Модель той же детали в каталоге (если у копии в проекте её нет). */
   catalogModelFor(part: PartDef): SimModel | null;
   /** Скопировать модель из каталога в деталь проекта. */
@@ -220,7 +222,7 @@ function ValueField({ inst, paramKey, onCommit }: { inst: ComponentInstance; par
   );
 }
 
-function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstDelete, onAddToCatalog, catalogModelFor, onTakeModel }: PropsPanelProps & { inst: ComponentInstance }) {
+function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstDelete, onAddToCatalog, onEditPart, catalogModelFor, onTakeModel }: PropsPanelProps & { inst: ComponentInstance }) {
   const part = doc.library.parts.find((x) => x.id === inst.partId);
   const catalogModel = part ? catalogModelFor(part) : null;
   const model = part?.modelId ? doc.library.models.find((m) => m.id === part.modelId) : undefined;
@@ -271,7 +273,10 @@ function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstD
         ? <p className="muted small">Модель идеальная: без допусков, паразитных параметров и тепловой модели.</p>
         : <p className="muted small" data-testid="model-note">Модель приближённая{model.verified ? '' : ', не проверена'}: {model.source ?? 'источник не указан'}.</p>)}
       {part && part.category !== 'reference' && (
-        <button className="btn small" onClick={() => onAddToCatalog(part.id)} title="Сохранить копию этой детали (из проекта) в мой каталог">Добавить в мой каталог</button>
+        <div className="row wrap">
+          <button className="btn small" onClick={() => onEditPart(part.id)} title="Характеристики, модель, корпуса — только в этом проекте; каталог не меняется">Изменить деталь в проекте…</button>
+          <button className="btn small" onClick={() => onAddToCatalog(part.id)} title="Сохранить копию этой детали (из проекта) в мой каталог">Добавить в мой каталог</button>
+        </div>
       )}
       <div className="row">
         <button className="btn" onClick={() => onInstRotate(inst.id)} title="R">Повернуть</button>

@@ -75,6 +75,13 @@ export function BoardPanel(p: Props) {
   }, [board, doc]);
   const fitted = useRef(false);
   useEffect(() => { if (!fitted.current && svgRef.current && svgRef.current.getBoundingClientRect().width > 0) { fitted.current = true; fit(); } }, [fit]);
+  // После синхронизации появились новые детали — вписать заново, чтобы ни одна не оказалась за краем окна.
+  const placedCount = useRef(doc.pcb.placements.length);
+  useEffect(() => {
+    const n = doc.pcb.placements.length;
+    if (n > placedCount.current) fit();
+    placedCount.current = n;
+  }, [doc.pcb.placements.length, fit]);
 
   const toMm = (cx: number, cy: number): Point => {
     const r = svgRef.current!.getBoundingClientRect();

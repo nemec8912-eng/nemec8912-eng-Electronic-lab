@@ -32,9 +32,13 @@ async function closeWindow(l: Launched) {
 async function dragPlacement(page: Page, refDes: string, target: { x: number; y: number }) {
   const g = page.locator(`[data-placement-id][data-refdes="${refDes}"]`);
   const x0 = Number(await g.getAttribute('data-x')), y0 = Number(await g.getAttribute('data-y'));
-  const box = (await g.locator('.pl-body').boundingBox())!;
+  const raw = (await g.locator('.pl-body').boundingBox())!;
+  const canvas = (await page.locator('svg.board-canvas').boundingBox())!;
+  // Берём за видимую часть корпуса: деталь у края платы может частично уходить за край окна.
+  const bx0 = Math.max(raw.x, canvas.x + 2), by0 = Math.max(raw.y, canvas.y + 2);
+  const bx1 = Math.min(raw.x + raw.width, canvas.x + canvas.width - 2), by1 = Math.min(raw.y + raw.height, canvas.y + canvas.height - 2);
   const scale = Number(await page.locator('svg.board-canvas').getAttribute('data-scale')); // пикселей на мм
-  const sx = box.x + box.width / 2, sy = box.y + box.height / 2;
+  const sx = (bx0 + bx1) / 2, sy = (by0 + by1) / 2;
   await page.mouse.move(sx, sy);
   await page.mouse.down();
   await page.mouse.move(sx + (target.x - x0) * scale / 2, sy + (target.y - y0) * scale / 2, { steps: 4 });

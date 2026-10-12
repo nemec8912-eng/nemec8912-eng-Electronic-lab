@@ -2,17 +2,18 @@
  * Правая панель вкладки «Плата»: синхронизация со схемой (отчёт → «Применить»), параметры платы и
  * правила проектирования, выделенный объект, DRC, вывод (1:1 для ЛУТ, сборочный чертёж, Gerber/Excellon).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { gerberFiles } from '../core/gerber';
 import type { DesignRules, ProjectDoc } from '../core/model';
 import {
-  deleteTrack, deleteVia, flipPlacement, fmtLen, LAYER_NAME, netName, parseLen, rotatePlacement, setBoard, setTrackWidth,
+  deleteTrack, deleteVia, flipPlacement, fmtLen, LAYER_NAME, netName, parseLen, rotatePlacement, setBoard, setOutline, setTrackWidth,
   syncFromSchematic, type DrcIssue, type Layer, type SyncReport,
 } from '../core/pcb';
 import { artworkSvg, assemblySvg, lutMirror, type Artwork } from '../core/pcbExport';
 import { api, errorText, unwrap } from './api';
 import type { BoardSel } from './BoardPanel';
 import { useDialogs } from './Dialogs';
+import { NewBoard, PourPanel, ShapeEditor } from './BoardShape';
 
 interface Props {
   doc: ProjectDoc;
@@ -47,6 +48,8 @@ export function BoardSide(p: Props) {
   const dialogs = useDialogs();
   const [preview, setPreview] = useState<{ report: SyncReport; revision: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Сообщение об отказе правки не «залипает»: следующая правка документа его убирает.
+  useEffect(() => { setError(null); }, [doc.revision]);
   const board = doc.pcb.board;
   const units = board?.units ?? 'mm';
   const two = board?.layers === 2;
@@ -127,10 +130,15 @@ export function BoardSide(p: Props) {
       {board ? (
         <section>
           <h3>Плата</h3>
-          <div className="row">
-            <LenField label="Ширина платы" mm={board.widthMm} units={units} onCommit={(v) => board_('Размер платы', { widthMm: v })} />
-            <LenField label="Высота платы" mm={board.heightMm} units={units} onCommit={(v) => board_('Размер платы', { heightMm: v })} />
-          </div>
+          <ShapeEditor units={units} initial={board} submitLabel="Задать размеры и форму"
+            onSubmit={(outline, w, h) => {
+              const size = outline.kind === 'polygon' ? undefined : { widthMm: w, heightMm: h };
+              const r = setOutline(doc, outline, size);
+              if (r.error) { setError(r.error); return; }
+              setError(null);
+              p.onEdit('Размеры и форма платы', (d) => setOutline(d, outline, size).doc);
+            }} />
+          <p className="muted small" data-testid="board-size">Габарит {fmtLen(board.widthMm, units)} × {fmtLen(board.heightMm, units)}</p>
           <div className="seg" role="radiogroup" aria-label="Слои меди">
             {([1, 2] as const).map((n) => <button key={n} role="radio" aria-checked={board.layers === n} className={`btn small ${board.layers === n ? 'on' : ''}`} onClick={() => board_('Слои платы', { layers: n })}>{n === 1 ? 'Односторонняя' : 'Двухсторонняя'}</button>)}
           </div>
@@ -145,7 +153,8 @@ export function BoardSide(p: Props) {
             <p className="muted small">По умолчанию — для домашнего изготовления (ЛУТ): дорожка 0,8 мм, зазор 0,4 мм, поясок 0,25 мм.</p>
           </details>
         </section>
-      ) : <section><p className="muted">Плата ещё не создана: нажмите «Синхронизировать со схемой».</p></section>}
+      ) : <NewBoard doc={doc} onEdit={p.onEdit} />}
+      {board && <PourPanel doc={doc} onEdit={p.onEdit} />}
 
       {(track || via || placement) && (
         <section aria-label="Выделено">

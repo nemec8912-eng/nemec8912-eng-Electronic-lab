@@ -79,7 +79,7 @@ test('плата: синхронизация, разводка с изгибам
 
   // --- Синхронизация: сначала отчёт, потом «Применить» ---
   await page.getByRole('tab', { name: 'Плата' }).click();
-  await expect(page.getByText('Плата ещё не создана')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Новая плата' })).toBeVisible();
   await page.getByRole('button', { name: 'Синхронизировать со схемой' }).click();
   await expect(page.getByTestId('sync-report')).toContainText('Добавлено: V1, R1, R2');
   await expect(page.locator('[data-placement-id]')).toHaveCount(0);
@@ -122,7 +122,7 @@ test('плата: синхронизация, разводка с изгибам
   await expect(page.locator('.toast').last()).toContainText('Сохранено');
   const svg = readFileSync(svgPath, 'utf8');
   expect(svg).toContain('width="75mm" height="58mm"'); // 50 + 3×5 + 10; 40 + 2×5 + 8
-  expect(svg).toContain('<rect x="0" y="0" width="50" height="40"');
+  expect(svg).toContain('<path d="M0 0H50V40H0Z" fill="none" stroke="#000" stroke-width="0.15" data-outline="1"/>');
   expect((svg.match(/data-track=/g) ?? []).length).toBe(3);
   expect(svg).not.toContain('scale(-1 1)');
   const pdfPath = path.join(out, 'медь.pdf');
@@ -201,4 +201,71 @@ test('плата: синхронизация, разводка с изгибам
   await page.getByLabel('Зеркально').uncheck();
   await expect(page.getByTestId('lut-hint')).toContainText('не подходит для ЛУТ');
   await shot(page, 'board-output');
+});
+
+test('плата любой формы и размера: круг 46 мм при создании, многоугольник, заливка GND, Gerber с заливкой', async () => {
+  test.setTimeout(180_000);
+  const out = temp('e2e-board2-out-');
+  const { app, page } = await launch({ dataDir: temp('e2e-board2-') });
+  await page.getByLabel('Название нового проекта').fill('Круглая плата');
+  await page.getByRole('button', { name: 'Создать', exact: true }).click();
+  const canvas = page.locator('svg.canvas');
+  const place = async (name: string, x: number, y: number) => {
+    await page.getByRole('button', { name, exact: true }).click();
+    await canvas.click({ position: { x, y } });
+  };
+  await place('Источник постоянного напряжения', 120, 200);
+  await place('Резистор', 300, 110);
+  await place('Резистор', 300, 250);
+  await place('Земля (общий провод)', 120, 330);
+  for (const [a, b] of [['V1.+', 'R1.1'], ['R1.2', 'R2.1'], ['R2.2', 'GND1.GND'], ['V1.−', 'GND1.GND']] as const) {
+    await pin(page, a).click({ force: true });
+    await pin(page, b).click({ force: true });
+  }
+
+  // --- Новая плата: круг диаметром 46 мм ---
+  await page.getByRole('tab', { name: 'Плата' }).click();
+  const form = page.getByRole('region', { name: 'Новая плата' });
+  await form.getByRole('radio', { name: 'Круг', exact: true }).click();
+  await form.getByLabel('Диаметр платы').fill('46');
+  await form.getByRole('button', { name: 'Создать плату' }).click();
+  await expect(page.locator('path.board-outline')).toHaveAttribute('data-outline', 'circle');
+  await expect(page.getByTestId('board-size')).toHaveText('Габарит 46 мм × 46 мм');
+  await page.getByRole('button', { name: 'Синхронизировать со схемой' }).click();
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.locator('[data-placement-id]')).toHaveCount(3);
+  await expect(page.getByTestId('drc')).not.toContainText('за край');
+
+  // --- Неверный многоугольник не принимается, верный — принимается ---
+  await page.getByRole('radiogroup', { name: 'Форма платы' }).getByRole('radio', { name: 'Многоугольник' }).click();
+  await page.getByLabel('Точки контура').fill('0; 0\n50; 50\n50; 0\n0; 50');
+  await page.getByRole('button', { name: 'Задать размеры и форму' }).click();
+  await expect(page.getByRole('alert')).toContainText('пересекаются');
+  await page.getByLabel('Точки контура').fill('0; 0\n60; 0\n60; 30\n40; 45\n0; 45');
+  await page.getByRole('button', { name: 'Задать размеры и форму' }).click();
+  await expect(page.locator('path.board-outline')).toHaveAttribute('data-outline', 'polygon');
+  await expect(page.getByTestId('board-size')).toHaveText('Габарит 60 мм × 45 мм');
+
+  // --- Заливка GND ---
+  await page.getByLabel('Цепь заливки').selectOption({ label: 'GND' });
+  await page.getByRole('button', { name: 'Залить' }).click();
+  await expect(page.getByTestId('pours')).toContainText('GND · низ · зазор 0,5 мм');
+  await expect(page.locator('g.pour')).toHaveCount(1);
+  await expect(page.getByTestId('drc')).not.toContainText('цепь GND');
+  await shot(page, 'board-pour');
+  const svgPath = path.join(out, 'медь.svg');
+  await stubSaveDialog(app, svgPath);
+  await page.getByRole('button', { name: 'Медь: SVG' }).click();
+  await expect(page.locator('.toast').last()).toContainText('медь.svg');
+  const svg = readFileSync(svgPath, 'utf8');
+  expect(svg).toContain('data-pour=');
+  expect(svg).toContain('d="M0 0L60 0L60 30L40 45L0 45Z"');
+  const zipPath = path.join(out, 'gerber.zip');
+  await stubSaveDialog(app, zipPath);
+  await page.getByRole('button', { name: 'Gerber и сверловка (.zip)' }).click();
+  await expect(page.locator('.toast').last()).toContainText('Gerber и сверловка');
+  const zip = await JSZip.loadAsync(readFileSync(zipPath));
+  const cu = readGerber(await zip.file('board-B_Cu.gbl')!.async('string'));
+  expect(cu.ops.some((o) => o.kind === 'region')).toBe(true);
+  expect(cu.polarity).toContain('LPC');
 });

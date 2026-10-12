@@ -12,6 +12,7 @@ import {
   movePlacement, netName, parseLen, ratsnest, rotatePlacement, rulesOf, snapMm, type DrcIssue,
 } from '../core/pcb';
 import { BoardSide } from './BoardSide';
+import { outlineSvgPath } from '../core/outline';
 
 export type BoardSel = { kind: 'track' | 'placement' | 'via'; id: string } | null;
 
@@ -266,7 +267,24 @@ export function BoardPanel(p: Props) {
         <svg ref={svgRef} className={`canvas board-canvas ${route ? 'routing' : ''} ${two ? 'two-layer' : 'one-layer'}`} aria-label="Плата" data-scale={view.scale} data-vx={view.x} data-vy={view.y} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
           onPointerUp={() => { drag.current = null; }} onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}>
           <g transform={`scale(${view.scale}) translate(${-view.x} ${-view.y})`}>
-            {board && <rect x={0} y={0} width={board.widthMm} height={board.heightMm} className="board-outline" />}
+            {board && <path d={outlineSvgPath(board)} className="board-outline" data-outline={board.outline.kind} />}
+            {board && doc.pcb.pours.filter((pr) => layers.includes(pr.layer) && show[pr.layer]).map((pr) => (
+              <g key={pr.id} className={`pour ${pr.layer} ${pr.layer === activeLayer ? 'active' : 'inactive'}`} data-pour={pr.id}>
+                <mask id={`pour-${pr.id}`} maskUnits="userSpaceOnUse">
+                  <path d={outlineSvgPath(board)} fill="#fff" />
+                  <path d={outlineSvgPath(board)} fill="none" stroke="#000" strokeWidth={2 * board.rules.edgeMm} />
+                  {doc.pcb.tracks.filter((t) => t.layer === pr.layer && t.netId !== pr.netId).map((t) => (
+                    <polyline key={t.id} points={t.points.map((q) => `${q.x},${q.y}`).join(' ')} fill="none" stroke="#000" strokeWidth={t.widthMm + 2 * pr.clearanceMm} strokeLinecap="round" strokeLinejoin="round" />
+                  ))}
+                  {pads.filter((pd) => pd.layers.includes(pr.layer) && pd.netId !== pr.netId).map((pd) => {
+                    const w = pd.w + 2 * pr.clearanceMm, h = pd.h + 2 * pr.clearanceMm;
+                    return <rect key={`${pd.ref.placementId}#${pd.ref.pad}`} x={pd.pos.x - w / 2} y={pd.pos.y - h / 2} width={w} height={h} rx={pd.shape === 'rect' ? 0 : Math.min(w, h) / 2} fill="#000" />;
+                  })}
+                  {two && doc.pcb.vias.filter((v) => v.netId !== pr.netId).map((v) => <circle key={v.id} cx={v.position.x} cy={v.position.y} r={v.diameterMm / 2 + pr.clearanceMm} fill="#000" />)}
+                </mask>
+                <path d={outlineSvgPath(board)} mask={`url(#pour-${pr.id})`} className="pour-fill" />
+              </g>
+            ))}
             {doc.pcb.placements.map((pl) => {
               const b = bodyRect(doc, pl);
               const inst = doc.schematic.instances.find((i) => i.id === pl.instanceId);

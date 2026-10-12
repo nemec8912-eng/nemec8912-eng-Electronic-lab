@@ -510,3 +510,11 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .pads-editor { margin: 8px 0; }
 .pads-editor input.num { width: 64px; }
 .pads-editor summary { cursor: pointer; font-size: 13px; }
+.place-ghost { opacity: 0.45; }
+.template-groups { overflow: auto; }
+.template-group summary { cursor: pointer; padding: 3px 0; font-size: 13px; }
+.template-group .catalog-item { display: flex; justify-content: space-between; gap: 6px; }
+.inst-card { width: min(640px, 94vw); max-height: 90vh; overflow: auto; }
+.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.card-model, .card-pins { border-top: 1px solid #e3e6eb; margin-top: 8px; padding-top: 8px; }
+.field.inline-small { display: inline-flex; flex-direction: column; min-width: 120px; margin-right: 10px; }

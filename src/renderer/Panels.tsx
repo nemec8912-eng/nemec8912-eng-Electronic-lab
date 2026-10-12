@@ -1,5 +1,6 @@
 /** Левая панель (каталог) и правая панель (свойства проекта / выбранного объекта). */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { partTemplates } from '../catalog/builtin';
 import { categoryLabel, searchBundles } from '../core/catalog';
 import { formatQuantity, modelParams, paramInRange, PARAMS, parseQuantity, RATINGS } from '../core/library';
 import type { Annotation, CheckpointInfo, ComponentInstance, NetLabel, PartDef, ProjectDoc, SimModel, Wire } from '../core/model';
@@ -15,26 +16,49 @@ export function CatalogPanel({ catalog, placing, onPick, onOpenCatalog }: {
 }) {
   const [query, setQuery] = useState('');
   const found = useMemo(() => searchBundles(catalog.all, query), [catalog.all, query]);
+  const groups = useMemo(() => partTemplates(), []);
+  const q = query.trim().toLowerCase().replace(/\s+/g, '');
+  // Шаблоны «тип + корпус»: без запроса — все группы свёрнуты; с запросом — подходящие по типу или корпусу
+  const shownGroups = groups.map((g) => ({
+    ...g,
+    items: q ? g.items.filter((i) => `${g.label} ${i.variant} ${i.packageName}`.toLowerCase().replace(/\s+/g, '').includes(q)) : g.items,
+  })).filter((g) => g.items.length > 0);
+  const parts = found;
   const LIMIT = 80;
+  const item = (id: string, label: string, aria: string, sub: ReactNode, title: string) => (
+    <li key={id}>
+      <button className={`catalog-item ${placing === id ? 'on' : ''}`} aria-label={aria} aria-pressed={placing === id} title={title}
+        onClick={() => onPick(placing === id ? null : id)} data-part-id={id}>
+        <span>{label}</span>{sub}
+      </button>
+    </li>
+  );
   return (
     <aside className="panel left" aria-label="Каталог">
       <h3>Детали</h3>
-      <input type="search" aria-label="Поиск детали для схемы" placeholder="Поиск: 555, 10к, диод…" value={query} onChange={(e) => setQuery(e.target.value)} />
-      <ul className="catalog-parts">
-        {found.slice(0, LIMIT).map((b) => (
-          <li key={b.part.id}>
-            <button className={`catalog-item ${placing === b.part.id ? 'on' : ''}`} aria-label={b.part.name} title={b.part.description || b.part.name}
-              aria-pressed={placing === b.part.id} onClick={() => onPick(placing === b.part.id ? null : b.part.id)} data-part-id={b.part.id}>
-              <span>{b.part.name}</span>
-              <Badges b={b} personal={catalog.isPersonal(b.part.id)} />
-            </button>
-          </li>
+      <input type="search" aria-label="Поиск детали для схемы" placeholder="Тип, корпус или деталь: 0805, TO-220, 555…" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <div className="template-groups" aria-label="Типы деталей">
+        {shownGroups.map((g) => (
+          <details key={g.category} className="template-group" open={!!q} data-group={g.category}>
+            <summary>{g.label}</summary>
+            <ul className="catalog-parts">
+              {g.items.map((i) => item(i.partId, i.variant, `${g.label}: ${i.variant}`, <span className="muted small">{i.packageName}</span>, `Корпус: ${i.packageName}`))}
+            </ul>
+          </details>
         ))}
-        {found.length > LIMIT && <li className="muted small">…и ещё {found.length - LIMIT}. Уточните поиск.</li>}
-        {found.length === 0 && <li className="muted small">Ничего не найдено.</li>}
-      </ul>
+      </div>
+      {(
+        <>
+          <h4 className="small">Готовые детали{q ? '' : ' (поиск — по названию, номиналу, маркировке)'}</h4>
+          <ul className="catalog-parts">
+            {parts.slice(0, LIMIT).map((b) => item(b.part.id, b.part.name, b.part.name, <Badges b={b} personal={catalog.isPersonal(b.part.id)} />, b.part.description || b.part.name))}
+            {parts.length > LIMIT && <li className="muted small">…и ещё {parts.length - LIMIT}. Уточните поиск.</li>}
+            {parts.length === 0 && shownGroups.length === 0 && <li className="muted small">Ничего не найдено.</li>}
+          </ul>
+        </>
+      )}
       <button className="btn small" onClick={onOpenCatalog}>Открыть каталог…</button>
-      <p className="muted small">Выберите деталь и щёлкните на полотне. Провод — щелчок по выводу, затем по второму выводу. Esc — отмена.</p>
+      <p className="muted small">Выберите тип и корпус (или готовую деталь) и щёлкните на полотне; Esc — отмена. Двойной щелчок по детали — карточка: номинал, мощность, модель, выводы.</p>
     </aside>
   );
 }

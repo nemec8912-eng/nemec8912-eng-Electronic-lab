@@ -732,6 +732,13 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
   const boxes = doc.pcb.placements.map((pl) => ({ pl, b: bodyRect(doc, pl), ref: doc.schematic.instances.find((i) => i.id === pl.instanceId)?.refDes }));
   for (const { pl, b, ref } of boxes) {
     if (!ref) { out.push({ severity: 'error', code: 'orphan', message: 'На плате есть деталь, удалённая из схемы — выполните синхронизацию', at: pl.position, ids: [pl.id] }); continue; }
+    {
+      // Выводы корпуса не назначены, а на схеме к детали подключены провода — цепи на плату не попадут
+      const { pinMap } = placementContext(doc, pl);
+      const inst = doc.schematic.instances.find((i) => i.id === pl.instanceId);
+      const connected = inst ? doc.schematic.nets.some((n) => n.connections.some((c) => c.instanceId === inst.id)) : false;
+      if (pinMap.length === 0 && connected) out.push({ severity: 'error', code: 'net', message: `${ref}: выводы корпуса не назначены — цепи детали не попадут на плату. Назначьте выводы в карточке детали (двойной щелчок на схеме)`, at: pl.position, ids: [pl.id] });
+    }
     if (b && !rectInside(board, b, 0)) out.push({ severity: 'warning', code: 'edge', message: `${ref}: корпус выходит за край платы`, at: pl.position, ids: [pl.id] });
     const { pkg } = placementContext(doc, pl);
     if (board.layers === 1 && pkg?.mount === 'THT' && pl.side === 'bottom') out.push({ severity: 'warning', code: 'layer', message: `${ref}: выводная деталь со стороны меди — на односторонней плате её обычно ставят сверху`, at: pl.position, ids: [pl.id] });

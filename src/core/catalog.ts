@@ -197,7 +197,9 @@ export function lintBundle(b: PartBundle, others: PartDef[] = [], builtin: PartD
       if (mappedPads.has(m.pad)) err('pinmap', `${pkg.name}: на площадку «${m.pad}» назначено несколько выводов`);
       mappedPins.add(m.symbolPin); mappedPads.add(m.pad);
     }
-    for (const pin of b.symbol.pins) if (!mappedPins.has(pin.number) && pin.electricalType !== 'nc') err('pinmap', `${pkg.name}: вывод ${pin.number} (${pin.name || 'без имени'}) не назначен ни на одну площадку`);
+    // Ничего не назначено — сознательно незаданная распиновка (шаблон «тип + корпус»): это предупреждение, а не ошибка
+    if (ref.pinMap.length === 0 && b.symbol.pins.length > 0) warn('pinmap', `${pkg.name}: выводы корпуса не назначены — задайте назначение выводов перед разводкой платы`);
+    else for (const pin of b.symbol.pins) if (!mappedPins.has(pin.number) && pin.electricalType !== 'nc') err('pinmap', `${pkg.name}: вывод ${pin.number} (${pin.name || 'без имени'}) не назначен ни на одну площадку`);
     const unused = pkg.pads.filter((x) => !mappedPads.has(x.number));
     if (unused.length) warn('pinmap', `${pkg.name}: площадки без вывода: ${unused.map((x) => x.number).join(', ')} (будут неподключёнными)`);
     if (pkg.pads.length > 2 && !pkg.pin1Marker) warn('packages', `${pkg.name}: не указан ключ первого вывода`);

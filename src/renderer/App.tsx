@@ -10,6 +10,8 @@ import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
 import { BoardPanel, type BoardSel } from './BoardPanel';
 import { ChecksPanel } from './ChecksPanel';
+import { InstanceCard } from './InstanceCard';
+import { partTemplates } from '../catalog/builtin';
 import { JournalPanel } from './JournalPanel';
 import { PartEditor } from './PartEditor';
 import { bundleOf } from '../core/catalog';
@@ -332,6 +334,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
   const [exportOpen, setExportOpen] = useState(false);
   const [editPart, setEditPart] = useState<string | null>(null);
   const [placing, setPlacing] = useState<string | null>(null);
+  const [cardInst, setCardInst] = useState<string | null>(null);
   const [boardSel, setBoardSel] = useState<BoardSel>(null);
   const [sim, setSim] = useState<{ result: SimResult; key: string } | null>(null);
   const [running, setRunning] = useState(false);
@@ -469,6 +472,28 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
     }
   };
 
+  const addPartToCatalog = async (partId: string) => {
+    // Перенос в общий каталог — только по подтверждению (ТЗ, этап 7): изменения детали в проекте
+    // остаются локальными, пока пользователь сам не отправит их в каталог.
+    const part = editorRef.current.doc.library.parts.find((x) => x.id === partId);
+    if (!part) return;
+    const existing = part.origin.catalogPartId ? catalog.byId(part.origin.catalogPartId) : null;
+    const users = editorRef.current.doc.schematic.instances.filter((i) => i.partId === partId).map((i) => i.refDes).join(', ');
+    const okAdd = await dialogs.confirm('Добавить в мой каталог',
+      existing
+        ? `В каталоге уже есть «${existing.part.name}». Деталь из проекта (${users || 'не используется'}) — с её номиналами, моделью и сведениями — будет сохранена в каталог как новая деталь; существующая не изменится.`
+        : `Сохранить «${part.name}» (${users || 'не используется'}) в мой каталог? Номиналы, модель и сведения из проекта станут доступны в других проектах.`,
+      'Добавить');
+    if (!okAdd) return;
+    try {
+      const saved = await unwrap(api().catalog.fromProject(editorRef.current.doc, partId));
+      await catalog.reload();
+      toast(`«${saved.part.name}» добавлена в мой каталог`);
+    } catch (e) {
+      await dialogs.alert('Деталь не добавлена в каталог', errorText(e));
+    }
+  };
+
   return (
     <>
       <TopBar info={info} fileActions={fileActions} editor={editor} projectActions={projectActions} />
@@ -518,6 +543,8 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
               onEdit={editor.apply}
               onError={(t) => toast(t, 'error')}
               placing={placing}
+              placingSymbol={placing ? catalog.byId(placing)?.symbol ?? null : null}
+              onInstDoubleClick={(id) => { setSelection([id]); setCardInst(id); }}
               onCancelPlace={() => setPlacing(null)}
               onPlace={(partId, p) => {
                 const bundle = catalog.byId(partId);
@@ -583,27 +610,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             onInstRotate={(id) => editor.apply('Поворот детали', (d) => rotateItems(d, new Set([id])))}
             onInstDelete={(id) => { editor.apply('Удаление детали', (d) => deleteItems(d, new Set([id]))); setSelection([]); }}
             onEditPart={(partId) => setEditPart(partId)}
-            onAddToCatalog={async (partId) => {
-              // Перенос в общий каталог — только по подтверждению (ТЗ, этап 7): изменения детали в проекте
-              // остаются локальными, пока пользователь сам не отправит их в каталог.
-              const part = editorRef.current.doc.library.parts.find((x) => x.id === partId);
-              if (!part) return;
-              const existing = part.origin.catalogPartId ? catalog.byId(part.origin.catalogPartId) : null;
-              const users = editorRef.current.doc.schematic.instances.filter((i) => i.partId === partId).map((i) => i.refDes).join(', ');
-              const okAdd = await dialogs.confirm('Добавить в мой каталог',
-                existing
-                  ? `В каталоге уже есть «${existing.part.name}». Деталь из проекта (${users || 'не используется'}) — с её номиналами, моделью и сведениями — будет сохранена в каталог как новая деталь; существующая не изменится.`
-                  : `Сохранить «${part.name}» (${users || 'не используется'}) в мой каталог? Номиналы, модель и сведения из проекта станут доступны в других проектах.`,
-                'Добавить');
-              if (!okAdd) return;
-              try {
-                const saved = await unwrap(api().catalog.fromProject(editorRef.current.doc, partId));
-                await catalog.reload();
-                toast(`«${saved.part.name}» добавлена в мой каталог`);
-              } catch (e) {
-                await dialogs.alert('Деталь не добавлена в каталог', errorText(e));
-              }
-            }}
+            onAddToCatalog={(partId) => void addPartToCatalog(partId)}
             catalogModelFor={(part) => (part.origin.catalogPartId ? catalog.byId(part.origin.catalogPartId)?.model ?? null : null)}
             onTakeModel={(partId) => {
               const part = editorRef.current.doc.library.parts.find((x) => x.id === partId);
@@ -667,7 +674,38 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
           />
         </main>
       )}
+      {cardInst && tab === 'schematic' && doc.schematic.instances.some((i) => i.id === cardInst) && (
+        <InstanceCard
+          key={cardInst}
+          doc={doc}
+          instId={cardInst}
+          catalog={catalog.all}
+          variants={variantsFor(doc, cardInst)}
+          confirm={(t, m, ok) => dialogs.confirm(t, m, ok)}
+          onCancel={() => setCardInst(null)}
+          onSave={(label, fn, warnings) => {
+            editor.apply(label, fn);
+            setCardInst(null);
+            if (warnings.length) toast(warnings.join(' '));
+          }}
+          onAddToCatalog={(partId) => void addPartToCatalog(partId)}
+          onEditPart={(partId) => { setCardInst(null); setEditPart(partId); }}
+        />
+      )}
       <StatusBar info={info} editor={editor} />
     </>
   );
+}
+
+/** Варианты корпуса для карточки: шаблоны той же группы, что и деталь. */
+function variantsFor(doc: ProjectDoc, instId: string): Array<{ partId: string; label: string }> {
+  const inst = doc.schematic.instances.find((i) => i.id === instId);
+  const part = inst ? doc.library.parts.find((p) => p.id === inst.partId) : undefined;
+  if (!part) return [];
+  const groups = partTemplates();
+  const byTemplate = groups.find((g) => g.items.some((i) => i.partId === part.origin.catalogPartId));
+  const cat = part.category === 'capacitor-polar' ? 'capacitor' : part.category.startsWith('ic') || part.category === 'mcu' ? 'ic-analog' : part.category;
+  const g = byTemplate ?? groups.find((x) => x.category === cat);
+  if (!g || g.category === 'other') return [];
+  return g.items.filter((i) => i.partId !== part.origin.catalogPartId).map((i) => ({ partId: i.partId, label: `${i.variant} — ${i.packageName}` }));
 }

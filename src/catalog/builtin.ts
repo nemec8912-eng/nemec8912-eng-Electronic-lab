@@ -13,6 +13,7 @@ import { BUILTIN_PARTS, PART_INFO_DEFAULTS } from '../core/library';
 import type { PartDef, Quantity, SimModel } from '../core/model';
 import { generatePackage, type GenParams, type PackageTemplate } from '../core/packages';
 import * as SM from './spiceModels';
+import * as STDM from '../core/stdModels';
 import { icSymbol, standardSymbol, type IcPinInput, type SymbolTemplate } from '../core/symbols';
 
 type PinMap = Array<[symbolPin: string, pad: string]> | 'identity';
@@ -35,6 +36,8 @@ interface Def {
   packages: Array<{ family: string; params?: GenParams; pinMap: PinMap } | { custom: PackageTemplate; pinMap: PinMap }>;
   model: Omit<SimModel, 'id'> | null;
   generic: boolean;
+  /** Шаблон «тип + корпус». */
+  template?: boolean;
 }
 
 const q = (value: number, unit: string): Quantity => ({ value, unit });
@@ -74,11 +77,13 @@ function make(d: Def): PartBundle {
     polarized: d.polarized ?? false,
     origin: {
       catalogPartId: null,
-      source: d.generic ? 'встроенный справочник: типовая деталь' : 'встроенный справочник: типовые данные из даташитов',
+      source: d.template ? TEMPLATE_SOURCE : d.generic ? 'встроенный справочник: типовая деталь' : 'встроенный справочник: типовые данные из даташитов',
       license: null,
       verified: false,
       checkedAt: null,
-      notes: d.generic
+      notes: d.template
+        ? 'Шаблон: номиналы, маркировка, модель и назначение выводов задаются у детали на схеме. Без модели деталь не рассчитывается.'
+        : d.generic
         ? 'Типовая деталь: номинал задаётся на схеме, пределы — типичные для такого исполнения. Сверьте с выбранной реальной деталью.'
         : 'Данные внесены по типовым значениям даташитов разных производителей и могут отличаться у конкретного изготовителя. Сверьте с даташитом.',
     },
@@ -364,11 +369,140 @@ const DEFS: Def[] = [
     packages: [{ family: 'DIP', params: { pins: 8 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 8 }, pinMap: 'identity' }], model: SM.IC_LM393 },
 ];
 
+// ---------- Шаблоны «тип + корпус» (быстрое добавление; номиналы задаются в карточке на схеме) ----------
+
+export const TEMPLATE_SOURCE = 'шаблон: тип и корпус, характеристики задаются на схеме';
+
+interface Tpl { key: string; category: string; prefix: string; type: string; variant: string; symbol: SymbolTemplate; pkg: { family: string; params?: GenParams } | { custom: PackageTemplate };
+  pinMap: PinMap; model: Omit<SimModel, 'id'> | null; values?: Record<string, Quantity>; ratings?: Record<string, Quantity>; tolerancePct?: number; polarized?: boolean; note?: string }
+
+/** Существующие типовые детали, которые служат шаблонами (их id не меняются — старые проекты на них ссылаются). */
+const EXISTING_TEMPLATES: Array<{ key: string; group: string; variant: string }> = [
+  { key: 'res/tht-025', group: 'resistor', variant: 'Выводной 0,25 Вт' },
+  { key: 'res/0805', group: 'resistor', variant: 'SMD 0805' },
+  { key: 'res/tht-2w', group: 'resistor', variant: 'Выводной 2 Вт' },
+  { key: 'cap/ceramic-tht', group: 'capacitor', variant: 'Керамический выводной' },
+  { key: 'cap/ceramic-0805', group: 'capacitor', variant: 'Керамический SMD 0805' },
+  { key: 'cap/electrolytic', group: 'capacitor', variant: 'Электролитический ∅6,3 мм' },
+  { key: 'ind/radial', group: 'inductor', variant: 'Дроссель радиальный' },
+  { key: 'zener/generic', group: 'zener', variant: 'DO-35 (выводной)' },
+  { key: 'fuse/5x20', group: 'fuse', variant: '5×20 мм в держателе' },
+  { key: 'conn/header-1x2', group: 'connector', variant: 'Штыри 1×2' },
+  { key: 'conn/header-1x4', group: 'connector', variant: 'Штыри 1×4' },
+  { key: 'conn/terminal-2', group: 'connector', variant: 'Клеммник на 2 провода' },
+  { key: 'sw/tact6', group: 'switch', variant: 'Кнопка 6×6 мм' },
+  { key: 'sw/toggle', group: 'switch', variant: 'Тумблер (провода)' },
+];
+
+const R_POWER: Record<string, number> = { '0402': 0.063, '0603': 0.1, '0805': 0.125, '1206': 0.25, '2512': 1 };
+const TEMPLATES: Tpl[] = [
+  ...['0402', '0603', '1206', '2512'].map((size): Tpl => ({ key: `tpl/res/${size}`, category: 'resistor', prefix: 'R', type: 'Резистор', variant: `SMD ${size}`, symbol: sym('iec-resistor'),
+    pkg: { family: 'CHIP', params: { size } }, pinMap: 'identity', model: R_MODEL, values: { resistance: q(10_000, 'Ω') }, ratings: { power: q(R_POWER[size]!, 'W') } })),
+  { key: 'tpl/res/tht-05', category: 'resistor', prefix: 'R', type: 'Резистор', variant: 'Выводной 0,5 Вт', symbol: sym('iec-resistor'),
+    pkg: { family: 'AXIAL', params: { pitch: 12.7, bodyL: 9, bodyD: 3.2, drill: 0.8 } }, pinMap: 'identity', model: R_MODEL, values: { resistance: q(10_000, 'Ω') }, ratings: { power: q(0.5, 'W') } },
+  ...['0402', '0603', '1206'].map((size): Tpl => ({ key: `tpl/cap/${size}`, category: 'capacitor', prefix: 'C', type: 'Конденсатор керамический', variant: `SMD ${size}`, symbol: sym('iec-capacitor'),
+    pkg: { family: 'CHIP', params: { size } }, pinMap: 'identity', model: C_MODEL, values: { capacitance: q(100e-9, 'F') }, ratings: { voltage: q(50, 'V') } })),
+  { key: 'tpl/cap/film', category: 'capacitor', prefix: 'C', type: 'Конденсатор плёночный', variant: 'Плёночный выводной, шаг 5 мм', symbol: sym('iec-capacitor'),
+    pkg: { family: 'RADIAL', params: { pitch: 5.08, diameter: 7, polar: false } }, pinMap: 'identity', model: C_MODEL, values: { capacitance: q(100e-9, 'F') }, ratings: { voltage: q(63, 'V') } },
+  ...([[5, 2], [8, 3.5], [10, 5]] as const).map(([d, pitch]): Tpl => ({ key: `tpl/cap/el-${d}`, category: 'capacitor-polar', prefix: 'C', type: 'Конденсатор электролитический', variant: `Электролитический ∅${d} мм`,
+    symbol: sym('iec-capacitor-polar'), pkg: { family: 'RADIAL', params: { pitch, diameter: d, polar: true } }, pinMap: 'identity', model: SM.C_ELECTROLYTIC_ESR,
+    values: { capacitance: q(47e-6, 'F'), esr: q(0.6, 'Ω') }, ratings: { voltage: q(25, 'V') }, polarized: true })),
+  { key: 'tpl/ind/axial', category: 'inductor', prefix: 'L', type: 'Катушка', variant: 'Выводная аксиальная', symbol: sym('iec-inductor'),
+    pkg: { family: 'AXIAL', params: { pitch: 12.7, bodyL: 9, bodyD: 4, drill: 0.8 } }, pinMap: 'identity', model: L_MODEL, values: { inductance: q(100e-6, 'H') }, ratings: { current: q(0.3, 'A') } },
+  ...['0805', '1210'].map((size): Tpl => ({ key: `tpl/ind/${size}`, category: 'inductor', prefix: 'L', type: 'Катушка', variant: `SMD ${size}`, symbol: sym('iec-inductor'),
+    pkg: { family: 'CHIP', params: { size } }, pinMap: 'identity', model: L_MODEL, values: { inductance: q(10e-6, 'H') }, ratings: { current: q(0.2, 'A') } })),
+  // Диоды: вывод 1 корпуса — катод (полоса на корпусе); модель выбирается в карточке
+  ...([['DO-41', { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 }], ['DO-35', { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }], ['DO-201', { pitch: 15.24, bodyL: 9.5, bodyD: 5.3, drill: 1.3 }]] as const)
+    .map(([name, params]): Tpl => ({ key: `tpl/diode/${name}`, category: 'diode', prefix: 'VD', type: 'Диод', variant: `${name} (выводной)`, symbol: sym('diode'),
+      pkg: { family: 'AXIAL', params: { ...params } }, pinMap: [['1', '1'], ['2', '2']], model: null })),
+  ...['SMA', 'SMB', 'SMC'].map((size): Tpl => ({ key: `tpl/diode/${size}`, category: 'diode', prefix: 'VD', type: 'Диод', variant: `SMD ${size}`, symbol: sym('diode'),
+    pkg: { family: 'SMA', params: { size } }, pinMap: [['1', '1'], ['2', '2']], model: null })),
+  ...([[3, 2.54], [5, 2.54]] as const).map(([d, pitch]): Tpl => ({ key: `tpl/led/${d}mm`, category: 'led', prefix: 'HL', type: 'Светодиод', variant: `${d} мм`, symbol: sym('led'),
+    pkg: { family: 'RADIAL', params: { pitch, diameter: d, polar: false } }, pinMap: [['1', '1'], ['2', '2']], model: null, ratings: { current: q(0.02, 'A'), reverseVoltage: q(5, 'V') } })),
+  ...['0805', '1206'].map((size): Tpl => ({ key: `tpl/led/${size}`, category: 'led', prefix: 'HL', type: 'Светодиод', variant: `SMD ${size}`, symbol: sym('led'),
+    pkg: { family: 'CHIP', params: { size } }, pinMap: [['1', '1'], ['2', '2']], model: null, ratings: { current: q(0.02, 'A'), reverseVoltage: q(5, 'V') } })),
+  { key: 'tpl/zener/do41', category: 'zener', prefix: 'VD', type: 'Стабилитрон', variant: 'DO-41 (выводной, 1 Вт)', symbol: sym('zener'),
+    pkg: { family: 'AXIAL', params: { pitch: 10.16, bodyL: 5.2, bodyD: 2.7, drill: 1 } }, pinMap: [['1', '1'], ['2', '2']], model: SM.D_ZENER_GENERIC, values: { zenerVoltage: q(5.1, 'V') }, ratings: { power: q(1, 'W') } },
+  { key: 'tpl/zener/sma', category: 'zener', prefix: 'VD', type: 'Стабилитрон', variant: 'SMD SMA', symbol: sym('zener'),
+    pkg: { family: 'SMA', params: { size: 'SMA' } }, pinMap: [['1', '1'], ['2', '2']], model: SM.D_ZENER_GENERIC, values: { zenerVoltage: q(5.1, 'V') }, ratings: { power: q(1, 'W') } },
+  // Транзисторы, тиристоры: распиновка у разных деталей в одном корпусе разная — не задана, назначается в карточке
+  ...(['TO-92', 'TO-220', 'TO-247', 'SOT-23'] as const).flatMap((fam): Tpl[] => [
+    { key: `tpl/bjt/${fam}`, category: 'bjt', prefix: 'VT', type: 'Транзистор биполярный', variant: fam, symbol: sym('npn'), pkg: { family: fam, params: fam === 'SOT-23' ? { pins: '3' } : {} }, pinMap: [], model: null,
+      note: 'Распиновка в этом корпусе зависит от транзистора — назначьте выводы в карточке (двойной щелчок) или найдите транзистор по маркировке.' },
+    { key: `tpl/mos/${fam}`, category: 'mosfet', prefix: 'VT', type: 'Транзистор MOSFET', variant: fam, symbol: sym('nmos'), pkg: { family: fam, params: fam === 'SOT-23' ? { pins: '3' } : {} }, pinMap: [], model: null,
+      note: 'Распиновка в этом корпусе зависит от транзистора — назначьте выводы в карточке или найдите транзистор по маркировке.' },
+  ]),
+  ...(['TO-92', 'TO-220'] as const).flatMap((fam): Tpl[] => [
+    { key: `tpl/thy/${fam}`, category: 'thyristor', prefix: 'VS', type: 'Тиристор', variant: fam, symbol: sym('thyristor'), pkg: { family: fam }, pinMap: [], model: null },
+    { key: `tpl/triac/${fam}`, category: 'triac', prefix: 'VS', type: 'Симистор', variant: fam, symbol: sym('triac'), pkg: { family: fam }, pinMap: [], model: null },
+  ]),
+  // Микросхемы: номер вывода = номер площадки; назначение выводов и модель — в карточке
+  ...([['DIP', [8, 14, 16, 20]], ['SOIC', [8, 14, 16]], ['SOP', [8, 16]], ['TSSOP', [14, 16, 20]], ['QFP', [32, 44, 64]], ['QFN', [16, 32]]] as const)
+    .flatMap(([fam, counts]) => counts.map((n): Tpl => ({ key: `tpl/ic/${fam}-${n}`, category: 'ic-analog', prefix: 'DA', type: 'Микросхема', variant: `${fam}-${n}`,
+      symbol: icPins(n), pkg: { family: fam, params: { pins: n } }, pinMap: 'identity', model: null }))),
+  { key: 'tpl/ic/BGA-64', category: 'ic-analog', prefix: 'DA', type: 'Микросхема', variant: 'BGA-64 (8×8)', symbol: icPins(64, (i) => `${'ABCDEFGH'[Math.floor(i / 8)]}${(i % 8) + 1}`),
+    pkg: { family: 'BGA', params: { rows: 8, cols: 8 } }, pinMap: 'identity', model: null },
+  ...([[7, 5], [10, 7.5], [14, 7.5]] as const).map(([d, pitch]): Tpl => ({ key: `tpl/var/${d}`, category: 'varistor', prefix: 'RU', type: 'Варистор', variant: `∅${d} мм`, symbol: sym('varistor'),
+    pkg: { family: 'RADIAL', params: { pitch, diameter: d + 1.5, drill: 1, polar: false } }, pinMap: 'identity', model: STDM.VARISTOR_PARAM, values: { clampVoltage: q(470, 'V') } })),
+  { key: 'tpl/conn/header-1x3', category: 'connector', prefix: 'X', type: 'Разъём', variant: 'Штыри 1×3', symbol: ic('Разъём 1×3', [['1', '1', 'passive'], ['2', '2', 'passive'], ['3', '3', 'passive']]),
+    pkg: { family: 'HEADER', params: { rows: 1, pins: 3 } }, pinMap: 'identity', model: CONNECTOR },
+  { key: 'tpl/conn/terminal-3', category: 'connector', prefix: 'X', type: 'Разъём', variant: 'Клеммник на 3 провода', symbol: ic('Клеммник 3', [['1', '1', 'passive'], ['2', '2', 'passive'], ['3', '3', 'passive']]),
+    pkg: { family: 'TERMINAL', params: { pins: 3 } }, pinMap: 'identity', model: CONNECTOR },
+];
+
+function icPins(n: number, name: (i: number) => string = (i) => String(i + 1)): SymbolTemplate {
+  if (name(0) === '1') return ic(`Микросхема (${n} выв.)`, Array.from({ length: n }, (_, i) => [String(i + 1), String(i + 1), 'passive'] as [string, string, 'passive']));
+  return ic(`Микросхема (${n} выв.)`, Array.from({ length: n }, (_, i) => [name(i), name(i), 'passive'] as [string, string, 'passive']));
+}
+
+const TEMPLATE_DEFS: Def[] = TEMPLATES.map((t) => ({
+  key: t.key, name: `${t.type} ${t.variant}`, category: t.category, refPrefix: t.prefix, generic: true, description: t.note ?? `${t.type}, корпус ${t.variant}. Характеристики задаются в карточке детали на схеме (двойной щелчок).`,
+  values: t.values, ratings: t.ratings, tolerancePct: t.tolerancePct, polarized: t.polarized, symbol: t.symbol,
+  packages: ['custom' in t.pkg ? { custom: t.pkg.custom, pinMap: t.pinMap } : { family: t.pkg.family, params: t.pkg.params, pinMap: t.pinMap }], model: t.model, template: true,
+}));
+
+export interface TemplateGroup { category: string; label: string; items: Array<{ partId: string; variant: string; packageName: string }> }
+
+/** Шаблоны по типам: категория → варианты корпуса (для быстрого добавления на схему). */
+export function partTemplates(): TemplateGroup[] {
+  const cat = builtinCatalog();
+  const byKey = (key: string) => cat.find((b) => b.part.id === stableId(`builtin/${key}/part`));
+  const groups = new Map<string, TemplateGroup>();
+  const add = (category: string, key: string, variant: string) => {
+    const b = byKey(key);
+    if (!b) return;
+    const g = groups.get(category) ?? { category, label: TEMPLATE_GROUP_LABEL[category] ?? category, items: [] };
+    g.items.push({ partId: b.part.id, variant, packageName: b.packages[0]?.name ?? 'без корпуса' });
+    groups.set(category, g);
+  };
+  for (const e of EXISTING_TEMPLATES) add(e.group, e.key, e.variant);
+  for (const t of TEMPLATES) add(t.category === 'capacitor-polar' ? 'capacitor' : t.category, t.key, t.category === 'capacitor-polar' || t.type.startsWith('Конденсатор плёночный') ? t.variant : t.category === 'capacitor' ? `Керамический ${t.variant}` : t.variant);
+  // «Другие»: остальные типовые детали справочника (реле, кварц, потенциометры, звук, датчики…)
+  const listed = new Set([...groups.values()].flatMap((g) => g.items.map((i) => i.partId)));
+  for (const b of cat) {
+    if (listed.has(b.part.id) || b.part.category === 'reference' || b.part.category === 'source' || !(b.part.origin.source ?? '').includes('типовая')) continue;
+    const g = groups.get('other') ?? { category: 'other', label: TEMPLATE_GROUP_LABEL.other!, items: [] };
+    g.items.push({ partId: b.part.id, variant: b.part.name, packageName: b.packages[0]?.name ?? 'без корпуса' });
+    groups.set('other', g);
+  }
+  return TEMPLATE_ORDER.map((c) => groups.get(c)).filter((g): g is TemplateGroup => !!g && g.items.length > 0);
+}
+
+const TEMPLATE_GROUP_LABEL: Record<string, string> = {
+  resistor: 'Резисторы', capacitor: 'Конденсаторы', inductor: 'Катушки индуктивности', diode: 'Диоды', led: 'Светодиоды', zener: 'Стабилитроны',
+  bjt: 'Биполярные транзисторы', mosfet: 'MOSFET-транзисторы', thyristor: 'Тиристоры', triac: 'Симисторы', 'ic-analog': 'Микросхемы',
+  fuse: 'Предохранители', varistor: 'Варисторы', connector: 'Разъёмы', switch: 'Кнопки и переключатели', other: 'Другие',
+};
+const TEMPLATE_ORDER = ['resistor', 'capacitor', 'inductor', 'diode', 'led', 'zener', 'bjt', 'mosfet', 'thyristor', 'triac', 'ic-analog', 'fuse', 'varistor', 'connector', 'switch', 'other'];
+
+/** Деталь — шаблон «тип + корпус» (характеристики задаёт пользователь). */
+export const isTemplatePart = (source: string | null) => source === TEMPLATE_SOURCE;
+
 let cache: PartBundle[] | null = null;
 
 /** Все детали встроенного справочника: 4 идеальные детали прототипа + типовые + реальные. */
 export function builtinCatalog(): PartBundle[] {
-  if (!cache) cache = [...BUILTIN_PARTS.map(builtinBundle), ...DEFS.map(make)];
+  if (!cache) cache = [...BUILTIN_PARTS.map(builtinBundle), ...DEFS.map(make), ...TEMPLATE_DEFS.map(make)];
   return cache;
 }
 

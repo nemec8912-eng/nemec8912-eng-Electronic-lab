@@ -76,6 +76,10 @@ export const FAMILIES: FamilyInfo[] = [
     { key: 'pins', label: 'Выводов', kind: 'int', def: 3, min: 2, max: 7 },
     { key: 'pitch', label: 'Шаг, мм', kind: 'mm', def: 2.54 },
   ] },
+  { id: 'TO-247', label: 'TO-247 (выводной, мощный)', mount: 'THT', params: [
+    { key: 'pins', label: 'Выводов', kind: 'int', def: 3, min: 2, max: 5 },
+    { key: 'pitch', label: 'Шаг, мм', kind: 'mm', def: 5.45 },
+  ] },
   { id: 'AXIAL', label: 'Аксиальный (резистор, диод DO-41)', mount: 'THT', params: [
     { key: 'pitch', label: 'Между отверстиями, мм', kind: 'mm', def: 10.16 },
     { key: 'drill', label: 'Отверстие, мм', kind: 'mm', def: 0.8 },
@@ -199,8 +203,13 @@ export function generatePackage(family: string, params: GenParams = {}): Package
         pin1Marker: 'точка или скос у вывода 1', pitchMm: pitch, numbering: 'против часовой стрелки от вывода 1, вид сверху' };
     }
     case 'QFP': case 'QFN': {
-      const pins = num(p, 'pins', 32), pitch = num(p, 'pitch', 0.8), span = num(p, 'span', 8.4), w = num(p, 'padW', 1.5), h = num(p, 'padH', 0.5);
+      const pins = num(p, 'pins', 32), pitch = num(p, 'pitch', 0.8), w = num(p, 'padW', 1.5), h = num(p, 'padH', 0.5);
       if (pins % 4) throw new Error(`${family}: число выводов должно делиться на 4`);
+      // Ряды площадок не должны сходиться в углах: наименьшее расстояние между рядами — по числу выводов на сторону
+      const minSpan = r2((pins / 4 - 1) * pitch + h + w + 0.4);
+      const span = params.span === undefined ? Math.max(num(p, 'span', 8.4), r2(minSpan + 0.6)) : num(p, 'span', 8.4);
+      if (span < minSpan) throw new Error(`${family}-${pins}: при шаге ${ru(pitch)} мм площадки в углах сольются — расстояние между рядами не меньше ${ru(minSpan)} мм`);
+      p.span = span;
       const pads = quad(pins, pitch, span, w, h);
       if (family === 'QFN' && num(p, 'ep', 0) > 0) pads.push(smd(String(pins + 1), 0, 0, num(p, 'ep', 0), num(p, 'ep', 0)));
       const half = span / 2 - w / 2 - 0.15;
@@ -246,6 +255,11 @@ export function generatePackage(family: string, params: GenParams = {}): Package
       const pins = num(p, 'pins', 3), pitch = num(p, 'pitch', 2.54);
       const pads = Array.from({ length: pins }, (_, i) => tht(String(i + 1), i * pitch, 0, 1.1, i === 0, 2.0));
       return { ...base, name: `TO-220-${pins}`, pads, body: { x: r2(((pins - 1) * pitch) / 2 - 5.1), y: -3.2, w: 10.2, h: 4.6 }, pin1Marker: 'надписью к себе, вывод 1 слева', pitchMm: pitch, numbering: 'слева направо, маркировкой к себе, выводами вниз' };
+    }
+    case 'TO-247': {
+      const pins = num(p, 'pins', 3), pitch = num(p, 'pitch', 5.45);
+      const pads = Array.from({ length: pins }, (_, i) => tht(String(i + 1), i * pitch, 0, 1.4, i === 0, 2.6));
+      return { ...base, name: `TO-247-${pins}`, pads, body: { x: r2(((pins - 1) * pitch) / 2 - 8), y: -3, w: 16, h: 5 }, pin1Marker: 'надписью к себе, вывод 1 слева', pitchMm: pitch, numbering: 'слева направо, маркировкой к себе, выводами вниз' };
     }
     case 'AXIAL': {
       const pitch = num(p, 'pitch', 10.16), drill = num(p, 'drill', 0.8), L = num(p, 'bodyL', 6.3), D = num(p, 'bodyD', 2.5);

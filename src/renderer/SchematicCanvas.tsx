@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { graphOf } from '../core/connectivity';
 import { newId } from '../core/ids';
 import { labelPrims } from '../core/graphics';
-import type { PinRef, Point, ProjectDoc, WireEnd } from '../core/model';
+import type { PinRef, Point, ProjectDoc, SymbolDef, WireEnd } from '../core/model';
 import {
   addLabel, copyItems, deleteItems, drawWire, expandGroups, groupItems, hitVertex, hitWire, instanceBox, itemsInRect,
   junctionDots, mirrorItems, moveItems, orthogonal, pasteItems, pinPosition, POWER_NAMES, rotateItems, snap, snapPt, symbolOf,
@@ -34,6 +34,10 @@ interface Props {
   placing?: string | null;
   onPlace?(partId: string, p: Point): void;
   onCancelPlace?(): void;
+  /** Обозначение размещаемой детали — рисуется под курсором. */
+  placingSymbol?: SymbolDef | null;
+  /** Двойной щелчок по детали — карточка характеристик. */
+  onInstDoubleClick?(id: string): void;
   onAddNote?(p: Point): void;
   onPinClick?(pin: PinRef): void;
   /** Щупы приборов на выводах: класс цвета (red, black, ch1, ch2) и подпись. */
@@ -76,6 +80,7 @@ export function SchematicCanvas(p: Props) {
   const [tool, setTool] = useState<Tool>('select');
   const [wire, setWire] = useState<WireDraw | null>(null);
   const [band, setBand] = useState<{ a: Point; b: Point } | null>(null);
+  const lastDown = useRef<{ inst: string | null; other: boolean } | null>(null);
   const drag = useRef<Drag | null>(null);
   const edit = p.mode === 'edit';
   const sel = useMemo(() => new Set(p.selection), [p.selection]);
@@ -225,6 +230,8 @@ export function SchematicCanvas(p: Props) {
 
   const onPointerDown = (e: RPointerEvent) => {
     const t = e.target as Element;
+    // Запоминаем, по чему нажали: из-за захвата указателя двойной щелчок приходит на само полотно
+    lastDown.current = { inst: t.closest('[data-pin]') ? null : t.closest('[data-inst-id]')?.getAttribute('data-inst-id') ?? null, other: !!t.closest('[data-note-id],[data-pin],[data-wire-id],[data-label-id],[data-junction-id]') };
     const w = toWorld(e.clientX, e.clientY);
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     if (e.button !== 0) {
@@ -300,7 +307,11 @@ export function SchematicCanvas(p: Props) {
       if (last) { setWire({ ...wire, bends: wire.bends.slice(0, -1) }); finishWireFree(last); }
       return;
     }
-    if ((e.target as Element).closest('[data-note-id],[data-inst-id],[data-pin],[data-wire-id],[data-label-id],[data-junction-id]')) return;
+    const t = e.target as Element;
+    const down = lastDown.current;
+    const instId = down?.inst ?? (t.closest('[data-pin]') ? null : t.closest('[data-inst-id]')?.getAttribute('data-inst-id'));
+    if (instId) { p.onInstDoubleClick?.(instId); return; }
+    if (down?.other || t.closest('[data-note-id],[data-inst-id],[data-pin],[data-wire-id],[data-label-id],[data-junction-id]')) return;
     p.onAddNote?.(snapPt(w));
   };
   const finishWireFree = (at: Point) => {
@@ -376,6 +387,11 @@ export function SchematicCanvas(p: Props) {
               </g>
             );
           })}
+          {p.placing && p.placingSymbol && cursor && (
+            <g className="place-ghost" data-testid="place-ghost" pointerEvents="none" transform={`translate(${snapPt(cursor).x} ${snapPt(cursor).y})`}>
+              <SymbolGraphic symbol={p.placingSymbol} />
+            </g>
+          )}
           {dots.map((d, i) => <circle key={i} cx={d.x} cy={d.y} r={3.2} className="junction-dot" />)}
           {edit && freeEnds.map((d, i) => <rect key={i} x={d.x - 3} y={d.y - 3} width={6} height={6} className="free-end" />)}
           {doc.schematic.junctions.map((j) => (

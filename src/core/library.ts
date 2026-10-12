@@ -188,7 +188,11 @@ const PARSE_PREFIX: Record<string, number> = {
  */
 export function parseQuantity(input: string, unitRu: string): number | null {
   let s = input.trim().replace(/\s+/g, '').replace(',', '.');
-  for (const u of [unitRu, unitRu.toLowerCase(), 'Ohm', 'ohm', 'Ω', 'F', 'V']) if (u && s.endsWith(u)) { s = s.slice(0, -u.length); break; }
+  for (const u of [unitRu, unitRu.toLowerCase(), 'Ohm', 'ohm', 'Ω', 'F', 'V', 'H', 'Hz', 'A']) if (u && s.endsWith(u)) { s = s.slice(0, -u.length); break; }
+  // Запись с буквой вместо запятой (как на корпусах и в схемах): 4k7 → 4,7 к; 4R7 → 4,7; 2u2 → 2,2 мк; 1M5 → 1,5 М
+  const rkm = /^(\d+)(мк|[RrГGМMкkKмmuµμнnпp])(\d+)$/.exec(s);
+  if (rkm) s = `${rkm[1]}.${rkm[3]}${/^[Rr]$/.test(rkm[2]!) ? '' : rkm[2]}`;
+  else if (/^\d*\.?\d+[Rr]$/.test(s)) s = s.slice(0, -1);
   const m = /^([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)(мк|[ГGМMкkKмmuµμнnпp])?$/.exec(s);
   if (!m) return null;
   // Округление убирает хвосты двоичной арифметики: 100 × 1e-9 → 1e-7, а не 1.0000000000000001e-7.

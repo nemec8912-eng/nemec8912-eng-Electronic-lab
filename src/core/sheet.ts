@@ -16,16 +16,23 @@ export function instanceLabel(doc: ProjectDoc, inst: ComponentInstance): string[
   const part = doc.library.parts.find((p) => p.id === inst.partId);
   if (!part || part.category === 'reference') return [];
   const lines = [inst.refDes];
+  const passive = ['resistor', 'capacitor', 'capacitor-polar', 'inductor', 'source'].includes(part.category);
+  // Транзисторы, диоды, микросхемы: что за деталь — модель (партномер) или маркировка
+  const ident = part.partNumber ?? part.marking;
+  if (!passive && ident) lines.push(ident);
+  const cap = part.category === 'capacitor' || part.category === 'capacitor-polar';
   for (const [k, q] of Object.entries(inst.values)) {
     const def = PARAMS[k];
     if (!def) continue;
     if (k === 'offset' && q.value === 0) continue; // нулевая постоянная составляющая генератора — не загромождать
+    if (k === 'esr' || (k === 'resistance' && part.category === 'inductor')) continue; // второстепенное — в карточке
     // У генераторов несколько величин: подписываем, что есть что (амплитуда, заполнение).
     const prefix = k === 'amplitude' ? 'A ' : k === 'offset' ? '= ' : k === 'duty' ? 'D ' : '';
-    lines.push(prefix + formatQuantity(q.value, def.unitRu));
+    let text = prefix + formatQuantity(q.value, def.unitRu);
+    // Конденсатор: «47 мкФ / 50 В»
+    if (cap && k === 'capacitance' && part.ratings.voltage) text += ` / ${formatQuantity(part.ratings.voltage.value, 'В')}`;
+    lines.push(text);
   }
-  if ((part.category === 'capacitor' || part.category === 'capacitor-polar') && part.ratings.voltage) lines.push(formatQuantity(part.ratings.voltage.value, 'В'));
-  if (lines.length === 1 && part.partNumber) lines.push(part.partNumber);
   return lines;
 }
 

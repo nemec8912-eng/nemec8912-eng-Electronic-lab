@@ -19,4 +19,5 @@ declare module 'react' {
   export type MouseEvent<T = Element> = globalThis.MouseEvent & { currentTarget: T; target: EventTarget };
   export type PointerEvent<T = Element> = globalThis.PointerEvent & { currentTarget: T; target: EventTarget };
   export type WheelEvent<T = Element> = globalThis.WheelEvent & { currentTarget: T; target: EventTarget };
+  export type KeyboardEvent<T = Element> = globalThis.KeyboardEvent & { currentTarget: T; target: EventTarget };
 }

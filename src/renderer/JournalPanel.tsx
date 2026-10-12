@@ -85,7 +85,9 @@ function RecordView(p: Props & { rec: TestRecord; onDeleted(): void }) {
   const upd = (label: string, patch: Partial<TestRecord>, key?: string) => p.onEdit(label, (d) => updateRecord(d, rec.id, patch), key);
   const cp = rec.checkpointId ? p.checkpoints.find((c) => c.id === rec.checkpointId) ?? null : null;
   const [revDoc, setRevDoc] = useState<{ doc: ProjectDoc | null; error: string | null }>({ doc: null, error: null });
-  const [diff, setDiff] = useState<DiffItem[] | null>(null);
+  // Сравнение пересчитывается при каждой правке — показывает отличия от текущего состояния, а не от момента щелчка.
+  const [showDiff, setShowDiff] = useState(false);
+  const diff: DiffItem[] | null = useMemo(() => (showDiff && revDoc.doc ? diffDocs(revDoc.doc, doc) : null), [showDiff, revDoc.doc, doc]);
   const [busy, setBusy] = useState(false);
   const [calcMsg, setCalcMsg] = useState<string | null>(null);
 
@@ -155,7 +157,7 @@ function RecordView(p: Props & { rec: TestRecord; onDeleted(): void }) {
         <p>Ревизия проекта {rec.revision}{cp ? `, снимок «${cp.label}» от ${fmtDateTime(cp.createdAt)}` : ''}. Сейчас — ревизия {doc.revision}.</p>
         {revDoc.error && <p className="muted small">{revDoc.error}</p>}
         <div className="row wrap">
-          <button className="btn" disabled={!revDoc.doc} onClick={() => setDiff(revDoc.doc ? diffDocs(revDoc.doc, doc) : null)}>Сравнить с текущей</button>
+          <button className="btn" disabled={!revDoc.doc} onClick={() => setShowDiff(true)}>Сравнить с текущей</button>
           <button className="btn" disabled={!cp} onClick={() => void restore()}>Восстановить эту ревизию</button>
         </div>
         {diff && (

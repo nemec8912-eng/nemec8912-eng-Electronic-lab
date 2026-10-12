@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { describe, test } from 'node:test';
 import { checkIntegrity } from '../../src/core/integrity';
 import { loadDocument } from '../../src/core/migrations';
-import { DEFAULT_RULES, type ProjectDoc, type Track } from '../../src/core/model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_RULES, type ProjectDoc, type Track } from '../../src/core/model';
 import {
   addRoute, addTrack, addVia, allPads, deleteTrack, deleteVia, drc, edgeGap, findPad, flipPlacement, fmtLen, footprintBox,
   movePlacement, padsOf, parseLen, ratsnest, rotatePlacement, setBoard, setTrackWidth, shapeGap, syncFromSchematic, unroutedNets,
@@ -321,7 +321,7 @@ describe('Формат v6', () => {
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     if (!r.ok) return;
     assert.equal(r.migratedFrom, 5);
-    assert.equal(r.doc.schemaVersion, 8);
+    assert.equal(r.doc.schemaVersion, CURRENT_SCHEMA_VERSION);
     const t = r.doc.pcb.tracks[0]!;
     assert.equal(t.from?.kind, 'pad');
     assert.deepEqual(t.points, raw.pcb.tracks[0].points);

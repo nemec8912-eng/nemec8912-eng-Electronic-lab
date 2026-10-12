@@ -233,7 +233,7 @@ export function webApi(): ElabApi {
     attachments: { add: noWeb, read: noWeb },
     files: {
       exportProject: noWeb, importProject: noWeb, resolveImport: noWeb, backupAll: noWeb, restoreBackup: noWeb,
-      saveSvg: noWeb, saveDrawing: noWeb, savePdf: noWeb, saveGerber: noWeb,
+      saveSvg: noWeb, saveDrawing: noWeb, savePdf: noWeb, saveGerber: noWeb, saveCnc: noWeb,
       print: async () => ok({ printed: false, reason: NOT_HERE }),
     },
   };

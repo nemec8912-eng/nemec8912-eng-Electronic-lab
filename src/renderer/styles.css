@@ -472,3 +472,14 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .shape-editor .btn.primary { align-self: flex-start; }
 .part-editor-note { margin: 6px 12px; }
 .project-open.static { cursor: default; }
+
+/* ЧПУ: траектории фрезы в истинную ширину реза */
+.cnc-preview polygon { fill: none; stroke-linejoin: round; }
+.cnc-iso { stroke: #e0457b; opacity: 0.75; }
+.cnc-iso.top { stroke: #ff8a3d; }
+.cnc-cut { stroke: #2b7bd6; opacity: 0.6; }
+.cnc-drill, .cnc-hole { fill: #111; stroke: #fff; stroke-width: 0.08; }
+.cnc-align { fill: none; stroke: #2b7bd6; stroke-width: 0.2; }
+.cnc-files { padding-left: 18px; margin: 6px 0; font-size: 12px; }
+.cnc-files li { margin: 2px 0; }
+.rules h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--muted, #667); }

@@ -12,6 +12,7 @@ import {
   movePlacement, netName, parseLen, ratsnest, rotatePlacement, rulesOf, snapMm, type DrcIssue,
 } from '../core/pcb';
 import { BoardSide } from './BoardSide';
+import type { CncPath } from '../core/cnc';
 import { outlineSvgPath } from '../core/outline';
 
 export type BoardSel = { kind: 'track' | 'placement' | 'via'; id: string } | null;
@@ -60,6 +61,7 @@ export function BoardPanel(p: Props) {
   useEffect(() => { if (!two) setLayer('bottom'); }, [two]);
 
   const pads = useMemo(() => allPads(doc), [doc]);
+  const [cnc, setCnc] = useState<{ paths: CncPath[]; iso: number; cut: number } | null>(null);
   const rats = useMemo(() => ratsnest(doc), [doc]);
   const issues = useMemo(() => drc(doc), [doc]);
 
@@ -340,6 +342,13 @@ export function BoardPanel(p: Props) {
             {route?.vias.map((v, i) => <circle key={i} cx={v.x} cy={v.y} r={rules.viaDiameterMm / 2} className="via-ghost" />)}
             {tail && cursorSnap && <line x1={tail.x} y1={tail.y} x2={cursorSnap.x} y2={cursorSnap.y} strokeWidth={width} className={`track-rubber ${activeLayer}`} />}
             {focus?.at && <circle cx={focus.at.x} cy={focus.at.y} r={Math.max(1.2, 12 / view.scale)} className="drc-mark" />}
+            {cnc && (
+              <g className="cnc-preview" data-testid="cnc-preview" pointerEvents="none">
+                {cnc.paths.filter((c) => c.kind === 'iso').map((c, i) => <polygon key={`i${i}`} points={c.pts.map((q) => `${q.x},${q.y}`).join(' ')} strokeWidth={cnc.iso} className={`cnc-iso ${c.layer}`} />)}
+                {cnc.paths.filter((c) => c.kind === 'cut').map((c, i) => <polygon key={`c${i}`} points={c.pts.map((q) => `${q.x},${q.y}`).join(' ')} strokeWidth={cnc.cut} className="cnc-cut" />)}
+                {cnc.paths.filter((c) => c.kind !== 'iso' && c.kind !== 'cut').map((c, i) => <circle key={`h${i}`} cx={c.pts[0]!.x} cy={c.pts[0]!.y} r={(c.d ?? 0.8) / 2} className={`cnc-${c.kind}`} />)}
+              </g>
+            )}
           </g>
         </svg>
         <div className="canvas-hint">
@@ -355,6 +364,7 @@ export function BoardPanel(p: Props) {
         {error && <div className="canvas-error" role="alert">{error}</div>}
       </div>
       <BoardSide doc={doc} issues={issues} selection={selection} onSelect={p.onSelect} onEdit={p.onEdit} toast={p.toast} onShowIssue={showIssue}
+        onCncPreview={(paths, iso, cut) => setCnc(paths ? { paths, iso, cut } : null)}
         onRouteFromVia={(viaId) => startRoute({ kind: 'via', viaId })} />
     </div>
   );

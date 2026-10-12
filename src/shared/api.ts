@@ -124,6 +124,8 @@ export interface ElabApi {
     savePdf(defaultName: string, svg: string, widthMm: number, heightMm: number): Promise<Result<{ path: string; bytes: number } | null>>;
     /** Архив Gerber/Excellon (.zip) через диалог выбора файла. Имена файлов — латиница, цифры, «-_.». */
     saveGerber(defaultName: string, files: Array<{ name: string; content: string }>): Promise<Result<{ path: string; bytes: number; files: number } | null>>;
+    /** Файлы G-code для станка — в новую папку внутри выбранной. */
+    saveCnc(projectName: string, files: Array<{ name: string; content: string }>): Promise<Result<{ path: string; files: number } | null>>;
     /** Печать листа через системный диалог печати. */
     print(svg: string, widthMm: number, heightMm: number): Promise<Result<{ printed: boolean; reason: string | null }>>;
   };
@@ -170,6 +172,7 @@ export const IPC = {
   savePdf: 'files:save-pdf',
   print: 'files:print',
   saveGerber: 'files:save-gerber',
+  saveCnc: 'files:save-cnc',
   kicadOpenOnline: 'kicad:open-online',
   kicadOpenFile: 'kicad:open-file',
   kicadBuild: 'kicad:build',

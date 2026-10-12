@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 8 as const;
+export const CURRENT_SCHEMA_VERSION = 9 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -258,6 +258,58 @@ export const PourSchema = z.object({
   clearanceMm: Finite.nonnegative(),
 }).strict();
 
+/**
+ * Настройки фрезерования платы на станке с ЧПУ (GRBL, например CNC 3018). Все размеры в мм,
+ * подачи в мм/мин, обороты — значение S (на 3018 обычно 0…1000).
+ */
+export const CncSettingsSchema = z.object({
+  /** Рабочее поле станка по X и Y (CNC 3018 — 300 × 180 мм). */
+  areaXMm: Finite.positive(),
+  areaYMm: Finite.positive(),
+  /** Отступ платы от левого нижнего угла заготовки; ноль станка — угол заготовки. */
+  marginMm: Finite.nonnegative(),
+  /** Толщина текстолита. */
+  thicknessMm: Finite.positive(),
+  /** Безопасная высота перемещений над медью. */
+  safeZMm: Finite.positive(),
+  spindle: Finite.positive(),
+  /** Пауза после включения шпинделя, с. */
+  spinUpS: Finite.nonnegative(),
+  iso: z.object({
+    tool: z.enum(['vbit', 'endmill']),
+    /** V-фреза: ширина вершины и угол; концевая — диаметр. */
+    tipMm: Finite.positive(),
+    angleDeg: Finite.positive(),
+    diameterMm: Finite.positive(),
+    depthMm: Finite.positive(),
+    passes: z.number().int().min(1).max(10),
+    overlapPct: Finite.nonnegative(),
+    feed: Finite.positive(),
+    plunge: Finite.positive(),
+  }).strict(),
+  drill: z.object({
+    feed: Finite.positive(),
+    /** Насколько сверло выходит ниже текстолита. */
+    throughMm: Finite.nonnegative(),
+    /** Отверстия больше этого диаметра фрезеруются концевой фрезой обрезки по кругу (0 — не фрезеровать). */
+    millAboveMm: Finite.nonnegative(),
+    /** Свёрла, которые есть (мм); пусто — сверлить как в проекте. Отверстие берёт ближайшее не меньше себя. */
+    sizes: z.array(Finite.positive()).max(20),
+  }).strict(),
+  cut: z.object({
+    toolMm: Finite.positive(),
+    stepDownMm: Finite.positive(),
+    feed: Finite.positive(),
+    plunge: Finite.positive(),
+    tabs: z.number().int().min(0).max(12),
+    tabWidthMm: Finite.nonnegative(),
+    tabHeightMm: Finite.nonnegative(),
+  }).strict(),
+  /** Реперные отверстия для двусторонней платы (на оси зеркала, за пределами платы). */
+  alignHoles: z.boolean(),
+  alignDrillMm: Finite.positive(),
+}).strict();
+
 export const PcbSchema = z.object({
   board: z.object({
     id: Id,
@@ -285,7 +337,17 @@ export const PcbSchema = z.object({
     id: Id, netId: Id, position: PointSchema, drillMm: Finite.positive(), diameterMm: Finite.positive(),
   }).strict()),
   pours: z.array(PourSchema),
+  cnc: CncSettingsSchema,
 }).strict();
+
+/** Настройки по умолчанию — CNC 3018 с GRBL, V-фреза 20° 0,1 мм, сверло 0,8 мм, концевая фреза 1 мм. */
+export const DEFAULT_CNC: CncSettings = {
+  areaXMm: 300, areaYMm: 180, marginMm: 5, thicknessMm: 1.5, safeZMm: 2, spindle: 1000, spinUpS: 3,
+  iso: { tool: 'vbit', tipMm: 0.1, angleDeg: 20, diameterMm: 0.8, depthMm: 0.08, passes: 2, overlapPct: 30, feed: 150, plunge: 50 },
+  drill: { feed: 60, throughMm: 0.4, millAboveMm: 1.2, sizes: [0.6, 0.8, 1, 1.2] },
+  cut: { toolMm: 1, stepDownMm: 0.4, feed: 100, plunge: 40, tabs: 4, tabWidthMm: 2, tabHeightMm: 0.5 },
+  alignHoles: true, alignDrillMm: 2,
+};
 
 /** Правила по умолчанию — для домашнего изготовления (ЛУТ, фоторезист): широкие дорожки и зазоры. */
 export const DEFAULT_RULES: DesignRules = {
@@ -472,6 +534,7 @@ export type Via = Pcb['vias'][number];
 export type Board = NonNullable<Pcb['board']>;
 export type BoardOutline = z.infer<typeof BoardOutlineSchema>;
 export type Pour = z.infer<typeof PourSchema>;
+export type CncSettings = z.infer<typeof CncSettingsSchema>;
 export type SimulationSettings = z.infer<typeof SimulationSettingsSchema>;
 export type ChangeEntry = z.infer<typeof ChangeEntrySchema>;
 export type ProjectDoc = z.infer<typeof ProjectDocSchema>;

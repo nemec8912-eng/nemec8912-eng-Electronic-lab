@@ -359,6 +359,28 @@ export function registerIpc(ctx: MainContext): void {
     await writeChecked(p, buf);
     return { path: p, bytes: buf.length, files: files.length };
   }));
+  ipcMain.handle(IPC.saveCnc, wrap(async (name: string, files: Array<{ name: string; content: string }>) => {
+    if (!Array.isArray(files) || files.length === 0 || files.length > 60) throw new AppError('bad-data', 'Нечего сохранять');
+    for (const f of files) {
+      if (typeof f?.name !== 'string' || !(/^[A-Za-z0-9_.-]{1,80}$/.test(f.name) || f.name === 'ПРОЧТИ.txt') || typeof f.content !== 'string' || f.content.length > 50 * 1024 * 1024) {
+        throw new AppError('bad-data', 'Недопустимое имя файла');
+      }
+    }
+    const r = await dialog.showOpenDialog(win()!, { title: 'Папка для файлов станка', defaultPath: lastDir, properties: ['openDirectory', 'createDirectory'] });
+    const base = r.canceled ? undefined : r.filePaths[0];
+    if (!base) return null;
+    lastDir = base;
+    const stem = `${safeFileName(String(name ?? 'плата'), 'плата')} — ЧПУ`;
+    let dir = path.join(base, stem);
+    for (let k = 2; await fs.stat(dir).then(() => true, () => false); k++) dir = path.join(base, `${stem} (${k})`);
+    try { await fs.mkdir(dir, { recursive: true }); } catch (e) { throw new AppError('write-failed', `Не удалось создать папку ${dir}: ${(e as Error).message}`); }
+    for (const f of files) {
+      // Текст для Блокнота Windows — с BOM; G-code — чистый ASCII
+      const data = f.name.endsWith('.txt') ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(f.content, 'utf8')]) : Buffer.from(f.content, 'ascii');
+      await writeChecked(path.join(dir, f.name), data);
+    }
+    return { path: dir, files: files.length };
+  }));
   ipcMain.handle(IPC.print, wrap(async (svg: string, w: number, h: number) => renderSheet(String(svg), Number(w), Number(h), (wc) =>
     new Promise<{ printed: boolean; reason: string | null }>((resolve) => {
       wc.print({ silent: false, printBackground: true, margins: { marginType: 'none' } }, (ok: boolean, reason: string) => resolve({ printed: ok, reason: ok ? null : reason || null }));

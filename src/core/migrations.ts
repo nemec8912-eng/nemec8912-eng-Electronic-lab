@@ -1,7 +1,7 @@
 /**
  * Миграции документа проекта и единая точка загрузки: миграция → проверка структуры → проверка целостности.
  */
-import { CURRENT_SCHEMA_VERSION, DEFAULT_RULES, DEFAULT_SHEET, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_CNC, DEFAULT_RULES, DEFAULT_SHEET, DEFAULT_SIMULATION, validateDocShape, type ProjectDoc, type ValidationIssue } from './model';
 import { rebuildNets } from './connectivity';
 import { newId as cryptoId } from './ids';
 import { checkIntegrity, type IntegrityIssue } from './integrity';
@@ -168,6 +168,15 @@ const migrations: Migration[] = [
       const r = raw as Record<string, any>;
       const pcb = r.pcb ?? {};
       return { ...r, schemaVersion: 8, pcb: { ...pcb, board: pcb.board ? { ...pcb.board, outline: { kind: 'rect' } } : null, pours: [] } };
+    },
+  },
+  {
+    // v9: настройки фрезерования на станке с ЧПУ.
+    from: 8,
+    to: 9,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      return { ...r, schemaVersion: 9, pcb: { ...(r.pcb ?? {}), cnc: structuredClone(DEFAULT_CNC) } };
     },
   },
 ];

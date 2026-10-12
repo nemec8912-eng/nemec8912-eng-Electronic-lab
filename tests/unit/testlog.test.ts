@@ -7,6 +7,7 @@ import { newId } from '../../src/core/ids';
 import { checkIntegrity } from '../../src/core/integrity';
 import { loadDocument } from '../../src/core/migrations';
 import type { AttachmentRef, Measurement, ProjectDoc } from '../../src/core/model';
+import { CURRENT_SCHEMA_VERSION } from '../../src/core/model';
 import { movePlacement, syncFromSchematic } from '../../src/core/pcb';
 import { remapDocs } from '../../src/core/remap';
 import { deleteWire, setValue } from '../../src/core/schematic';
@@ -35,7 +36,7 @@ describe('Журнал: формат v7', () => {
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     if (!r.ok) return;
     assert.equal(r.migratedFrom, 6);
-    assert.equal(r.doc.schemaVersion, 8);
+    assert.equal(r.doc.schemaVersion, CURRENT_SCHEMA_VERSION);
     const t = r.doc.tests[0]!;
     assert.equal(t.conditions, raw.tests[0].conditions);
     assert.equal(t.checkpointId, null);

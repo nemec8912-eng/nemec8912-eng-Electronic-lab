@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { addAnnotation, createProject } from '../src/core/factory';
 import { newId } from '../src/core/ids';
-import { DEFAULT_RULES, type ProjectDoc } from '../src/core/model';
+import { DEFAULT_CNC, DEFAULT_RULES, type ProjectDoc } from '../src/core/model';
 
 export async function tempDir(prefix = 'elab-test-'): Promise<{ dir: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(path.join(tmpdir(), prefix));
@@ -83,7 +83,7 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
       ],
       tracks: [{ id: newId(), netId: netMid, layer: 'bottom', widthMm: 0.8, from: { kind: 'pad', placementId: pl1, pad: 'B' }, to: { kind: 'pad', placementId: pl2, pad: '1' }, points: [{ x: 20.16, y: 10 }, { x: 30, y: 9.05 }] }],
       vias: [],
-      pours: [],
+      pours: [], cnc: structuredClone(DEFAULT_CNC),
     },
     tests: [{
       id: newId(), createdAt: new Date().toISOString(), revision: 0, title: 'Первое включение', date: new Date().toISOString(), checkpointId: null,

@@ -68,6 +68,7 @@ const api: ElabApi = {
     savePdf: (name, svg, w, h) => call(IPC.savePdf, name, svg, w, h),
     print: (svg, w, h) => call(IPC.print, svg, w, h),
     saveGerber: (name, files) => call(IPC.saveGerber, name, files),
+    saveCnc: (name, files) => call(IPC.saveCnc, name, files),
   },
 };
 

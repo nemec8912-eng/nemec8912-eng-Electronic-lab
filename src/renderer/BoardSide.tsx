@@ -14,6 +14,8 @@ import { api, errorText, unwrap } from './api';
 import type { BoardSel } from './BoardPanel';
 import { useDialogs } from './Dialogs';
 import { NewBoard, PourPanel, ShapeEditor } from './BoardShape';
+import { CncPanel } from './CncPanel';
+import type { CncPath } from '../core/cnc';
 
 interface Props {
   doc: ProjectDoc;
@@ -24,6 +26,7 @@ interface Props {
   toast(text: string, kind?: 'ok' | 'error'): void;
   onShowIssue(i: DrcIssue): void;
   onRouteFromVia(viaId: string): void;
+  onCncPreview(paths: CncPath[] | null, isoWidthMm: number, cutToolMm: number): void;
 }
 
 function LenField({ label, mm, units, onCommit, min = 0 }: { label: string; mm: number; units: 'mm' | 'inch'; min?: number; onCommit(mm: number): void }) {
@@ -223,6 +226,7 @@ export function BoardSide(p: Props) {
           <p className="muted small">Gerber RS-274X и Excellon, мм. Экспорт проверен автотестами (обратное чтение, сравнение цепей), но не производителем — перед заказом откройте файлы в просмотрщике Gerber.</p>
         </section>
       )}
+      {board && <CncPanel doc={doc} onEdit={p.onEdit} toast={p.toast} onPreview={p.onCncPreview} />}
     </aside>
   );
 }

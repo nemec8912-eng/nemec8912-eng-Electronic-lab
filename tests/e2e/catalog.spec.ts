@@ -162,6 +162,8 @@ test('каталог: карточка, своя микросхема (DIP-8 + S
   await da1.locator('.inst-hit').click({ force: true });
   await expect(page.getByTestId('no-model-warning')).toBeVisible();
   await page.getByRole('button', { name: 'Добавить в мой каталог' }).click();
+  await expect(page.getByRole('dialog')).toContainText('в мой каталог?');
+  await page.getByRole('dialog').getByRole('button', { name: 'Добавить' }).click();
   await expect(page.locator('.toast').last()).toContainText('добавлена в мой каталог');
   await page.getByRole('tab', { name: 'Каталог' }).click();
   await page.getByRole('radio', { name: 'Мои' }).click();

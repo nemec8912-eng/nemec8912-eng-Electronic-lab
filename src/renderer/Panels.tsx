@@ -67,6 +67,7 @@ interface PropsPanelProps {
 
 const KIND_LABEL: Record<CheckpointInfo['kind'], string> = {
   manual: 'вручную',
+  test: 'испытание',
   'on-save': 'при сохранении',
   'before-restore': 'перед возвратом',
 };

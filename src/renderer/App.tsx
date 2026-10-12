@@ -9,6 +9,7 @@ import { runErc, type ErcIssue } from '../core/erc';
 import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
 import { BoardPanel, type BoardSel } from './BoardPanel';
+import { JournalPanel } from './JournalPanel';
 import { TestPanel } from './TestPanel';
 import { circuitKey } from '../sim/key';
 import { api, errorText, fmtBytes, fmtDateTime, fmtTime, unwrap } from './api';
@@ -297,7 +298,7 @@ function StatusBar({ info, editor }: { info: AppInfo | null; editor?: Editor }) 
   );
 }
 
-type Tab = 'schematic' | 'test' | 'board' | 'catalog';
+type Tab = 'schematic' | 'test' | 'board' | 'journal' | 'catalog';
 
 function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitch, toast, catalog }: {
   opened: Opened;
@@ -461,7 +462,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       <TopBar info={info} fileActions={fileActions} editor={editor} projectActions={projectActions} />
       <nav className="tabs" role="tablist">
         <span className="project-title" title={doc.name}>{doc.name}</span>
-        {([['schematic', 'Схема'], ['test', 'Тест'], ['board', 'Плата'], ['catalog', 'Каталог']] as const).map(([k, label]) => (
+        {([['schematic', 'Схема'], ['test', 'Тест'], ['board', 'Плата'], ['journal', 'Испытания'], ['catalog', 'Каталог']] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
         ))}
         <div className="toolbar tabs-right" role="toolbar" aria-label="Правка">
@@ -546,6 +547,18 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             onInstRotate={(id) => editor.apply('Поворот детали', (d) => rotateItems(d, new Set([id])))}
             onInstDelete={(id) => { editor.apply('Удаление детали', (d) => deleteItems(d, new Set([id]))); setSelection([]); }}
             onAddToCatalog={async (partId) => {
+              // Перенос в общий каталог — только по подтверждению (ТЗ, этап 7): изменения детали в проекте
+              // остаются локальными, пока пользователь сам не отправит их в каталог.
+              const part = editorRef.current.doc.library.parts.find((x) => x.id === partId);
+              if (!part) return;
+              const existing = part.origin.catalogPartId ? catalog.byId(part.origin.catalogPartId) : null;
+              const users = editorRef.current.doc.schematic.instances.filter((i) => i.partId === partId).map((i) => i.refDes).join(', ');
+              const okAdd = await dialogs.confirm('Добавить в мой каталог',
+                existing
+                  ? `В каталоге уже есть «${existing.part.name}». Деталь из проекта (${users || 'не используется'}) — с её номиналами, моделью и сведениями — будет сохранена в каталог как новая деталь; существующая не изменится.`
+                  : `Сохранить «${part.name}» (${users || 'не используется'}) в мой каталог? Номиналы, модель и сведения из проекта станут доступны в других проектах.`,
+                'Добавить');
+              if (!okAdd) return;
               try {
                 const saved = await unwrap(api().catalog.fromProject(editorRef.current.doc, partId));
                 await catalog.reload();
@@ -586,6 +599,18 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             onEdit={(label, fn) => editor.apply(label, fn)}
             onTranSettings={(patch) => editor.apply('Настройки расчёта', (d) => setTranSettings(d, patch))}
             onSimSettings={(patch) => editor.apply('Настройки расчёта', (d) => setSimSettings(d, patch))}
+          />
+        </main>
+      )}
+      {tab === 'journal' && (
+        <main className="workspace single">
+          <JournalPanel
+            doc={doc}
+            checkpoints={checkpoints}
+            onEdit={(label, fn, key) => editor.apply(label, fn, key)}
+            onCheckpointsChanged={loadCheckpoints}
+            onRestore={restoreCheckpoint}
+            toast={toast}
           />
         </main>
       )}

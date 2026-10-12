@@ -1,14 +1,15 @@
 /**
  * Модель документа проекта, schemaVersion 6 (изменения по версиям — docs/ARCHITECTURE.md, раздел 2:
  * v2 — геометрия и расчёт, v3 — сведения каталога, v4 — граф связности, v5 — анализы и прогон,
- * v6 — плата: правила проектирования, единицы, концы дорожек на площадках и переходных отверстиях).
+ * v6 — плата: правила проектирования, единицы, концы дорожек на площадках и переходных отверстиях,
+ * v7 — журнал испытаний: измерения с расчётом и допусками, события деталей, фото, ревизия).
  * Единственный источник истины для схемы, библиотеки, платы, испытаний и истории.
  * Описание полей и инвариантов — docs/ARCHITECTURE.md, раздел 2.
  */
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 6 as const;
+export const CURRENT_SCHEMA_VERSION = 7 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -269,15 +270,71 @@ export const DEFAULT_RULES: DesignRules = {
 
 // ---------- Испытания, вложения, журнал изменений ----------
 
+/** Где измеряли: узел (напряжение относительно земли схемы), деталь (между выводами 1 и 2, ток через неё
+ * или ток вывода), или точка, описанная словами (такое измерение с расчётом не сравнивается). */
+export const MeasureTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('net'), netId: Id }).strict(),
+  z.object({ kind: z.literal('part'), instanceId: Id, pin: z.string().max(16).nullable() }).strict(),
+  z.object({ kind: z.literal('text') }).strict(),
+]);
+
+export const MeasurementSchema = z.object({
+  id: Id,
+  target: MeasureTargetSchema,
+  /** Подпись точки на момент записи («OUT», «R2», «Q1.C») — запись читается, даже если деталь потом удалят. */
+  label: z.string().max(128),
+  /** V — напряжение, A — ток, Ω — сопротивление детали, other — прочее (без сравнения). */
+  quantity: z.enum(['V', 'A', 'Ω', 'other']),
+  /** Измеренное значение в единицах СИ; null — ещё не измерено. */
+  measured: Finite.nullable(),
+  unit: z.string().max(16),
+  instrument: z.string().max(128),
+  /** Погрешность прибора: ±(pct % от показания + abs единиц). */
+  accuracyPct: Finite.nonnegative(),
+  accuracyAbs: Finite.nonnegative(),
+  /** Расчётное значение для ревизии этого испытания: номинал и полуширина разброса из-за допусков деталей. */
+  expected: z.object({
+    value: Finite,
+    band: Finite.nonnegative(),
+    method: z.string().max(2000),
+    revision: z.number().int().nonnegative(),
+    at: IsoDate,
+  }).strict().nullable(),
+  note: z.string().max(2000),
+}).strict();
+
+/** Что случилось с деталью во время испытания. */
+export const PartEventSchema = z.object({
+  id: Id,
+  instanceId: Id.nullable(),
+  /** Позиционное обозначение на момент записи. */
+  refDes: z.string().max(32),
+  kind: z.enum(['burned', 'failed', 'replaced', 'removed']),
+  /** Чем заменили (партномер, номинал), если заменили. */
+  replacement: z.string().max(256),
+  /** Обстоятельства: что делали, когда случилось, признаки (запах, нагрев, щелчок). */
+  circumstances: z.string().max(4000),
+}).strict();
+
 export const TestRecordSchema = z.object({
   id: Id,
   createdAt: IsoDate,
+  /** Ревизия документа, к которой относится испытание. */
   revision: z.number().int().nonnegative(),
+  title: z.string().max(200),
+  /** Дата проведения (может отличаться от даты записи). */
+  date: IsoDate,
+  /** Контрольная версия проекта (схема, детали, плата) на момент испытания; null — не создана (старая запись). */
+  checkpointId: Id.nullable(),
+  /** Измеренное напряжение питания, В; null — не указано. */
+  supplyV: Finite.nullable(),
+  instruments: z.string().max(1000),
   conditions: z.string().max(10_000),
   notes: z.string().max(100_000),
-  measurements: z.array(z.object({
-    id: Id, target: z.string().max(128), quantity: QuantitySchema, instrument: z.string().max(128),
-  }).strict()),
+  measurements: z.array(MeasurementSchema),
+  events: z.array(PartEventSchema),
+  /** Фото и файлы из attachments. */
+  photoIds: z.array(Id),
 }).strict();
 
 export const AttachmentRefSchema = z.object({
@@ -367,6 +424,11 @@ export type PinRef = z.infer<typeof PinRefSchema>;
 export type PadRef = z.infer<typeof PadRefSchema>;
 export type TrackEnd = z.infer<typeof TrackEndSchema>;
 export type DesignRules = z.infer<typeof DesignRulesSchema>;
+export type TestRecord = z.infer<typeof TestRecordSchema>;
+export type Measurement = z.infer<typeof MeasurementSchema>;
+export type MeasureTarget = z.infer<typeof MeasureTargetSchema>;
+export type PartEvent = z.infer<typeof PartEventSchema>;
+export type AttachmentRef = z.infer<typeof AttachmentRefSchema>;
 export type ComponentInstance = z.infer<typeof ComponentInstanceSchema>;
 export type Net = z.infer<typeof NetSchema>;
 export type Wire = z.infer<typeof WireSchema>;
@@ -392,7 +454,7 @@ export type ProjectDoc = z.infer<typeof ProjectDocSchema>;
 export const CheckpointSchema = z.object({
   id: Id,
   label: z.string().max(200),
-  kind: z.enum(['manual', 'on-save', 'before-restore']),
+  kind: z.enum(['manual', 'on-save', 'before-restore', 'test']),
   createdAt: IsoDate,
   revision: z.number().int().nonnegative(),
   doc: z.unknown(),

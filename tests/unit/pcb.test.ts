@@ -320,7 +320,7 @@ describe('Формат v6', () => {
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     if (!r.ok) return;
     assert.equal(r.migratedFrom, 5);
-    assert.equal(r.doc.schemaVersion, 6);
+    assert.equal(r.doc.schemaVersion, 7);
     const t = r.doc.pcb.tracks[0]!;
     assert.equal(t.from?.kind, 'pad');
     assert.deepEqual(t.points, raw.pcb.tracks[0].points);

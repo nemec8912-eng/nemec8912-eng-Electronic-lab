@@ -84,9 +84,11 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
       tracks: [{ id: newId(), netId: netMid, layer: 'bottom', widthMm: 0.8, from: { kind: 'pad', placementId: pl1, pad: 'B' }, to: { kind: 'pad', placementId: pl2, pad: '1' }, points: [{ x: 20.16, y: 10 }, { x: 30, y: 9.05 }] }],
       vias: [],
     },
-    tests: [{ id: newId(), createdAt: new Date().toISOString(), revision: 0, conditions: '5 В', notes: '', measurements: [
-      { id: newId(), target: 'OUT', quantity: { value: 1.6, unit: 'V' }, instrument: 'мультиметр' },
-    ] }],
+    tests: [{
+      id: newId(), createdAt: new Date().toISOString(), revision: 0, title: 'Первое включение', date: new Date().toISOString(), checkpointId: null,
+      supplyV: 5, instruments: 'мультиметр', conditions: '5 В', notes: '', events: [], photoIds: [],
+      measurements: [{ id: newId(), target: { kind: 'net', netId: netMid }, label: 'OUT', quantity: 'V', measured: 1.6, unit: 'В', instrument: 'мультиметр', accuracyPct: 1, accuracyAbs: 0.01, expected: null, note: '' }],
+    }],
   };
   doc = addAnnotation(doc, { x: 40, y: 40 }, 'Проверить делитель').doc;
   return doc;

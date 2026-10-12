@@ -138,6 +138,28 @@ const migrations: Migration[] = [
       };
     },
   },
+  {
+    /**
+     * v6 → v7 (этап 7): журнал испытаний. Прежние записи сохраняются полностью: точка измерения
+     * становится подписью «словами» (с расчётом такая точка не сравнивается), значение и прибор — те же.
+     */
+    from: 6,
+    to: 7,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      const tests = (r.tests ?? []).map((t: Record<string, any>) => ({
+        id: t.id, createdAt: t.createdAt, revision: t.revision ?? 0, title: 'Испытание', date: t.createdAt, checkpointId: null,
+        supplyV: null, instruments: '', conditions: t.conditions ?? '', notes: t.notes ?? '',
+        measurements: (t.measurements ?? []).map((m: Record<string, any>) => ({
+          id: m.id, target: { kind: 'text' }, label: String(m.target ?? '').slice(0, 128), quantity: 'other',
+          measured: m.quantity?.value ?? null, unit: String(m.quantity?.unit ?? '').slice(0, 16), instrument: m.instrument ?? '',
+          accuracyPct: 0, accuracyAbs: 0, expected: null, note: '',
+        })),
+        events: [], photoIds: [],
+      }));
+      return { ...r, schemaVersion: 7, tests };
+    },
+  },
 ];
 
 function migrateV3toV4(r: Record<string, any>): Record<string, unknown> {

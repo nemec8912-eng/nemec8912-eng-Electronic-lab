@@ -41,7 +41,7 @@ export function collectEntityIds(doc: ProjectDoc): Array<{ id: string; where: st
   add(doc.pcb.tracks, 'pcb.tracks');
   add(doc.pcb.vias, 'pcb.vias');
   add(doc.tests, 'tests');
-  for (const t of doc.tests) add(t.measurements, 'tests.measurements');
+  for (const t of doc.tests) { add(t.measurements, 'tests.measurements'); add(t.events, 'tests.events'); }
   add(doc.attachments, 'attachments');
   add(doc.changelog, 'changelog');
   return out;
@@ -192,6 +192,11 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
       }
     }
   }
+
+  // Журнал испытаний: фото должны быть среди вложений проекта. Ссылки на узлы и детали — история:
+  // деталь могли потом удалить, это не нарушение целостности.
+  const att = new Set(doc.attachments.map((a) => a.id));
+  for (const t of doc.tests) for (const pid of t.photoIds) if (!att.has(pid)) dangling(t.id, 'photoIds', pid);
 
   return issues;
 }

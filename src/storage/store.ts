@@ -11,12 +11,14 @@ import { DATA_LAYOUT_VERSION } from '../core/appinfo';
 import { logChange, normalizeName, createProject as makeProject } from '../core/factory';
 import { isUuid, newId } from '../core/ids';
 import { describeLoadError, loadDocument } from '../core/migrations';
-import { CheckpointSchema, type Checkpoint, type CheckpointInfo, type ProjectDoc } from '../core/model';
+import { CheckpointSchema, type AttachmentRef, type Checkpoint, type CheckpointInfo, type ProjectDoc } from '../core/model';
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 import { remapDocs } from '../core/remap';
 import { AppError } from '../core/result';
 import { bundleOf, checkLibrary, emptyCatalog, lintBundle, loadCatalog, removePart, upsertBundle, type CatalogFile, type PartBundle } from '../core/catalog';
 import { attachmentPath, readElab, writeElab, type ElabReadResult, type ProjectBundle } from './elab';
-import { ensureDir, exists, readJson, timestampForFile, writeFileAtomic, writeJsonAtomic } from './fsutil';
+import { ensureDir, exists, readJson, sha256, timestampForFile, writeFileAtomic, writeJsonAtomic } from './fsutil';
 
 export const AUTO_CHECKPOINTS_KEPT = 20;
 
@@ -275,13 +277,16 @@ export class DataStore {
 
   private async saveAsInternal(source: ProjectDoc, attachments: Map<string, Buffer>, newName: string, action: string): Promise<ProjectDoc> {
     return this.serial(async () => {
-      const { docs: [copied], map } = remapDocs([source]);
+      // Контрольные версии копируются вместе с проектом: на них ссылаются записи журнала испытаний.
+      const cps = await this.readCheckpoints(source.id).catch(() => [] as Checkpoint[]);
+      const { docs: [copied, ...cpDocs], map } = remapDocs([source, ...cps.map((c) => c.doc)], cps.map((c) => c.id));
       const now = new Date().toISOString();
       let doc: ProjectDoc = { ...copied!, name: normalizeName(newName), createdAt: now, updatedAt: now };
       doc = logChange(doc, action, `Создан как копия проекта «${source.name}»`);
       const remappedAttachments = new Map<string, Buffer>();
       for (const [oldId, data] of attachments) remappedAttachments.set(map.get(oldId) ?? oldId, data);
-      await this.writeNewProject({ doc, checkpoints: [], attachments: remappedAttachments });
+      const checkpoints = cps.map((c, i) => ({ ...c, id: map.get(c.id)!, doc: cpDocs[i]! }));
+      await this.writeNewProject({ doc, checkpoints, attachments: remappedAttachments });
       await this.journal(`project-${action}`, { from: source.id, projectId: doc.id, name: doc.name });
       return doc;
     });
@@ -374,6 +379,34 @@ export class DataStore {
     return this.saveCatalogPart(b, builtinParts);
   }
 
+  // ---------- Вложения (фото к журналу испытаний) ----------
+
+  /**
+   * Копирует файл в папку проекта и возвращает ссылку для документа. Файл записывается сразу: ссылка
+   * появится в документе правкой интерфейса (отменяемой); неиспользуемый файл не мешает и уходит при
+   * удалении проекта. Имя очищается от символов, недопустимых в Windows.
+   */
+  async addAttachment(projectId: string, fileName: string, data: Buffer, mime: string): Promise<AttachmentRef> {
+    if (!(await exists(path.join(this.projectDir(projectId), 'project.json')))) throw new AppError('not-found', 'Проект ещё не сохранён');
+    if (data.length === 0 || data.length > MAX_ATTACHMENT_BYTES) throw new AppError('too-large', 'Файл пустой или больше 25 МБ');
+    const clean = fileName.replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').replace(/[. ]+$/, '').slice(-120) || 'файл';
+    const ref: AttachmentRef = { id: newId(), fileName: clean, size: data.length, sha256: sha256(data), mime: mime.slice(0, 128) };
+    await writeFileAtomic(path.join(this.projectDir(projectId), attachmentPath(ref.id, ref.fileName)), data);
+    return ref;
+  }
+
+  async readAttachment(projectId: string, ref: AttachmentRef): Promise<Buffer> {
+    const file = path.join(this.projectDir(projectId), attachmentPath(ref.id, ref.fileName));
+    try {
+      const data = await fs.readFile(file);
+      if (sha256(data) !== ref.sha256) throw new AppError('corrupt', `Файл «${ref.fileName}» повреждён (контрольная сумма не совпадает)`);
+      return data;
+    } catch (e) {
+      if (e instanceof AppError) throw e;
+      throw new AppError('missing-attachment', `Не найден файл вложения «${ref.fileName}»`);
+    }
+  }
+
   // ---------- Контрольные версии ----------
 
   async listCheckpoints(id: string): Promise<CheckpointInfo[]> {
@@ -452,13 +485,13 @@ export class DataStore {
       if (mode === 'new' && existsAlready) throw new AppError('conflict', 'Проект с таким ID уже есть — выберите «Заменить» или «Как копию»');
       let bundle: ProjectBundle = { doc: read.doc, checkpoints: read.checkpoints, attachments: read.attachments };
       if (mode === 'copy') {
-        const { docs, map } = remapDocs([read.doc, ...read.checkpoints.map((c) => c.doc)]);
+        const { docs, map } = remapDocs([read.doc, ...read.checkpoints.map((c) => c.doc)], read.checkpoints.map((c) => c.id));
         const [doc, ...cpDocs] = docs;
         const attachments = new Map<string, Buffer>();
         for (const [oldId, data] of read.attachments) attachments.set(map.get(oldId) ?? oldId, data);
         bundle = {
           doc: logChange({ ...doc!, name: normalizeName(`${read.doc.name} (импорт)`) }, 'import-copy', 'Импортирован как копия'),
-          checkpoints: read.checkpoints.map((c, i) => ({ ...c, id: newId(), doc: cpDocs[i]! })),
+          checkpoints: read.checkpoints.map((c, i) => ({ ...c, id: map.get(c.id)!, doc: cpDocs[i]! })),
           attachments,
         };
       } else {

@@ -11,8 +11,13 @@ import type { ProjectDoc } from './model';
 
 const KEEP_FIELDS = new Set(['catalogPartId']);
 
-export function remapDocs(docs: ProjectDoc[]): { docs: ProjectDoc[]; map: Map<string, string> } {
+/**
+ * extraIds — идентификаторы вне документа, на которые документ ссылается (контрольные версии
+ * в записях журнала): они получают новые значения в той же таблице.
+ */
+export function remapDocs(docs: ProjectDoc[], extraIds: string[] = []): { docs: ProjectDoc[]; map: Map<string, string> } {
   const map = new Map<string, string>();
+  for (const id of extraIds) map.set(id, newId());
   for (const d of docs) for (const { id } of collectEntityIds(d)) if (!map.has(id)) map.set(id, newId());
 
   const walk = (value: unknown, key: string | null): unknown => {

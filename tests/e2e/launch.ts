@@ -14,11 +14,30 @@ export function electronPath(): string {
 
 export interface Launched { app: ElectronApplication; page: Page }
 
+/**
+ * Ошибки страницы (исключения и console.error) за время теста. Тест с ошибками в консоли считается
+ * упавшим: так ловятся сбои интерфейса, которые не видны в проверках (ключи React, необработанные исключения).
+ */
+const pageErrors: string[] = [];
+const IGNORED = [/Electron Security Warning/, /DevTools/];
+
 /** Последнее запущенное приложение — для диагностики при падении теста. */
 export let lastLaunched: Launched | null = null;
 
 /** При падении: текст окна — в аннотацию GitHub (в CI логи недоступны), приложение — завершить. */
 export async function reportAndCleanup(failed: boolean, title: string): Promise<void> {
+  try {
+    await cleanup(failed, title);
+  } finally {
+    const errs = takePageErrors();
+    if (errs.length) {
+      process.stdout.write(`\n::warning title=e2e-консоль ${title.slice(0, 60)}::${errs.join(' || ').replace(/\s+/g, ' ').slice(0, 1500)}\n`);
+      if (!failed) throw new Error(`Ошибки в консоли окна программы:\n${errs.join('\n')}`);
+    }
+  }
+}
+
+async function cleanup(failed: boolean, title: string): Promise<void> {
   const l = lastLaunched;
   lastLaunched = null;
   if (!l) return;
@@ -34,6 +53,11 @@ export async function reportAndCleanup(failed: boolean, title: string): Promise<
   let alive = false;
   try { const proc = l.app.process(); alive = !!proc && proc.exitCode === null && proc.signalCode === null; } catch { /* уже закрыто */ }
   if (alive) await killHard(l.app).catch(() => undefined);
+}
+
+/** Проверка в afterEach: ошибок в консоли окна не было. Возвращает и очищает список. */
+export function takePageErrors(): string[] {
+  return pageErrors.splice(0, pageErrors.length);
 }
 
 export async function launch(opts: { dataDir?: string; appDir?: string; executable?: string } = {}): Promise<Launched> {
@@ -55,6 +79,8 @@ export async function launch(opts: { dataDir?: string; appDir?: string; executab
     }
   }
   const page = await app.firstWindow();
+  page.on('pageerror', (e) => pageErrors.push(`исключение: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error' && !IGNORED.some((r) => r.test(m.text()))) pageErrors.push(`console.error: ${m.text()}`); });
   await page.waitForLoadState('domcontentloaded');
   lastLaunched = { app, page };
   return lastLaunched;

@@ -8,7 +8,8 @@
  * С зеркалом. Подпись на поле листа говорит, что напечатано.
  */
 import type { ProjectDoc } from './model';
-import { allPads, bodyRect, DEFAULT_BOARD, type Layer, padsOf } from './pcb';
+import { outlineSvgPath } from './outline';
+import { allPads, bodyRect, DEFAULT_BOARD, newBoard, type Layer, padsOf } from './pcb';
 
 export interface ArtworkOptions {
   layer: Layer;
@@ -41,31 +42,53 @@ function sheet(doc: ProjectDoc, inner: string, caption: string, title: string): 
   return { svg, widthMm: W, heightMm: H, title };
 }
 
-/** Рисунок меди одного слоя 1:1: дорожки, площадки, переходы, контур платы. */
-export function artworkSvg(doc: ProjectDoc, opts: ArtworkOptions): Artwork {
-  const board = doc.pcb.board ?? { ...DEFAULT_BOARD, layers: 1 };
-  const parts: string[] = [];
-  parts.push(`<rect x="0" y="0" width="${f(board.widthMm)}" height="${f(board.heightMm)}" fill="none" stroke="#000" stroke-width="0.15" data-outline="1"/>`);
+/** Медь слоя: дорожки, площадки, переходы; grow — расширение (для вырезов заливки), skipNet — цепь, которую пропустить. */
+function copperMarkup(doc: ProjectDoc, layer: Layer, color: string, grow = 0, skipNet: string | null = null, tag = true): string {
+  const board = doc.pcb.board!;
+  const out: string[] = [];
+  const keep = (net: string | null) => skipNet === null || net !== skipNet;
   for (const t of doc.pcb.tracks) {
-    if (t.layer !== opts.layer) continue;
-    parts.push(`<polyline data-track="${t.id}" points="${t.points.map((p) => `${f(p.x)},${f(p.y)}`).join(' ')}" fill="none" stroke="#000" stroke-width="${f(t.widthMm)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+    if (t.layer !== layer || !keep(t.netId)) continue;
+    out.push(`<polyline${tag ? ` data-track="${t.id}"` : ''} points="${t.points.map((p) => `${f(p.x)},${f(p.y)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="${f(t.widthMm + 2 * grow)}" stroke-linecap="round" stroke-linejoin="round"/>`);
   }
-  const holes: string[] = [];
   for (const p of allPads(doc)) {
-    if (!p.layers.includes(opts.layer)) continue;
+    if (!p.layers.includes(layer) || !keep(p.netId)) continue;
     const { x, y } = p.pos;
-    if (p.shape === 'rect') parts.push(`<rect data-pad="${p.refDes}.${p.ref.pad}" x="${f(x - p.w / 2)}" y="${f(y - p.h / 2)}" width="${f(p.w)}" height="${f(p.h)}" fill="#000"/>`);
+    const w = p.w + 2 * grow, h = p.h + 2 * grow;
+    const attr = tag ? ` data-pad="${p.refDes}.${p.ref.pad}"` : '';
+    if (p.shape === 'rect') out.push(`<rect${attr} x="${f(x - w / 2)}" y="${f(y - h / 2)}" width="${f(w)}" height="${f(h)}" fill="${color}"/>`);
     else if (p.shape === 'oval' && p.w !== p.h) {
-      const r = Math.min(p.w, p.h) / 2;
-      parts.push(`<rect data-pad="${p.refDes}.${p.ref.pad}" x="${f(x - p.w / 2)}" y="${f(y - p.h / 2)}" width="${f(p.w)}" height="${f(p.h)}" rx="${f(r)}" ry="${f(r)}" fill="#000"/>`);
-    } else parts.push(`<circle data-pad="${p.refDes}.${p.ref.pad}" cx="${f(x)}" cy="${f(y)}" r="${f(Math.max(p.w, p.h) / 2)}" fill="#000"/>`);
-    if (p.drill && opts.drillMarks !== false) holes.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(Math.min(p.drill / 2, 0.4))}" fill="#fff"/>`);
+      const r = Math.min(w, h) / 2;
+      out.push(`<rect${attr} x="${f(x - w / 2)}" y="${f(y - h / 2)}" width="${f(w)}" height="${f(h)}" rx="${f(r)}" ry="${f(r)}" fill="${color}"/>`);
+    } else out.push(`<circle${attr} cx="${f(x)}" cy="${f(y)}" r="${f(Math.max(w, h) / 2)}" fill="${color}"/>`);
   }
   if (board.layers === 2) {
     for (const v of doc.pcb.vias) {
-      parts.push(`<circle data-via="${v.id}" cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(v.diameterMm / 2)}" fill="#000"/>`);
-      if (opts.drillMarks !== false) holes.push(`<circle cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(Math.min(v.drillMm / 2, 0.3))}" fill="#fff"/>`);
+      if (!keep(v.netId)) continue;
+      out.push(`<circle${tag ? ` data-via="${v.id}"` : ''} cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(v.diameterMm / 2 + grow)}" fill="${color}"/>`);
     }
+  }
+  return out.join('');
+}
+
+/** Рисунок меди одного слоя 1:1: заливка, дорожки, площадки, переходы, контур платы. */
+export function artworkSvg(doc: ProjectDoc, opts: ArtworkOptions): Artwork {
+  const board = doc.pcb.board ?? newBoard();
+  const outline = outlineSvgPath(board, f);
+  const parts: string[] = [];
+  const pour = doc.pcb.pours.find((p) => p.layer === opts.layer);
+  if (pour && doc.pcb.board) {
+    // Заливка: контур → белым отступ от края и чужая медь с зазором → поверх вся медь слоя.
+    parts.push(`<path data-pour="${pour.id}" d="${outline}" fill="#000"/>`);
+    parts.push(`<path d="${outline}" fill="none" stroke="#fff" stroke-width="${f(2 * board.rules.edgeMm)}"/>`);
+    parts.push(copperMarkup(doc, opts.layer, '#fff', pour.clearanceMm, pour.netId, false));
+  }
+  parts.push(`<path d="${outline}" fill="none" stroke="#000" stroke-width="0.15" data-outline="1"/>`);
+  if (doc.pcb.board) parts.push(copperMarkup(doc, opts.layer, '#000'));
+  const holes: string[] = [];
+  if (opts.drillMarks !== false && doc.pcb.board) {
+    for (const p of allPads(doc)) if (p.drill && p.layers.includes(opts.layer)) holes.push(`<circle cx="${f(p.pos.x)}" cy="${f(p.pos.y)}" r="${f(Math.min(p.drill / 2, 0.4))}" fill="#fff"/>`);
+    if (board.layers === 2) for (const v of doc.pcb.vias) holes.push(`<circle cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(Math.min(v.drillMm / 2, 0.3))}" fill="#fff"/>`);
   }
   const content = parts.join('') + holes.join('');
   const g = opts.mirror ? `<g transform="translate(${f(board.widthMm)} 0) scale(-1 1)" data-mirrored="1">${content}</g>` : `<g>${content}</g>`;
@@ -78,8 +101,8 @@ export function artworkSvg(doc: ProjectDoc, opts: ArtworkOptions): Artwork {
 
 /** Сборочный чертёж (вид сверху): контур платы, корпуса и позиционные обозначения, площадки контуром. */
 export function assemblySvg(doc: ProjectDoc): Artwork {
-  const board = doc.pcb.board ?? { ...DEFAULT_BOARD };
-  const parts: string[] = [`<rect x="0" y="0" width="${f(board.widthMm)}" height="${f(board.heightMm)}" fill="none" stroke="#000" stroke-width="0.2"/>`];
+  const board = doc.pcb.board ?? newBoard();
+  const parts: string[] = [`<path d="${outlineSvgPath(board, f)}" fill="none" stroke="#000" stroke-width="0.2"/>`];
   for (const pl of doc.pcb.placements) {
     const inst = doc.schematic.instances.find((i) => i.id === pl.instanceId);
     const b = bodyRect(doc, pl);

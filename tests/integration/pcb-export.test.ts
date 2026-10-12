@@ -147,3 +147,55 @@ describe('Gerber и Excellon: обратное чтение и сравнени�
     assert.ok([...byRegion.values()].some((nets) => nets.size > 1));
   });
 });
+
+// ---------- Форма платы и медная заливка ----------
+import { addPour } from '../../src/core/pour';
+import { setOutline, ratsnest as rats } from '../../src/core/pcb';
+
+describe('Заливка и форма платы в Gerber (независимый читатель)', () => {
+  test('заливка GND вместо дорожки: цепь собрана заливкой, чужая медь — с зазором, край — с отступом', () => {
+    let doc = layout(1, false);
+    const gnd = allPads(doc).find((x) => x.refDes === 'R2' && x.ref.pad === '2')!.netId!;
+    const r = addPour(doc, { netId: gnd, layer: 'bottom', clearanceMm: 0.5 });
+    assert.equal(r.error, null);
+    doc = r.doc;
+    assert.equal(rats(doc).length, 0, 'заливка соединила площадки GND');
+    assert.equal(drc(doc).filter((i) => i.severity === 'error').length, 0, JSON.stringify(drc(doc).map((i) => i.message)));
+    const files = gerberFiles(doc);
+    const g = readGerber(file(files, '-B_Cu.gbl'));
+    assert.ok(g.ops.some((o) => o.kind === 'region' && o.dark), 'область заливки G36/G37');
+    assert.ok(g.polarity.includes('LPC'), 'вырезы полярностью LPC');
+    const { byNet, byRegion } = checkNets(doc, files);
+    for (const [, regions] of byNet) assert.equal(regions.size, 1);
+    for (const [, nets] of byRegion) assert.equal(nets.size, 1, 'заливка не замыкает чужие цепи');
+    // Зазор: в 0,3 мм от края чужой площадки (зазор 0,5) меди нет; отступ от края платы 0,5 мм
+    const B = doc.pcb.board!;
+    const raster = Raster.of(g, B.widthMm, B.heightMm);
+    const region = copperRegions([raster], []);
+    const gndPad = allPads(doc).find((x) => x.netId === gnd)!;
+    const gndRegion = region(gndPad.pos.x, B.heightMm - gndPad.pos.y);
+    for (const pd of allPads(doc).filter((x) => x.netId !== gnd)) {
+      const rr = pd.w / 2 + 0.3;
+      for (const a of [0, Math.PI / 2, Math.PI, 1.5 * Math.PI]) {
+        // В 0,3 мм от чужой площадки может быть только её собственная медь (дорожка), но не заливка GND
+        assert.notEqual(region(pd.pos.x + rr * Math.cos(a), B.heightMm - (pd.pos.y + rr * Math.sin(a))), gndRegion, `${pd.refDes}.${pd.ref.pad}: заливка в зазоре`);
+      }
+    }
+    assert.equal(raster.at(0.25, 20), 0, 'у края платы меди нет');
+    assert.equal(raster.at(1.5, 20), 1, 'дальше от края — заливка');
+  });
+
+  test('круглая плата: контур — окружность, площадка за краем круга — ошибка DRC', () => {
+    let doc = layout(1);
+    doc = setOutline(doc, { kind: 'circle' }, { widthMm: 46 }).doc;
+    assert.equal(doc.pcb.board!.heightMm, 46);
+    const edge = readGerber(file(gerberFiles(doc), '-Edge_Cuts.gm1'));
+    for (const d of edge.draws) assert.ok(Math.abs(Math.hypot(d.x1 - 23, d.y1 - 23) - 23) < 1e-6, 'точки контура на окружности');
+    const len = edge.draws.reduce((s, d) => s + Math.hypot(d.x2 - d.x1, d.y2 - d.y1), 0);
+    assert.ok(Math.abs(len - Math.PI * 46) < 0.05, `длина контура ${len}`);
+    // R1.2 в (35,56; 10,16): от центра (23; 23) — 17,97 мм < 23 − 0,9 − 0,5 → внутри; сдвинем R1 к углу габарита
+    const pl = doc.pcb.placements.find((x) => doc.schematic.instances.find((i) => i.id === x.instanceId)?.refDes === 'R1')!;
+    doc = movePlacement(doc, pl.id, { x: 33, y: 3.81 });
+    assert.ok(drc(doc).some((i) => i.code === 'edge' && /R1/.test(i.message)), 'площадка в углу габарита — за краем круга');
+  });
+});

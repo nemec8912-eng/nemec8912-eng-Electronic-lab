@@ -7,7 +7,7 @@
  * соединяет площадки и переходные отверстия одной цепи на одном слое. Изменения схемы переносятся на
  * плату только явной синхронизацией с отчётом; разводка молча не удаляется.
  */
-import { touch } from './factory';
+import { logChange, touch } from './factory';
 import { newId } from './ids';
 import {
   DEFAULT_RULES, type Board, type DesignRules, type PackageDef, type PadRef, type PartDef, type Placement, type Point,
@@ -15,6 +15,8 @@ import {
 } from './model';
 import { netDisplayName } from './connectivity';
 import { netOfPin } from './schematic';
+import { normalizePolygon, outlinePolygon, pointInPolygon, polygonProblem } from './outline';
+import { pourResults } from './pour';
 
 export { DEFAULT_RULES } from './model';
 export type Layer = 'top' | 'bottom';
@@ -25,8 +27,8 @@ export const DEFAULT_BOARD = { widthMm: 60, heightMm: 40 };
 export const DEFAULT_TRACK_MM = DEFAULT_RULES.trackMm;
 export const MM_PER_INCH = 25.4;
 
-export function newBoard(): Board {
-  return { id: newId(), ...DEFAULT_BOARD, layers: 1, units: 'mm', rules: { ...DEFAULT_RULES } };
+export function newBoard(init: Partial<Pick<Board, 'widthMm' | 'heightMm' | 'layers' | 'units' | 'outline'>> = {}): Board {
+  return { id: newId(), ...DEFAULT_BOARD, layers: 1, units: 'mm', rules: { ...DEFAULT_RULES }, outline: { kind: 'rect' }, ...init };
 }
 export const rulesOf = (doc: ProjectDoc): DesignRules => doc.pcb.board?.rules ?? DEFAULT_RULES;
 /** Слои меди платы: односторонняя — только нижний. */
@@ -219,11 +221,54 @@ export function shapeGap(a: Shape, b: Shape): number {
   return core - a.r - b.r;
 }
 
-/** Отступ фигуры от края прямоугольной платы (отрицательный — выходит за край). */
-export function edgeGap(s: Shape, board: { widthMm: number; heightMm: number }): number {
-  let g = Infinity;
-  for (const p of s.pts) g = Math.min(g, p.x - s.r, p.y - s.r, board.widthMm - p.x - s.r, board.heightMm - p.y - s.r);
-  return g;
+const polyCache = new WeakMap<object, Point[]>();
+/** Контур платы многоугольником (кэш на объект платы: документ не изменяется на месте). */
+export function boardPolygon(board: Pick<Board, 'widthMm' | 'heightMm' | 'outline'>): Point[] {
+  let p = polyCache.get(board);
+  if (!p) { p = outlinePolygon(board); polyCache.set(board, p); }
+  return p;
+}
+
+/** Отступ фигуры от края платы с учётом формы контура (отрицательный — выходит за край). */
+export function edgeGap(s: Shape, board: { widthMm: number; heightMm: number; outline?: Board['outline'] }): number {
+  if (!board.outline || board.outline.kind === 'rect') {
+    let g = Infinity;
+    for (const p of s.pts) g = Math.min(g, p.x - s.r, p.y - s.r, board.widthMm - p.x - s.r, board.heightMm - p.y - s.r);
+    return g;
+  }
+  const poly = boardPolygon(board as Board);
+  let d = Infinity;
+  for (const [a, b] of segsOf(s)) for (let i = 0; i < poly.length; i++) d = Math.min(d, segSegDist(a, b, poly[i]!, poly[(i + 1) % poly.length]!));
+  const outside = s.pts.some((p) => !pointInPolygon(poly, p));
+  return outside ? -d - s.r : d - s.r;
+}
+
+/** Прямоугольник целиком внутри контура с отступом m. */
+export function rectInside(board: Board, r: { x: number; y: number; w: number; h: number }, m: number): boolean {
+  const shape: Shape = { pts: [{ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }], closed: true, r: 0 };
+  return edgeGap(shape, board) >= m;
+}
+
+export const MIN_BOARD_MM = 1, MAX_BOARD_MM = 2000;
+
+/** Форма платы. Круг — диаметр = ширина = высота; многоугольник — точки нормализуются к габариту. */
+export function setOutline(doc: ProjectDoc, outline: Board['outline'], size?: { widthMm?: number; heightMm?: number }): { doc: ProjectDoc; error: string | null } {
+  const cur = doc.pcb.board ?? newBoard();
+  let w = size?.widthMm ?? cur.widthMm, h = size?.heightMm ?? cur.heightMm;
+  let o = outline;
+  if (o.kind === 'polygon') {
+    const pr = polygonProblem(o.points);
+    if (pr) return { doc, error: `Контур: ${pr}` };
+    const n = normalizePolygon(o.points);
+    o = { kind: 'polygon', points: n.points };
+    w = n.widthMm; h = n.heightMm;
+  }
+  if (o.kind === 'circle') { const d = size?.widthMm ?? Math.min(w, h); w = d; h = d; }
+  if (o.kind === 'rounded' && o.radiusMm > Math.min(w, h) / 2) return { doc, error: `Радиус скругления больше половины меньшей стороны (${fmtLen(Math.min(w, h) / 2)})` };
+  const r = setBoard(doc, { widthMm: w, heightMm: h, outline: o });
+  if (r.error || r.doc === doc) return r;
+  const kind = { rect: 'прямоугольник', rounded: 'скруглённые углы', circle: 'круг', polygon: 'многоугольник' }[o.kind];
+  return { doc: logChange(r.doc, 'pcb-outline', `${doc.pcb.board ? 'Плата' : 'Создана плата'}: ${kind}, ${fmtLen(w)} × ${fmtLen(h)}`), error: null };
 }
 
 // ---------- Плата и синхронизация ----------
@@ -235,7 +280,18 @@ export function edgeGap(s: Shape, board: { widthMm: number; heightMm: number }):
 export function setBoard(doc: ProjectDoc, patch: Partial<Omit<Board, 'id' | 'rules'>> & { rules?: Partial<DesignRules> }): { doc: ProjectDoc; error: string | null } {
   const cur = doc.pcb.board ?? newBoard();
   const next: Board = { ...cur, ...patch, rules: { ...cur.rules, ...(patch.rules ?? {}) } };
-  if (!(next.widthMm >= 5 && next.widthMm <= 1000 && next.heightMm >= 5 && next.heightMm <= 1000)) return { doc, error: 'Размеры платы — от 5 до 1000 мм' };
+  if (!(next.widthMm >= MIN_BOARD_MM && next.widthMm <= MAX_BOARD_MM && next.heightMm >= MIN_BOARD_MM && next.heightMm <= MAX_BOARD_MM)) return { doc, error: `Размеры платы — от ${MIN_BOARD_MM} до ${MAX_BOARD_MM} мм` };
+  // Круг остаётся кругом: меняется ширина — меняется и высота.
+  if (next.outline.kind === 'circle' && next.widthMm !== next.heightMm) {
+    const d = patch.heightMm !== undefined && patch.widthMm === undefined ? next.heightMm : next.widthMm;
+    next.widthMm = d; next.heightMm = d;
+  }
+  // Многоугольник масштабируется при изменении габарита.
+  if (next.outline.kind === 'polygon' && (next.widthMm !== cur.widthMm || next.heightMm !== cur.heightMm) && cur.outline.kind === 'polygon' && patch.outline === undefined) {
+    const kx = next.widthMm / cur.widthMm, ky = next.heightMm / cur.heightMm;
+    next.outline = { kind: 'polygon', points: cur.outline.points.map((p) => ({ x: Number((p.x * kx).toFixed(4)), y: Number((p.y * ky).toFixed(4)) })) };
+  }
+  if (next.outline.kind === 'rounded' && next.outline.radiusMm > Math.min(next.widthMm, next.heightMm) / 2) return { doc, error: 'Радиус скругления больше половины меньшей стороны' };
   const r = next.rules;
   if (r.viaDrillMm >= r.viaDiameterMm) return { doc, error: 'Диаметр площадки переходного отверстия должен быть больше сверла' };
   if (r.trackMm < r.minTrackMm) return { doc, error: 'Ширина новой дорожки меньше минимальной' };
@@ -367,15 +423,17 @@ export function syncFromSchematic(doc: ProjectDoc): { doc: ProjectDoc; report: S
     else if (used.length === 0) report.problems.push(`Переходное отверстие (${fmtLen(v.position.x)}; ${fmtLen(v.position.y)}) ни с чем не соединено`);
   }
   report.hasChanges = boardCreated || report.added.length > 0 || report.removed.length > 0 || report.changed.length > 0 || report.removedTracks > 0;
-  return { doc: report.hasChanges ? touch(d) : doc, report };
+  if (!report.hasChanges) return { doc, report };
+  const summary = [boardCreated ? 'плата создана' : '', report.added.length ? `добавлено: ${report.added.join(', ')}` : '', report.removed.length ? `удалено: ${report.removed.length}` : '', report.changed.length ? `изменено: ${report.changed.length}` : '', report.removedTracks ? `дорожек удалено: ${report.removedTracks}` : ''].filter(Boolean).join('; ');
+  return { doc: logChange(touch(d), 'pcb-sync', `Синхронизация платы со схемой: ${summary}`), report };
 }
 
 function freeSpot(board: Board, occupied: Array<{ x: number; y: number; w: number; h: number }>, box: { w: number; h: number }): { x: number; y: number; inside: boolean } {
   const m = Math.max(board.rules.edgeMm, 1) + 1, gap = 2;
-  for (let y = m; y + box.h <= board.heightMm - m; y += PCB_GRID) {
-    for (let x = m; x + box.w <= board.widthMm - m; x += PCB_GRID) {
+  for (let y = 0; y + box.h <= board.heightMm; y += PCB_GRID) {
+    for (let x = 0; x + box.w <= board.widthMm; x += PCB_GRID) {
       const r = { x, y, w: box.w, h: box.h };
-      if (!occupied.some((o) => rectsOverlap(o, r, gap))) return { x, y, inside: true };
+      if (!occupied.some((o) => rectsOverlap(o, r, gap)) && rectInside(board, r, m - 1)) return { x, y, inside: true };
     }
   }
   // Под платой — рядом друг с другом.
@@ -527,6 +585,13 @@ export function copperGroups(doc: ProjectDoc): (key: string) => string {
     const a = find(endKey(t.from)), b = find(endKey(t.to));
     if (a !== b) parent.set(a, b);
   }
+  // Медная заливка соединяет всё, что касается одного её участка.
+  for (const r of pourResults(doc)) {
+    for (const c of r.components) {
+      const keys = [...c.keys];
+      for (let i = 1; i < keys.length; i++) { const a = find(keys[i]!), b = find(keys[0]!); if (a !== b) parent.set(a, b); }
+    }
+  }
   return find;
 }
 
@@ -571,7 +636,7 @@ export function unroutedNets(doc: ProjectDoc): Array<{ netId: string; name: stri
 export interface DrcIssue {
   severity: 'error' | 'warning';
   /** Вид замечания (для тестов и фильтров). */
-  code: 'board' | 'edge' | 'clearance' | 'short' | 'track-width' | 'drill' | 'annular' | 'net' | 'layer' | 'orphan' | 'overlap' | 'unrouted' | 'hole';
+  code: 'board' | 'edge' | 'clearance' | 'short' | 'track-width' | 'drill' | 'annular' | 'net' | 'layer' | 'orphan' | 'overlap' | 'unrouted' | 'hole' | 'island';
   message: string;
   at: Point | null;
   /** Объекты, к которым относится замечание (id размещений, дорожек, переходов). */
@@ -585,6 +650,7 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
   const board = doc.pcb.board;
   if (!board) return [{ severity: 'error', code: 'board', message: 'Плата не создана: выполните синхронизацию со схемой', at: null, ids: [] }];
   const r = board.rules;
+  const r_ = r;
   const L = copperLayers(doc);
   const u = board.units;
   const len = (mm: number) => fmtLen(mm, u);
@@ -666,7 +732,7 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
   const boxes = doc.pcb.placements.map((pl) => ({ pl, b: bodyRect(doc, pl), ref: doc.schematic.instances.find((i) => i.id === pl.instanceId)?.refDes }));
   for (const { pl, b, ref } of boxes) {
     if (!ref) { out.push({ severity: 'error', code: 'orphan', message: 'На плате есть деталь, удалённая из схемы — выполните синхронизацию', at: pl.position, ids: [pl.id] }); continue; }
-    if (b && (b.x < 0 || b.y < 0 || b.x + b.w > board.widthMm || b.y + b.h > board.heightMm)) out.push({ severity: 'warning', code: 'edge', message: `${ref}: корпус выходит за край платы`, at: pl.position, ids: [pl.id] });
+    if (b && !rectInside(board, b, 0)) out.push({ severity: 'warning', code: 'edge', message: `${ref}: корпус выходит за край платы`, at: pl.position, ids: [pl.id] });
     const { pkg } = placementContext(doc, pl);
     if (board.layers === 1 && pkg?.mount === 'THT' && pl.side === 'bottom') out.push({ severity: 'warning', code: 'layer', message: `${ref}: выводная деталь со стороны меди — на односторонней плате её обычно ставят сверху`, at: pl.position, ids: [pl.id] });
   }
@@ -676,6 +742,16 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
     if (rectsOverlap(a.b, b.b, -0.01)) out.push({ severity: 'warning', code: 'overlap', message: `Корпуса ${a.ref} и ${b.ref} перекрываются`, at: a.pl.position, ids: [a.pl.id, b.pl.id] });
   }
 
+  for (const r of pourResults(doc)) {
+    const name = netName(doc, r.pour.netId);
+    if (!doc.schematic.nets.some((n) => n.id === r.pour.netId)) out.push({ severity: 'error', code: 'net', message: `Заливка: цепи больше нет в схеме — удалите заливку`, at: null, ids: [r.pour.id] });
+    if (r.pour.clearanceMm < r_.clearanceMm) out.push({ severity: 'error', code: 'clearance', message: `Заливка ${name}: зазор ${len(r.pour.clearanceMm)} меньше общего ${len(r_.clearanceMm)}`, at: null, ids: [r.pour.id] });
+    const islands = r.components.filter((c) => c.keys.size === 0 && c.areaMm2 >= 0.5);
+    for (const c of islands.slice(0, 10)) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name}: остров ${len(Math.sqrt(c.areaMm2))}² не соединён с цепью — останется лишней медью`, at: c.sample, ids: [r.pour.id] });
+    if (islands.length > 10) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name}: ещё островов — ${islands.length - 10}`, at: null, ids: [r.pour.id] });
+    if (r.components.every((c) => c.keys.size === 0)) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name} не касается ни одной площадки своей цепи`, at: null, ids: [r.pour.id] });
+  }
+  for (const p of doc.pcb.pours) if (!L.includes(p.layer)) out.push({ severity: 'error', code: 'layer', message: 'Заливка на верхнем слое, а плата односторонняя', at: null, ids: [p.id] });
   for (const n of unroutedNets(doc)) {
     out.push({ severity: 'warning', code: 'unrouted', message: `Не разведено: цепь ${n.name} — соединений ${n.missing}`, at: null, ids: [] });
   }

@@ -142,7 +142,8 @@ describe('Плата: перенос из схемы', () => {
 describe('Плата: параметры, единицы', () => {
   test('размеры, слои, правила; на одностороннюю нельзя, пока есть верхний слой', () => {
     let { doc, v, r1 } = synced();
-    assert.match(setBoard(doc, { widthMm: 2 }).error ?? '', /от 5 до 1000/);
+    assert.match(setBoard(doc, { widthMm: 0.5 }).error ?? '', /от 1 до 2000/);
+    assert.equal(setBoard(doc, { widthMm: 1500 }).error, null, 'большая плата допустима');
     assert.match(setBoard(doc, { rules: { viaDrillMm: 2 } }).error ?? '', /больше сверла/);
     doc = board(doc, { layers: 2, units: 'inch', rules: { clearanceMm: 0.3 } });
     assert.equal(doc.pcb.board!.rules.clearanceMm, 0.3);
@@ -295,7 +296,7 @@ describe('Плата: вывод 1:1 для ЛУТ', () => {
     assert.equal(bottom.widthMm, 50 + 5 * 3 + 10);
     assert.match(bottom.svg, new RegExp(`width="${bottom.widthMm}mm" height="${bottom.heightMm}mm" viewBox="0 0 ${bottom.widthMm} ${bottom.heightMm}"`));
     assert.match(bottom.svg, /width="10" height="10" fill="none" stroke="#000" stroke-width="0.2" data-calibration/);
-    assert.match(bottom.svg, /<rect x="0" y="0" width="50" height="30"/);
+    assert.match(bottom.svg, /<path d="M0 0H50V30H0Z" fill="none" stroke="#000" stroke-width="0.15" data-outline="1"/);
     assert.doesNotMatch(bottom.svg, /scale\(-1 1\)/);
     assert.match(bottom.svg, /для ЛУТ/);
     assert.equal((bottom.svg.match(/data-pad=/g) ?? []).length, 6, '3 детали × 2 площадки');
@@ -320,7 +321,7 @@ describe('Формат v6', () => {
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     if (!r.ok) return;
     assert.equal(r.migratedFrom, 5);
-    assert.equal(r.doc.schemaVersion, 7);
+    assert.equal(r.doc.schemaVersion, 8);
     const t = r.doc.pcb.tracks[0]!;
     assert.equal(t.from?.kind, 'pad');
     assert.deepEqual(t.points, raw.pcb.tracks[0].points);
@@ -328,5 +329,68 @@ describe('Формат v6', () => {
     assert.equal(r.doc.pcb.board!.units, 'mm');
     assert.equal(r.doc.pcb.placements.length, raw.pcb.placements.length);
     assert.equal(ratsnest(r.doc).length, 2, 'разведено одно соединение из трёх');
+  });
+});
+
+// ---------- Форма платы и заливка ----------
+import { normalizePolygon, outlineArea, outlineSvgPath, polygonProblem } from '../../src/core/outline';
+import { addPour, deletePour, pourResults } from '../../src/core/pour';
+import { setOutline } from '../../src/core/pcb';
+
+describe('Плата: форма контура', () => {
+  test('прямоугольник, скругление, круг, многоугольник: проверки, нормализация, площадь, путь SVG', () => {
+    let { doc } = synced();
+    assert.match(setOutline(doc, { kind: 'rounded', radiusMm: 25 }).error ?? '', /Радиус скругления больше половины/);
+    const rounded = ok(setOutline(doc, { kind: 'rounded', radiusMm: 5 })).doc.pcb.board!;
+    assert.ok(Math.abs(outlineArea(rounded) - (60 * 40 - (4 - Math.PI) * 25)) < 0.05, 'площадь со скруглениями');
+    assert.match(outlineSvgPath(rounded), /^M5 0H55A5 5 0 0 1 60 5/);
+    const circle = ok(setOutline(doc, { kind: 'circle' }, { widthMm: 30 })).doc.pcb.board!;
+    assert.deepEqual([circle.widthMm, circle.heightMm], [30, 30]);
+    assert.ok(Math.abs(outlineArea(circle) - Math.PI * 225) < 0.5, "дуга отрезками по 3°");
+    // Круг остаётся кругом при смене размера
+    const c2 = ok(setBoard(ok(setOutline(doc, { kind: 'circle' }, { widthMm: 30 })).doc, { heightMm: 44 })).doc.pcb.board!;
+    assert.deepEqual([c2.widthMm, c2.heightMm], [44, 44]);
+    assert.match(polygonProblem([{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 10, y: 0 }, { x: 0, y: 10 }]) ?? '', /пересекаются/);
+    assert.equal(polygonProblem([{ x: 0, y: 0 }, { x: 10, y: 0 }]), 'Нужно не меньше трёх точек');
+    const n = normalizePolygon([{ x: 5, y: 5 }, { x: 45, y: 5 }, { x: 45, y: 25 }, { x: 25, y: 35 }, { x: 5, y: 25 }]);
+    assert.deepEqual([n.widthMm, n.heightMm, n.points[0]], [40, 30, { x: 0, y: 0 }]);
+    doc = ok(setOutline(doc, { kind: 'polygon', points: [{ x: 5, y: 5 }, { x: 45, y: 5 }, { x: 45, y: 25 }, { x: 25, y: 35 }, { x: 5, y: 25 }] })).doc;
+    assert.deepEqual([doc.pcb.board!.widthMm, doc.pcb.board!.heightMm], [40, 30]);
+    // Масштаб многоугольника вместе с габаритом
+    const big = ok(setBoard(doc, { widthMm: 80 })).doc.pcb.board!;
+    assert.equal(big.outline.kind === 'polygon' && big.outline.points[1]!.x, 80);
+  });
+
+  test('деталь у срезанного угла многоугольника — за краем; расстановка учитывает форму', () => {
+    let { doc, r1 } = synced();
+    doc = ok(setOutline(doc, { kind: 'polygon', points: [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 20 }, { x: 30, y: 40 }, { x: 0, y: 40 }] })).doc;
+    doc = movePlacement(doc, placementOf(doc, r1).id, { x: 48, y: 33 });
+    assert.ok(drc(doc).some((i) => i.code === 'edge' && /R1/.test(i.message)), JSON.stringify(drc(doc).map((i) => i.message)));
+    // Новая синхронизация на круглой плате кладёт детали внутрь круга
+    const b = divider().b;
+    let d2 = ok(setOutline(b.doc, { kind: 'circle' }, { widthMm: 50 })).doc;
+    d2 = syncFromSchematic(d2).doc;
+    assert.equal(drc(d2).filter((i) => i.code === 'edge').length, 0, JSON.stringify(drc(d2).filter((i) => i.code === 'edge').map((i) => i.message)));
+  });
+});
+
+describe('Плата: медная заливка', () => {
+  test('заливка соединяет площадки цепи; правила; остров; удаление', () => {
+    let { doc, v, r2 } = synced();
+    const gnd = findPad(doc, pad(doc, r2, '2'))!.netId!;
+    assert.match(addPour(doc, { netId: gnd, layer: 'top', clearanceMm: 0.5 }).error ?? '', /медь только снизу/);
+    assert.match(addPour(doc, { netId: gnd, layer: 'bottom', clearanceMm: 0.2 }).error ?? '', /не меньше общего зазора/);
+    const before = unroutedNets(doc).length;
+    doc = ok(addPour(doc, { netId: gnd, layer: 'bottom', clearanceMm: 0.5 })).doc;
+    assert.match(addPour(doc, { netId: gnd, layer: 'bottom', clearanceMm: 0.5 }).error ?? '', /уже есть заливка/);
+    assert.equal(unroutedNets(doc).length, before - 1, 'GND разведена заливкой');
+    const r = pourResults(doc)[0]!;
+    assert.ok(r.components.some((c) => c.keys.size >= 2));
+    // Отгородим угол дорожкой другой цепи — получится остров
+    const vin = findPad(doc, pad(doc, v, '1'))!.netId!;
+    const fence: Track = { id: crypto.randomUUID(), netId: vin, layer: 'bottom', widthMm: 0.8, from: pad(doc, v, '1'), to: pad(doc, v, '1'), points: [{ x: 0, y: 30 }, { x: 10, y: 30 }, { x: 10, y: 40 }] };
+    const fenced = { ...doc, pcb: { ...doc.pcb, tracks: [...doc.pcb.tracks, fence] } };
+    assert.ok(drc(fenced).some((i) => i.code === 'island'), JSON.stringify(drc(fenced).map((i) => i.message)));
+    assert.equal(deletePour(doc, doc.pcb.pours[0]!.id).pcb.pours.length, 0);
   });
 });

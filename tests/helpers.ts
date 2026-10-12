@@ -76,13 +76,14 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
       sheet: { size: 'A4', orientation: 'landscape', frame: true, author: '' },
     },
     pcb: {
-      board: { id: newId(), widthMm: 50, heightMm: 30, layers: 1, units: 'mm', rules: { ...DEFAULT_RULES } },
+      board: { id: newId(), widthMm: 50, heightMm: 30, layers: 1, units: 'mm', rules: { ...DEFAULT_RULES }, outline: { kind: 'rect' } },
       placements: [
         { id: pl1, instanceId: r1, packageId: pkgAxial, position: { x: 10, y: 10 }, rotation: 0, side: 'top' },
         { id: pl2, instanceId: r2, packageId: pkg0805, position: { x: 30, y: 10 }, rotation: 90, side: 'bottom' },
       ],
       tracks: [{ id: newId(), netId: netMid, layer: 'bottom', widthMm: 0.8, from: { kind: 'pad', placementId: pl1, pad: 'B' }, to: { kind: 'pad', placementId: pl2, pad: '1' }, points: [{ x: 20.16, y: 10 }, { x: 30, y: 9.05 }] }],
       vias: [],
+      pours: [],
     },
     tests: [{
       id: newId(), createdAt: new Date().toISOString(), revision: 0, title: 'Первое включение', date: new Date().toISOString(), checkpointId: null,

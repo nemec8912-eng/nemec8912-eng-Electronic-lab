@@ -160,6 +160,16 @@ const migrations: Migration[] = [
       return { ...r, schemaVersion: 7, tests };
     },
   },
+  {
+    /** v7 → v8: контур платы (прежние платы — прямоугольные) и медные заливки (пока нет). */
+    from: 7,
+    to: 8,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      const pcb = r.pcb ?? {};
+      return { ...r, schemaVersion: 8, pcb: { ...pcb, board: pcb.board ? { ...pcb.board, outline: { kind: 'rect' } } : null, pours: [] } };
+    },
+  },
 ];
 
 function migrateV3toV4(r: Record<string, any>): Record<string, unknown> {

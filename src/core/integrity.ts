@@ -40,6 +40,7 @@ export function collectEntityIds(doc: ProjectDoc): Array<{ id: string; where: st
   add(doc.pcb.placements, 'pcb.placements');
   add(doc.pcb.tracks, 'pcb.tracks');
   add(doc.pcb.vias, 'pcb.vias');
+  add(doc.pcb.pours, 'pcb.pours');
   add(doc.tests, 'tests');
   for (const t of doc.tests) { add(t.measurements, 'tests.measurements'); add(t.events, 'tests.events'); }
   add(doc.attachments, 'attachments');

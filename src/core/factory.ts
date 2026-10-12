@@ -8,7 +8,7 @@ export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | '
   return {
     schematic: { instances: [], nets: [], wires: [], junctions: [], labels: [], groups: [], annotations: [], sheet: { ...DEFAULT_SHEET } },
     library: { symbols: [], parts: [], packages: [], models: [] },
-    pcb: { board: null, placements: [], tracks: [], vias: [] },
+    pcb: { board: null, placements: [], tracks: [], vias: [], pours: [] },
     instruments: { settings: {} },
     simulation: structuredClone(DEFAULT_SIMULATION),
     tests: [],

@@ -8,10 +8,15 @@
 export type Ap = { kind: 'C'; d: number } | { kind: 'R' | 'O'; w: number; h: number };
 export interface Flash { x: number; y: number; ap: Ap }
 export interface Draw { x1: number; y1: number; x2: number; y2: number; ap: Ap }
-export interface GerberData { units: 'mm' | 'in'; apertures: Map<number, Ap>; flashes: Flash[]; draws: Draw[]; attributes: string[]; polarity: string[] }
+export type Op = { kind: 'flash'; f: Flash; dark: boolean } | { kind: 'draw'; d: Draw; dark: boolean } | { kind: 'region'; pts: Array<{ x: number; y: number }>; dark: boolean };
+/** flashes и draws — только тёмные (медь); ops — все операции по порядку, с полярностью и областями G36/G37. */
+export interface GerberData { units: 'mm' | 'in'; apertures: Map<number, Ap>; flashes: Flash[]; draws: Draw[]; ops: Op[]; attributes: string[]; polarity: string[] }
 
 export function readGerber(text: string): GerberData {
-  const data: GerberData = { units: 'mm', apertures: new Map(), flashes: [], draws: [], attributes: [], polarity: [] };
+  const data: GerberData = { units: 'mm', apertures: new Map(), flashes: [], draws: [], ops: [], attributes: [], polarity: [] };
+  let dark = true;
+  let region: Array<{ x: number; y: number }> | null = null;
+  let regionContours: Array<Array<{ x: number; y: number }>> = [];
   let xInt = 0, xDec = 0, yInt = 0, yDec = 0, fsSeen = false, moSeen = false, ended = false;
   let cur: number | null = null, x = 0, y = 0;
   const statements: Array<{ ext: boolean; s: string }> = [];
@@ -41,13 +46,28 @@ export function readGerber(text: string): GerberData {
         const code = Number(a[1]);
         if (code < 10) throw new Error('Код апертуры меньше 10');
         data.apertures.set(code, a[2] === 'C' ? { kind: 'C', d: Number(a[3]) } : { kind: a[2] as 'R' | 'O', w: Number(a[3]), h: Number(a[4]) });
-      } else if (s.startsWith('LP')) data.polarity.push(s);
+      } else if (s.startsWith('LP')) {
+        if (s !== 'LPD' && s !== 'LPC') throw new Error(`Полярность ${s}`);
+        data.polarity.push(s); dark = s === 'LPD';
+      }
       else if (/^T[FAOD]/.test(s)) data.attributes.push(s);
       else throw new Error(`Неизвестная расширенная команда ${s}`);
       continue;
     }
     if (s === 'M02') { ended = true; continue; }
     if (s === 'G01' || s === 'G75' || s.startsWith('G04')) continue;
+    if (s === 'G36') { if (region) throw new Error('Вложенный G36'); region = []; regionContours = []; continue; }
+    if (s === 'G37') {
+      if (!region) throw new Error('G37 без G36');
+      if (region.length) regionContours.push(region);
+      for (const c of regionContours) {
+        if (c.length < 4) throw new Error('Контур области меньше трёх сторон');
+        const a = c[0]!, b = c[c.length - 1]!;
+        if (Math.abs(a.x - b.x) > 1e-9 || Math.abs(a.y - b.y) > 1e-9) throw new Error('Контур области не замкнут');
+        data.ops.push({ kind: 'region', pts: c, dark });
+      }
+      region = null; continue;
+    }
     const sel = s.match(/^(?:G54)?D(\d+)$/);
     if (sel && Number(sel[1]) >= 10) {
       if (!data.apertures.has(Number(sel[1]))) throw new Error(`Апертура D${sel[1]} не определена`);
@@ -59,11 +79,18 @@ export function readGerber(text: string): GerberData {
     if (!fsSeen || !moSeen) throw new Error('Координаты до FS/MO');
     void xInt; void yInt;
     const nx = op[1] !== undefined ? coord(op[1], xDec) : x, ny = op[2] !== undefined ? coord(op[2], yDec) : y;
+    if (region) {
+      if (op[3] === '2') { if (region.length) regionContours.push(region); region = [{ x: nx, y: ny }]; }
+      else if (op[3] === '1') { if (!region.length) region.push({ x, y }); region.push({ x: nx, y: ny }); }
+      else throw new Error('Вспышка внутри области');
+      x = nx; y = ny;
+      continue;
+    }
     if (op[3] !== '2') {
       if (cur === null) throw new Error('Операция без выбранной апертуры');
       const ap = data.apertures.get(cur)!;
-      if (op[3] === '1') data.draws.push({ x1: x, y1: y, x2: nx, y2: ny, ap });
-      else data.flashes.push({ x: nx, y: ny, ap });
+      if (op[3] === '1') { const d = { x1: x, y1: y, x2: nx, y2: ny, ap }; data.ops.push({ kind: 'draw', d, dark }); if (dark) data.draws.push(d); }
+      else { const fl = { x: nx, y: ny, ap }; data.ops.push({ kind: 'flash', f: fl, dark }); if (dark) data.flashes.push(fl); }
     }
     x = nx; y = ny;
   }
@@ -115,10 +142,12 @@ export class Raster {
     this.nx = Math.ceil(w / res) + 1; this.ny = Math.ceil(h / res) + 1;
     this.bits = new Uint8Array(this.nx * this.ny);
   }
+  /** 1 — рисовать медь, 0 — стирать (полярность LPC). */
+  value = 1;
   private fill(x0: number, y0: number, x1: number, y1: number, test: (x: number, y: number) => boolean) {
     const i0 = Math.max(0, Math.floor(x0 / this.res)), i1 = Math.min(this.nx - 1, Math.ceil(x1 / this.res));
     const j0 = Math.max(0, Math.floor(y0 / this.res)), j1 = Math.min(this.ny - 1, Math.ceil(y1 / this.res));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (test(i * this.res, j * this.res)) this.bits[j * this.nx + i] = 1;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (test(i * this.res, j * this.res)) this.bits[j * this.nx + i] = this.value;
   }
   capsule(x1: number, y1: number, x2: number, y2: number, r: number) {
     const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy;
@@ -138,10 +167,25 @@ export class Raster {
     if (d.ap.kind !== 'C') throw new Error('Рисование некруглой апертурой');
     this.capsule(d.x1, d.y1, d.x2, d.y2, d.ap.d / 2);
   }
+  polygon(pts: Array<{ x: number; y: number }>) {
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    this.fill(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), (x, y) => {
+      let c = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const a = pts[i]!, b = pts[j]!;
+        if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+      }
+      return c;
+    });
+  }
+  /** Все операции по порядку, с полярностью: вырезы стирают нарисованное раньше. */
   static of(g: GerberData, w: number, h: number, res = 0.02): Raster {
     const r = new Raster(w, h, res);
-    for (const d of g.draws) r.draw(d);
-    for (const f of g.flashes) r.flash(f);
+    for (const op of g.ops) {
+      r.value = op.dark ? 1 : 0;
+      if (op.kind === 'draw') r.draw(op.d); else if (op.kind === 'flash') r.flash(op.f); else r.polygon(op.pts);
+    }
+    r.value = 1;
     return r;
   }
   at(x: number, y: number): number { return this.bits[Math.round(y / this.res) * this.nx + Math.round(x / this.res)] ?? 0; }

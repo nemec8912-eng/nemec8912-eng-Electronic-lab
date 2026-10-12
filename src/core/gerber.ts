@@ -9,7 +9,7 @@
  */
 import { APP_VERSION } from './appinfo';
 import type { ProjectDoc } from './model';
-import { allPads, bodyRect, copperLayers, type Layer, type PadInfo } from './pcb';
+import { allPads, bodyRect, boardPolygon, copperLayers, type Layer, type PadInfo } from './pcb';
 
 export interface GerberFile { name: string; content: string }
 
@@ -51,6 +51,14 @@ class GerberWriter {
     this.body.push(`${this.xy(pts[0]!.x, pts[0]!.y)}D02*`);
     for (const p of pts.slice(1)) this.body.push(`${this.xy(p.x, p.y)}D01*`);
   }
+  /** Смена полярности: D — медь, C — вырез (стирает уже нарисованное). */
+  polarity(p: 'D' | 'C') { this.body.push(`%LP${p}*%`); }
+  /** Заполненная область (G36/G37) по замкнутому контуру. */
+  region(pts: Array<{ x: number; y: number }>) {
+    this.body.push('G36*', `${this.xy(pts[0]!.x, pts[0]!.y)}D02*`);
+    for (const p of [...pts.slice(1), pts[0]!]) this.body.push(`${this.xy(p.x, p.y)}D01*`);
+    this.body.push('G37*');
+  }
   text(fileFunction: string, polarity: 'Positive' | 'Negative' = 'Positive'): string {
     return [
       `%TF.GenerationSoftware,ElectronicLab,Electronic Lab,${APP_VERSION}*%`,
@@ -82,9 +90,22 @@ export function gerberFiles(doc: ProjectDoc, base = 'board'): GerberFile[] {
   const pads = allPads(doc);
   const out: GerberFile[] = [];
   const twoLayer = board.layers === 2;
+  const poly = boardPolygon(board);
 
   const copper = (layer: Layer) => {
     const g = new GerberWriter(H);
+    const pour = doc.pcb.pours.find((p) => p.layer === layer);
+    if (pour) {
+      // Заливка: контур платы → вырез отступа от края и чужой меди с зазором → поверх вся медь слоя.
+      const c = pour.clearanceMm;
+      g.region(poly);
+      g.polarity('C');
+      g.line(2 * board.rules.edgeMm, [...poly, poly[0]!]);
+      for (const t of doc.pcb.tracks) if (t.layer === layer && t.netId !== pour.netId) g.line(t.widthMm + 2 * c, t.points);
+      for (const p of pads) if (p.layers.includes(layer) && p.netId !== pour.netId) g.flash(padAperture(p, c), p.pos.x, p.pos.y);
+      if (twoLayer) for (const v of doc.pcb.vias) if (v.netId !== pour.netId) g.flash({ kind: 'C', d: v.diameterMm + 2 * c }, v.position.x, v.position.y);
+      g.polarity('D');
+    }
     for (const t of doc.pcb.tracks) if (t.layer === layer) g.line(t.widthMm, t.points);
     for (const p of pads) if (p.layers.includes(layer)) g.flash(padAperture(p), p.pos.x, p.pos.y);
     if (twoLayer) for (const v of doc.pcb.vias) g.flash({ kind: 'C', d: v.diameterMm }, v.position.x, v.position.y);
@@ -113,7 +134,7 @@ export function gerberFiles(doc: ProjectDoc, base = 'board'): GerberFile[] {
   out.push({ name: `${base}-F_SilkS.gto`, content: silk('top') });
   if (doc.pcb.placements.some((p) => p.side === 'bottom')) out.push({ name: `${base}-B_SilkS.gbo`, content: silk('bottom') });
   const edge = new GerberWriter(H);
-  edge.line(OUTLINE_LINE, [{ x: 0, y: 0 }, { x: board.widthMm, y: 0 }, { x: board.widthMm, y: H }, { x: 0, y: H }, { x: 0, y: 0 }]);
+  edge.line(OUTLINE_LINE, [...poly, poly[0]!]);
   out.push({ name: `${base}-Edge_Cuts.gm1`, content: edge.text('Profile,NP') });
   out.push({ name: `${base}-PTH.drl`, content: excellon(doc) });
   out.push({ name: 'readme.txt', content: readme(doc, out.map((x) => x.name)) });
@@ -154,6 +175,8 @@ function readme(doc: ProjectDoc, names: string[]): string {
     'Сверловка Excellon, мм, десятичные координаты; все отверстия металлизированные (для двусторонней платы).',
     'Маска открыта над площадками (+0,05 мм на сторону); переходные отверстия закрыты маской.',
     'Шелкография: только контуры корпусов, без позиционных обозначений.',
+    `Контур платы: ${({ rect: 'прямоугольник', rounded: 'скруглённые углы', circle: 'круг', polygon: 'многоугольник' } as Record<string, string>)[b.outline.kind]}; дуги переданы отрезками по 3°.`,
+    ...doc.pcb.pours.map((p) => `Медная заливка: слой ${p.layer === 'top' ? 'верхний' : 'нижний'}, зазор ${p.clearanceMm} мм; площадки соединены сплошь (без термобарьеров); вырезы — полярностью LPC.`),
     '',
     'Экспорт проверен автотестами (обратное чтение и сравнение с моделью платы), но не производителем.',
     'Перед заказом откройте файлы в просмотрщике Gerber и сверьте с платой.',

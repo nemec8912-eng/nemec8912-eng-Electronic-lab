@@ -35,7 +35,7 @@ describe('Журнал: формат v7', () => {
     assert.ok(r.ok, JSON.stringify(!r.ok && r.error));
     if (!r.ok) return;
     assert.equal(r.migratedFrom, 6);
-    assert.equal(r.doc.schemaVersion, 7);
+    assert.equal(r.doc.schemaVersion, 8);
     const t = r.doc.tests[0]!;
     assert.equal(t.conditions, raw.tests[0].conditions);
     assert.equal(t.checkpointId, null);

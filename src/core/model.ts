@@ -2,14 +2,15 @@
  * Модель документа проекта, schemaVersion 6 (изменения по версиям — docs/ARCHITECTURE.md, раздел 2:
  * v2 — геометрия и расчёт, v3 — сведения каталога, v4 — граф связности, v5 — анализы и прогон,
  * v6 — плата: правила проектирования, единицы, концы дорожек на площадках и переходных отверстиях,
- * v7 — журнал испытаний: измерения с расчётом и допусками, события деталей, фото, ревизия).
+ * v7 — журнал испытаний: измерения с расчётом и допусками, события деталей, фото, ревизия,
+ * v8 — форма платы (контур) и медные заливки).
  * Единственный источник истины для схемы, библиотеки, платы, испытаний и истории.
  * Описание полей и инвариантов — docs/ARCHITECTURE.md, раздел 2.
  */
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 7 as const;
+export const CURRENT_SCHEMA_VERSION = 8 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -236,6 +237,27 @@ export const TrackEndSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('via'), viaId: Id }).strict(),
 ]);
 
+/**
+ * Контур платы в координатах платы (мм). Габарит — widthMm × heightMm от (0; 0).
+ * rect — прямоугольник; rounded — со скруглёнными углами радиуса radiusMm; circle — круг диаметром
+ * widthMm (= heightMm); polygon — многоугольник по точкам (обход по контуру, без самопересечений).
+ */
+export const BoardOutlineSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('rect') }).strict(),
+  z.object({ kind: z.literal('rounded'), radiusMm: Finite.positive() }).strict(),
+  z.object({ kind: z.literal('circle') }).strict(),
+  z.object({ kind: z.literal('polygon'), points: z.array(PointSchema).min(3).max(500) }).strict(),
+]);
+
+/** Медная заливка: вся площадь платы на слое, отданная цепи (обычно земле), с зазором до чужой меди. */
+export const PourSchema = z.object({
+  id: Id,
+  netId: Id,
+  layer: z.enum(['top', 'bottom']),
+  /** Зазор от заливки до меди других цепей, мм (не меньше общего зазора платы). */
+  clearanceMm: Finite.nonnegative(),
+}).strict();
+
 export const PcbSchema = z.object({
   board: z.object({
     id: Id,
@@ -246,6 +268,7 @@ export const PcbSchema = z.object({
     /** Единицы отображения; в документе всё хранится в мм. */
     units: z.enum(['mm', 'inch']),
     rules: DesignRulesSchema,
+    outline: BoardOutlineSchema,
   }).strict().nullable(),
   placements: z.array(z.object({
     id: Id, instanceId: Id, packageId: Id, position: PointSchema, rotation: Rotation,
@@ -261,6 +284,7 @@ export const PcbSchema = z.object({
   vias: z.array(z.object({
     id: Id, netId: Id, position: PointSchema, drillMm: Finite.positive(), diameterMm: Finite.positive(),
   }).strict()),
+  pours: z.array(PourSchema),
 }).strict();
 
 /** Правила по умолчанию — для домашнего изготовления (ЛУТ, фоторезист): широкие дорожки и зазоры. */
@@ -446,6 +470,8 @@ export type Placement = Pcb['placements'][number];
 export type Track = Pcb['tracks'][number];
 export type Via = Pcb['vias'][number];
 export type Board = NonNullable<Pcb['board']>;
+export type BoardOutline = z.infer<typeof BoardOutlineSchema>;
+export type Pour = z.infer<typeof PourSchema>;
 export type SimulationSettings = z.infer<typeof SimulationSettingsSchema>;
 export type ChangeEntry = z.infer<typeof ChangeEntrySchema>;
 export type ProjectDoc = z.infer<typeof ProjectDocSchema>;

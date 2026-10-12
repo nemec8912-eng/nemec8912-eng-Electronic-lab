@@ -469,6 +469,31 @@ export const DEFAULT_SIMULATION = {
   sweep: { instanceId: null, param: '', values: [] as number[] },
 };
 
+// ---------- Тест работоспособности ----------
+
+/**
+ * Условие работоспособности: величина из расчёта (и, по желанию, из замера) должна попасть в диапазон.
+ * Точки задаются выводами деталей — они не меняются при перерисовке проводов.
+ *  dc-v — напряжение в рабочей точке между выводом at и выводом ref (ref = null — относительно земли);
+ *  dc-i — ток, втекающий в вывод at детали (для источников и R/C/L — ток через деталь);
+ *  tran-avg/max/min/vpp/freq/rms — напряжение at − ref в переходном процессе на окне [fromS; конец];
+ *  ac-gain — коэффициент передачи |U(at − ref)| / |U(input − ref)| на частоте freqHz.
+ */
+export const CheckSchema = z.object({
+  id: Id,
+  name: z.string().max(200),
+  quantity: z.enum(['dc-v', 'dc-i', 'tran-avg', 'tran-max', 'tran-min', 'tran-vpp', 'tran-rms', 'tran-freq', 'ac-gain']),
+  at: PinRefSchema.nullable(),
+  ref: PinRefSchema.nullable(),
+  input: PinRefSchema.nullable(),
+  freqHz: Finite.positive().nullable(),
+  fromS: Finite.nonnegative().nullable(),
+  min: Finite.nullable(),
+  max: Finite.nullable(),
+  /** Значение, измеренное на собранном устройстве (вводит пользователь). */
+  measured: Finite.nullable(),
+}).strict();
+
 // ---------- Документ ----------
 
 export const ProjectDocSchema = z.object({
@@ -501,12 +526,15 @@ export const ProjectDocSchema = z.object({
   tests: z.array(TestRecordSchema),
   attachments: z.array(AttachmentRefSchema),
   changelog: z.array(ChangeEntrySchema),
+  /** Тест работоспособности: условия и требование «ни одна деталь не перегружена». */
+  checks: z.object({ items: z.array(CheckSchema).max(100), noOverload: z.boolean() }).strict(),
 }).strict();
 
 export type Point = z.infer<typeof PointSchema>;
 export type Quantity = z.infer<typeof QuantitySchema>;
 export type Annotation = z.infer<typeof AnnotationSchema>;
 export type PinRef = z.infer<typeof PinRefSchema>;
+export type Check = z.infer<typeof CheckSchema>;
 export type PadRef = z.infer<typeof PadRefSchema>;
 export type TrackEnd = z.infer<typeof TrackEndSchema>;
 export type DesignRules = z.infer<typeof DesignRulesSchema>;

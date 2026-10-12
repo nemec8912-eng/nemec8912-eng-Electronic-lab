@@ -45,6 +45,7 @@ export function collectEntityIds(doc: ProjectDoc): Array<{ id: string; where: st
   for (const t of doc.tests) { add(t.measurements, 'tests.measurements'); add(t.events, 'tests.events'); }
   add(doc.attachments, 'attachments');
   add(doc.changelog, 'changelog');
+  add(doc.checks.items, 'checks.items');
   return out;
 }
 

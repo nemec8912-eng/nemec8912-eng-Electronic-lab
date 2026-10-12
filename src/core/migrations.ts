@@ -171,12 +171,12 @@ const migrations: Migration[] = [
     },
   },
   {
-    // v9: настройки фрезерования на станке с ЧПУ.
+    // v9: настройки фрезерования на станке с ЧПУ, тест работоспособности.
     from: 8,
     to: 9,
     migrate: (raw) => {
       const r = raw as Record<string, any>;
-      return { ...r, schemaVersion: 9, pcb: { ...(r.pcb ?? {}), cnc: structuredClone(DEFAULT_CNC) } };
+      return { ...r, schemaVersion: 9, pcb: { ...(r.pcb ?? {}), cnc: structuredClone(DEFAULT_CNC) }, checks: { items: [], noOverload: true } };
     },
   },
 ];

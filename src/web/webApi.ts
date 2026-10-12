@@ -224,6 +224,7 @@ export function webApi(): ElabApi {
         };
         return ok(res);
       },
+      checks: async (doc) => ok({ revision: doc.revision, verdict: 'unknown' as const, outcomes: [], overload: [], errors: ['В браузерной демо-версии тест не выполняется: ngspice работает только в программе для ПК.'], summary: 'Расчёт недоступен в браузере' }),
       expected: async () => ok({ status: 'failed', values: [], runs: 0, message: 'В браузерной демо-версии расчётные значения не получаются: ngspice работает только в программе для ПК.' }),
       measure: async (_doc, req) => ok({
         kind: req.kind, status: 'failed', display: '—', value: null, beep: false, method: '', esr: null, netlist: '',

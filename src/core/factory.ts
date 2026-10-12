@@ -4,7 +4,7 @@ import { CURRENT_SCHEMA_VERSION, DEFAULT_CNC, DEFAULT_SHEET, DEFAULT_SIMULATION,
 
 export const CHANGELOG_LIMIT = 2000;
 
-export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | 'pcb' | 'instruments' | 'simulation' | 'tests' | 'attachments' | 'changelog'> {
+export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | 'pcb' | 'instruments' | 'simulation' | 'tests' | 'attachments' | 'changelog' | 'checks'> {
   return {
     schematic: { instances: [], nets: [], wires: [], junctions: [], labels: [], groups: [], annotations: [], sheet: { ...DEFAULT_SHEET } },
     library: { symbols: [], parts: [], packages: [], models: [] },
@@ -14,6 +14,7 @@ export function emptyCollections(): Pick<ProjectDoc, 'schematic' | 'library' | '
     tests: [],
     attachments: [],
     changelog: [],
+    checks: { items: [], noOverload: true },
   };
 }
 

@@ -9,6 +9,7 @@ import { runErc, type ErcIssue } from '../core/erc';
 import { connectionListText } from '../core/netlist';
 import type { AppInfo, ProjectSummary, SimResult } from '../shared/api';
 import { BoardPanel, type BoardSel } from './BoardPanel';
+import { ChecksPanel } from './ChecksPanel';
 import { JournalPanel } from './JournalPanel';
 import { PartEditor } from './PartEditor';
 import { bundleOf } from '../core/catalog';
@@ -308,7 +309,7 @@ function StatusBar({ info, editor }: { info: AppInfo | null; editor?: Editor }) 
   );
 }
 
-type Tab = 'schematic' | 'test' | 'board' | 'journal' | 'catalog';
+type Tab = 'schematic' | 'test' | 'checks' | 'board' | 'journal' | 'catalog';
 
 function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitch, toast, catalog }: {
   opened: Opened;
@@ -473,7 +474,7 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
       <TopBar info={info} fileActions={fileActions} editor={editor} projectActions={projectActions} />
       <nav className="tabs" role="tablist">
         <span className="project-title" title={doc.name}>{doc.name}</span>
-        {([['schematic', 'Схема'], ['test', 'Тест'], ['board', 'Плата'], ['journal', 'Испытания'], ['catalog', 'Каталог']] as const).map(([k, label]) => (
+        {([['schematic', 'Схема'], ['test', 'Тест'], ['checks', 'Проверка работы'], ['board', 'Плата'], ['journal', 'Испытания'], ['catalog', 'Каталог']] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => { setTab(k); setEditPart(null); }}>{label}</button>
         ))}
         <div className="toolbar tabs-right" role="toolbar" aria-label="Правка">
@@ -636,6 +637,11 @@ function Workspace({ opened, info, fileActions, registerClose, onClosed, onSwitc
             onTranSettings={(patch) => editor.apply('Настройки расчёта', (d) => setTranSettings(d, patch))}
             onSimSettings={(patch) => editor.apply('Настройки расчёта', (d) => setSimSettings(d, patch))}
           />
+        </main>
+      )}
+      {tab === 'checks' && (
+        <main className="workspace single">
+          <ChecksPanel doc={doc} ngspice={info?.ngspice ?? null} onEdit={(label, fn, key) => editor.apply(label, fn, key)} />
         </main>
       )}
       {tab === 'journal' && (

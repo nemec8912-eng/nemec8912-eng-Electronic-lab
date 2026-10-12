@@ -483,3 +483,27 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .cnc-files { padding-left: 18px; margin: 6px 0; font-size: 12px; }
 .cnc-files li { margin: 2px 0; }
 .rules h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--muted, #667); }
+
+/* Тест работоспособности */
+.checks-page { overflow: auto; padding: 16px; display: grid; gap: 16px; max-width: 1100px; align-content: start; }
+.verdict { border: 2px solid #d5d9e0; border-radius: 8px; padding: 12px 16px; background: #fafbfc; }
+.verdict.works { border-color: #2e8b57; background: #eef8f1; }
+.verdict.fails { border-color: #c0392b; background: #fdf0ee; }
+.verdict.unknown { border-color: #d4a017; background: #fdf8e8; }
+.verdict-text { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.checks-list { padding-left: 20px; display: grid; gap: 10px; }
+.check-item { border: 1px solid #e3e6eb; border-radius: 6px; padding: 8px 10px; }
+.check-item.pass { border-left: 4px solid #2e8b57; }
+.check-item.fail { border-left: 4px solid #c0392b; }
+.check-item.na { border-left: 4px solid #d4a017; }
+.check-result b.pass { color: #2e8b57; }
+.check-result b.fail { color: #c0392b; }
+.check-result b.na { color: #9a7300; }
+.field.grow { flex: 1; min-width: 200px; }
+.field.grow input { width: 100%; }
+.check-item .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; }
+.check-item .row .field.inline { flex: 0 1 220px; margin: 0; }
+.check-item .row .field.inline.grow { flex: 1 1 260px; }
+.check-item .row .field.inline input, .check-item .row .field.inline select { width: 100%; }
+.check-item .check-desc { color: #556; margin: 6px 0 2px; }
+.check-item .row .field.inline select[aria-label="Величина"] { min-width: 300px; }

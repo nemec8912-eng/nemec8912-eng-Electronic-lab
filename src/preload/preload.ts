@@ -52,6 +52,7 @@ const api: ElabApi = {
     run: (doc, opts) => call(IPC.simRun, doc, opts),
     measure: (doc, req) => call(IPC.simMeasure, doc, req),
     expected: (doc, record) => call(IPC.simExpected, doc, record),
+    checks: (doc) => call(IPC.simChecks, doc),
   },
   attachments: {
     add: (projectId) => call(IPC.attAdd, projectId),

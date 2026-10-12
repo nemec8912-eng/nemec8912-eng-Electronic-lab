@@ -1,6 +1,7 @@
 /** Контракт IPC между окном и главным процессом (window.elab). Только типы. */
 import type { AttachmentRef, CheckpointInfo, ProjectDoc, TestRecord } from '../core/model';
 import type { ExpectedOutcome } from '../sim/expected';
+import type { CheckReport } from '../sim/checks';
 import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
 import type { SimResult } from '../sim/results';
@@ -103,6 +104,8 @@ export interface ElabApi {
     measure(doc: ProjectDoc, req: MeasureRequest): Promise<Result<MeasureResult>>;
     /** Расчётные значения и разброс по допускам для измерений записи журнала (doc — ревизия испытания). */
     expected(doc: ProjectDoc, record: TestRecord): Promise<Result<ExpectedOutcome>>;
+    /** Тест работоспособности: нужные анализы и сверка условий. */
+    checks(doc: ProjectDoc): Promise<Result<CheckReport>>;
   };
   attachments: {
     /** Выбрать фото на компьютере и скопировать их в папку проекта. null — выбор отменён. */
@@ -154,6 +157,7 @@ export const IPC = {
   examples: 'projects:examples',
   openExample: 'projects:open-example',
   simExpected: 'sim:expected',
+  simChecks: 'sim:checks',
   attAdd: 'attachments:add',
   attRead: 'attachments:read',
   exportProject: 'files:export-project',

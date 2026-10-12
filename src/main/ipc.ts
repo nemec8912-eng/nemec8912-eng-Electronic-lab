@@ -22,6 +22,7 @@ import { measure, type MeasureRequest } from '../sim/meters';
 import { builtinCatalog } from '../catalog/builtin';
 import type { PartBundle } from '../core/catalog';
 import { locateNgspice } from '../sim/runner';
+import { runChecks } from '../sim/checks';
 import { kicadToBundle, KicadError, KICAD_LICENSE, summarize, type KicadFootprint } from '../catalog-import/kicad';
 import { fetchOnlineFootprint, openLibraryFile, openOnlineLibrary, readFootprintFile, type OpenedLibrary } from '../catalog-import/source';
 import type { KicadLibraryDto } from '../shared/api';
@@ -190,6 +191,11 @@ export function registerIpc(ctx: MainContext): void {
     if (kind !== 'ohm' && kind !== 'cont' && kind !== 'diode' && kind !== 'esr') throw new AppError('bad-request', 'Неизвестный режим измерения.');
     const f = Number(req.freqHz);
     return measure(doc, findNgspice(), { kind, red: req.red ?? null, black: req.black ?? null, freqHz: Number.isFinite(f) && f > 0 && f <= 1e7 ? f : undefined });
+  }));
+  ipcMain.handle(IPC.simChecks, wrap(async (doc: ProjectDoc) => {
+    const loaded = loadDocument(doc);
+    if (!loaded.ok) throw new AppError('bad-request', 'Документ повреждён');
+    return runChecks(loaded.doc, findNgspice());
   }));
   ipcMain.handle(IPC.simExpected, wrap(async (doc: ProjectDoc, record: TestRecord) => {
     const parsed = TestRecordSchema.safeParse(record);

@@ -507,3 +507,6 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .check-item .row .field.inline input, .check-item .row .field.inline select { width: 100%; }
 .check-item .check-desc { color: #556; margin: 6px 0 2px; }
 .check-item .row .field.inline select[aria-label="Величина"] { min-width: 300px; }
+.pads-editor { margin: 8px 0; }
+.pads-editor input.num { width: 64px; }
+.pads-editor summary { cursor: pointer; font-size: 13px; }

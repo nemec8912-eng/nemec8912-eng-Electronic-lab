@@ -70,7 +70,7 @@ export const FAMILIES: FamilyInfo[] = [
   ] },
   { id: 'SOT-223', label: 'SOT-223', mount: 'SMD', params: [] },
   { id: 'TO-92', label: 'TO-92 (выводной, 3 вывода)', mount: 'THT', params: [
-    { key: 'pitch', label: 'Шаг, мм', kind: 'mm', def: 1.27 },
+    { key: 'pitch', label: 'Шаг, мм', kind: 'mm', def: 2.54 },
   ] },
   { id: 'TO-220', label: 'TO-220 (выводной, 3 вывода)', mount: 'THT', params: [
     { key: 'pins', label: 'Выводов', kind: 'int', def: 3, min: 2, max: 7 },
@@ -233,8 +233,14 @@ export function generatePackage(family: string, params: GenParams = {}): Package
     }
     case 'TO-92': {
       const pitch = num(p, 'pitch', 1.27);
-      const pads = [tht('1', 0, 0, 0.75, true, 1.3), tht('2', pitch, 0, 0.75, false, 1.3), tht('3', pitch * 2, 0, 0.75, false, 1.3)];
-      return { ...base, name: `TO-92 (шаг ${ru(pitch)})`, pads, body: { x: r2(pitch - 2.4), y: -1.6, w: 4.8, h: 3.2 }, pin1Marker: 'плоская сторона к себе, вывод 1 слева', pitchMm: pitch, numbering: 'слева направо, плоской стороной к себе, выводами вниз' };
+      // Шаг 1,27 — узкие овальные площадки (как в KiCad), иначе медь соседних выводов сольётся;
+      // шаг 2,54 («выводы разогнуты») — круглые площадки, удобно для ЛУТ и фрезерования.
+      const narrow = pitch < 2;
+      const pad = (n: string, x: number): Pad => narrow
+        ? { number: n, x: r2(x), y: 0, shape: n === '1' ? 'rect' : 'oval', w: r2(Math.min(1.05, pitch - 0.25)), h: 1.5, drill: 0.75 }
+        : tht(n, x, 0, 0.8, n === '1', Math.min(1.6, pitch - 0.6));
+      const pads = [pad('1', 0), pad('2', pitch), pad('3', pitch * 2)];
+      return { ...base, name: `TO-92 (шаг ${ru(pitch)}${narrow ? '' : ', выводы разогнуты'})`, pads, body: { x: r2(pitch - 2.4), y: -1.6, w: 4.8, h: 3.2 }, pin1Marker: 'плоская сторона к себе, вывод 1 слева', pitchMm: pitch, numbering: 'слева направо, плоской стороной к себе, выводами вниз' };
     }
     case 'TO-220': {
       const pins = num(p, 'pins', 3), pitch = num(p, 'pitch', 2.54);
@@ -279,4 +285,15 @@ export function generatePackage(family: string, params: GenParams = {}): Package
     }
   }
   throw new Error(`Семейство ${family} не реализовано`);
+}
+
+/** Перекрытия площадок с разными номерами (медь сольётся) — для проверки детали. */
+export function overlappingPads(pkg: Pick<PackageTemplate, 'pads'>): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (let i = 0; i < pkg.pads.length; i++) for (let j = i + 1; j < pkg.pads.length; j++) {
+    const a = pkg.pads[i]!, c = pkg.pads[j]!;
+    if (a.number === c.number) continue;
+    if (Math.abs(a.x - c.x) < (a.w + c.w) / 2 - 1e-6 && Math.abs(a.y - c.y) < (a.h + c.h) / 2 - 1e-6) out.push([a.number, c.number]);
+  }
+  return out;
 }

@@ -39,6 +39,10 @@ export const PARAMS: Record<string, ParamDef> = {
   temperature: { key: 'temperature', label: 'Температура датчика', unit: '°C', unitRu: '°C', min: -55, max: 200, signed: true },
   illuminance: { key: 'illuminance', label: 'Освещённость', unit: 'lx', unitRu: 'лк', min: 0.01, max: 1e5 },
   /** Кнопка или выключатель: 1 — замкнут, 0 — разомкнут. */
+  coilResistance: { key: 'coilResistance', label: 'Сопротивление катушки', unit: 'Ω', unitRu: 'Ом', min: 0, max: 1e6 },
+  pullIn: { key: 'pullIn', label: 'Напряжение срабатывания', unit: 'V', unitRu: 'В', min: 0, max: 1000 },
+  dropOut: { key: 'dropOut', label: 'Напряжение отпускания', unit: 'V', unitRu: 'В', min: 0, max: 1000 },
+  clampVoltage: { key: 'clampVoltage', label: 'Напряжение классификации (при 1 мА)', unit: 'V', unitRu: 'В', min: 0, max: 1e5 },
   closed: { key: 'closed', label: 'Замкнут (1/0)', unit: '', unitRu: '', min: 0, max: 1, signed: true },
 };
 

@@ -1,7 +1,8 @@
 /** Модели деталей этапа 8 на настоящем ngspice: результат сверяется с формулой или с поведением по даташиту. */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { netOfPin } from '../../src/core/schematic';
+import { netOfPin, placeBundle } from '../../src/core/schematic';
+import { newBundle, newCustomPackage } from '../../src/core/partEditor';
 import { setSimSettings, setTranSettings } from '../../src/core/instruments';
 import type { ProjectDoc } from '../../src/core/model';
 import { waveStats } from '../../src/sim/readings';
@@ -44,6 +45,23 @@ describe('Модели этапа 8 (ngspice)', { skip }, () => {
       const o = await op(b.doc);
       assert.ok(Math.abs(o.node[node(b.doc, k, '4')]! - no) < 0.01, `NO при ${coil} В`);
       assert.ok(Math.abs(o.node[node(b.doc, k, '5')]! - nc) < 0.01, `NC при ${coil} В`);
+    }
+  });
+
+  test('своё реле (типовая модель категории): 12 В при срабатывании 9 В — NO замкнут; 8 В после 0 В — не срабатывает', async () => {
+    for (const [coil, no] of [[12, 5], [8, 0]] as const) {
+      const { b, g } = make('Своё реле');
+      let bundle = newBundle('relay');
+      bundle = newCustomPackage({ ...bundle, part: { ...bundle.part, name: 'Реле 12 В' } });
+      const a = at();
+      const r = placeBundle(b.doc, bundle, a);
+      b.doc = r.doc;
+      const k = r.id;
+      const v = vsrc(b, coil, g), v5 = vsrc(b, 5, g), rno = res(b, 1000), rnc = res(b, 1000);
+      b.wire(p(v, '+'), p(k, '1')); b.wire(p(k, '2'), p(g, '1')); b.wire(p(v5, '+'), p(k, '3'));
+      b.wire(p(k, '4'), p(rno, '1')); b.wire(p(rno, '2'), p(g, '1')); b.wire(p(k, '5'), p(rnc, '1')); b.wire(p(rnc, '2'), p(g, '1'));
+      const o = await op(b.doc);
+      assert.ok(Math.abs(o.node[node(b.doc, k, '4')]! - no) < 0.01, `NO при ${coil} В: ${o.node[node(b.doc, k, '4')]}`);
     }
   });
 

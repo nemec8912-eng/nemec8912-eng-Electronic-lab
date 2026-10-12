@@ -15,6 +15,7 @@ import {
   type PackageDef, type PartDef, type ProjectDoc, type SimModel, type SymbolDef,
 } from './model';
 import { emptyCollections } from './factory';
+import { overlappingPads } from './packages';
 
 export const CATALOG_VERSION = 2;
 
@@ -200,6 +201,8 @@ export function lintBundle(b: PartBundle, others: PartDef[] = [], builtin: PartD
     const unused = pkg.pads.filter((x) => !mappedPads.has(x.number));
     if (unused.length) warn('pinmap', `${pkg.name}: площадки без вывода: ${unused.map((x) => x.number).join(', ')} (будут неподключёнными)`);
     if (pkg.pads.length > 2 && !pkg.pin1Marker) warn('packages', `${pkg.name}: не указан ключ первого вывода`);
+    for (const pad of pkg.pads) if (pad.drill !== null && pad.drill >= Math.min(pad.w, pad.h)) err('packages', `${pkg.name}: у площадки ${pad.number} отверстие не меньше площадки`);
+    for (const [a, c] of overlappingPads(pkg)) err('packages', `${pkg.name}: площадки ${a} и ${c} перекрываются — медь сольётся`);
   }
   if (b.model && (b.model.kind === 'spice-primitive' || b.model.kind === 'spice-subckt')) {
     for (const e of checkModelTemplate(b.model.text)) err('model', `Модель: ${e}`);

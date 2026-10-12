@@ -10,7 +10,7 @@ import { newId } from '../core/ids';
 import type { PartDef, SimModel } from '../core/model';
 import { FAMILIES, type GenParams } from '../core/packages';
 import {
-  addPackage, IDEAL_MODELS, isIcLike, mapByNumber, removePackage, setCategory, setIcPins, setPinDescription, setPinPad, setVerified, VALUE_FOR_CATEGORY,
+  addPackage, addPad, fitBody, IDEAL_MODELS, isIcLike, mapByNumber, newCustomPackage, removePackage, removePad, setCategory, setIcPins, setPad, setPinDescription, setPinPad, setVerified, VALUE_FOR_CATEGORY,
 } from '../core/partEditor';
 import type { IcPinInput } from '../core/symbols';
 import { PackagePreview, SymbolPreview } from './CatalogPreviews';
@@ -240,6 +240,54 @@ function PinsSection({ b, setB }: { b: PartBundle; setB: SetB }) {
   );
 }
 
+const numRu = (v: number) => String(Number(v.toFixed(3))).replace('.', ',');
+
+/** Таблица площадок корпуса: номер, координаты, форма, размеры, отверстие (пусто — SMD). */
+function PadsEditor({ pkg, b, setB }: { pkg: PartBundle['packages'][number]; b: PartBundle; setB: SetB }) {
+  const [error, setError] = useState<string | null>(null);
+  const commit = (i: number, patch: Parameters<typeof setPad>[3]) => {
+    const r = setPad(b, pkg.id, i, patch);
+    setError(r.error);
+    if (!r.error) setB(() => r.b);
+  };
+  const num = (i: number, key: 'x' | 'y' | 'w' | 'h', label: string) => (
+    <td><input aria-label={`${label} площадки ${pkg.pads[i]!.number}`} key={`${key}${pkg.pads[i]![key]}`} defaultValue={numRu(pkg.pads[i]![key])} className="num"
+      onBlur={(e) => { const v = Number(e.target.value.replace(',', '.')); if (!Number.isFinite(v)) { e.target.value = numRu(pkg.pads[i]![key]); return; } if (v !== pkg.pads[i]![key]) commit(i, { [key]: v }); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></td>
+  );
+  return (
+    <details className="pads-editor">
+      <summary>Площадки по координатам ({pkg.pads.length})</summary>
+      <table className="pins-table edit" aria-label={`Площадки, ${pkg.name}`}>
+        <thead><tr><th>№</th><th>X, мм</th><th>Y, мм</th><th>Форма</th><th>Ширина</th><th>Высота</th><th>Отверстие</th><th /></tr></thead>
+        <tbody>
+          {pkg.pads.map((pad, i) => (
+            <tr key={`${i}`}>
+              <td><input aria-label={`Номер площадки ${i + 1}`} key={pad.number} defaultValue={pad.number} className="num"
+                onBlur={(e) => { if (e.target.value.trim() !== pad.number) commit(i, { number: e.target.value }); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></td>
+              {num(i, 'x', 'X')}{num(i, 'y', 'Y')}
+              <td><select aria-label={`Форма площадки ${pad.number}`} value={pad.shape} onChange={(e) => commit(i, { shape: e.target.value as typeof pad.shape })}>
+                <option value="round">круг</option><option value="rect">квадрат</option><option value="oval">овал</option></select></td>
+              {num(i, 'w', 'Ширина')}{num(i, 'h', 'Высота')}
+              <td><input aria-label={`Отверстие площадки ${pad.number}`} key={`d${pad.drill}`} defaultValue={pad.drill === null ? '' : numRu(pad.drill)} placeholder="SMD" className="num"
+                onBlur={(e) => { const t = e.target.value.trim(); const v = t === '' ? null : Number(t.replace(',', '.')); if (v !== null && !Number.isFinite(v)) { e.target.value = pad.drill === null ? '' : numRu(pad.drill); return; } if (v !== pad.drill) commit(i, { drill: v }); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></td>
+              <td><button className="btn small danger" aria-label={`Убрать площадку ${pad.number}`} onClick={() => { setError(null); setB((x) => removePad(x, pkg.id, i)); }}>×</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {error && <p className="error-text small" role="alert">{error}</p>}
+      <div className="row wrap">
+        <button className="btn small" onClick={() => setB((x) => addPad(x, pkg.id))}>Добавить площадку</button>
+        <button className="btn small" onClick={() => setB((x) => fitBody(x, pkg.id))}>Контур корпуса по площадкам</button>
+      </div>
+      <p className="muted small">Вид сверху, мм; начало координат — любая точка (обычно вывод 1). Площадки с одинаковым номером соединены внутри корпуса.</p>
+    </details>
+  );
+}
+
 function PackagesSection({ b, setB }: { b: PartBundle; setB: SetB }) {
   const [family, setFamily] = useState(FAMILIES[0]!.id);
   const fam = FAMILIES.find((f) => f.id === family)!;
@@ -309,6 +357,7 @@ function PackagesSection({ b, setB }: { b: PartBundle; setB: SetB }) {
                 </tbody>
               </table>
             </div>
+            <PadsEditor pkg={pkg} b={b} setB={setB} />
           </div>
         );
       })}
@@ -338,7 +387,11 @@ function PackagesSection({ b, setB }: { b: PartBundle; setB: SetB }) {
           ))}
         </div>
         {genError && <p className="error-text small">{genError}</p>}
-        <button className="btn" onClick={tryAdd}>Добавить корпус</button>
+        <div className="row wrap">
+          <button className="btn" onClick={tryAdd}>Добавить корпус</button>
+          <button className="btn" onClick={() => setB((x) => newCustomPackage(x))}>Свой корпус (площадки по координатам)</button>
+        </div>
+        <p className="muted small">Свой корпус — для реле, трансформаторов, разъёмов и всего, чего нет среди семейств: площадки ставятся по размерам из даташита (вид сверху, мм).</p>
       </div>
     </div>
   );

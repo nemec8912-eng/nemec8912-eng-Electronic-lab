@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import { builtinCatalog } from '../../src/catalog/builtin';
 import { checkLibrary, lintBundle } from '../../src/core/catalog';
-import { addPackage, copyBundle, mapByNumber, newBundle, removePackage, setCategory, setIcPins, setPinPad, setVerified } from '../../src/core/partEditor';
+import { addPackage, addPad, copyBundle, fitBody, mapByNumber, newBundle, newCustomPackage, removePackage, removePad, setCategory, setIcPins, setPad, setPinPad, setVerified } from '../../src/core/partEditor';
+import { overlappingPads } from '../../src/core/packages';
 
 const ne = () => builtinCatalog().find((b) => b.part.partNumber === 'NE555')!;
 const libOf = (b: ReturnType<typeof ne>) => ({ parts: [b.part], symbols: [b.symbol], packages: b.packages, models: b.model ? [b.model] : [] });
@@ -80,4 +81,45 @@ test('копия встроенной детали: новые id, «не све
   const v = setVerified(c, true, new Date('2026-10-11T10:00:00Z'));
   assert.equal(v.part.origin.verified, true);
   assert.equal(v.part.origin.checkedAt, '2026-10-11T10:00:00.000Z');
+});
+
+describe('Свой корпус по координатам', () => {
+  test('новый корпус: площадка на каждый вывод, правка координат и номера переносит соответствие, проверки площадок', () => {
+    let b = newBundle('relay');
+    assert.equal(b.model?.name, 'Реле (параметры катушки на схеме)', 'реле сразу получает типовую модель');
+    assert.deepEqual(Object.keys(b.part.values).sort(), ['coilResistance', 'dropOut', 'pullIn']);
+    b = newCustomPackage(b);
+    const pkg = b.packages[0]!;
+    assert.equal(pkg.pads.length, 5);
+    assert.equal(pkg.generator, null);
+    assert.deepEqual(b.part.packages[0]!.pinMap.map((m) => `${m.symbolPin}>${m.pad}`), ['1>1', '2>2', '3>3', '4>4', '5>5']);
+    // Перемещение и переименование площадки
+    let r = setPad(b, pkg.id, 4, { x: 12.2, y: 12, number: 'NC' });
+    assert.equal(r.error, null);
+    b = r.b;
+    assert.equal(b.part.packages[0]!.pinMap.find((m) => m.symbolPin === '5')!.pad, 'NC');
+    // Отверстие не меньше площадки, пустой номер — отказ
+    assert.match(setPad(b, pkg.id, 0, { drill: 2 }).error!, /не меньше площадки/);
+    assert.match(setPad(b, pkg.id, 0, { number: ' ' }).error!, /пустой/);
+    // Перекрытие площадок разных выводов — ошибка проверки детали
+    r = setPad(b, pkg.id, 1, { x: 0.5, y: 0 });
+    assert.ok(lintBundle(r.b).some((l) => l.severity === 'error' && /площадки 1 и 2 перекрываются/.test(l.message)));
+    // Удаление площадки убирает её из соответствия; контур по площадкам
+    b = removePad(b, pkg.id, 4);
+    assert.ok(!b.part.packages[0]!.pinMap.some((m) => m.pad === 'NC'));
+    b = addPad(b, pkg.id);
+    assert.equal(b.packages[0]!.pads.length, 5);
+    b = fitBody(b, pkg.id);
+    const body = b.packages[0]!.body!;
+    for (const p of b.packages[0]!.pads) assert.ok(p.x - p.w / 2 >= body.x && p.x + p.w / 2 <= body.x + body.w);
+  });
+
+  test('сгенерированный корпус после правки помечается изменённым; TO-92 с шагом 1,27 — узкие площадки без перекрытия', () => {
+    let b = addPackage(newBundle('bjt'), 'TO-92', { pitch: 1.27 });
+    assert.deepEqual(overlappingPads(b.packages[0]!), []);
+    b = setPad(b, b.packages[0]!.id, 0, { y: 0.5 }).b;
+    assert.equal(b.packages[0]!.generator, null);
+    assert.match(b.packages[0]!.family, /изменён/);
+    assert.deepEqual(overlappingPads(addPackage(newBundle('bjt'), 'TO-92').packages[0]!), []);
+  });
 });

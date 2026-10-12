@@ -30,7 +30,8 @@ const api: ElabApi = {
   },
   checkpoints: {
     list: (projectId) => call(IPC.cpList, projectId),
-    create: (doc, label) => call(IPC.cpCreate, doc, label),
+    create: (doc, label, kind) => call(IPC.cpCreate, doc, label, kind),
+    get: (projectId, checkpointId) => call(IPC.cpGet, projectId, checkpointId),
     restore: (current, checkpointId) => call(IPC.cpRestore, current, checkpointId),
   },
   catalog: {
@@ -48,6 +49,11 @@ const api: ElabApi = {
   sim: {
     run: (doc, opts) => call(IPC.simRun, doc, opts),
     measure: (doc, req) => call(IPC.simMeasure, doc, req),
+    expected: (doc, record) => call(IPC.simExpected, doc, record),
+  },
+  attachments: {
+    add: (projectId) => call(IPC.attAdd, projectId),
+    read: (projectId, ref) => call(IPC.attRead, projectId, ref),
   },
   files: {
     exportProject: (doc) => call(IPC.exportProject, doc),

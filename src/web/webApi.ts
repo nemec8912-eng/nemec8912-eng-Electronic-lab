@@ -11,6 +11,7 @@ import { newId } from '../core/ids';
 import { loadDocument } from '../core/migrations';
 import type { CheckpointInfo, ProjectDoc } from '../core/model';
 import { remapIds } from '../core/remap';
+import { keepJournal } from '../core/testlog';
 import { fail, ok, type Result } from '../core/result';
 import { connectPins, placeBundle } from '../core/schematic';
 import { APP_VERSION } from '../core/appinfo';
@@ -172,8 +173,8 @@ export function webApi(): ElabApi {
     },
     checkpoints: {
       list: async (id) => ok(cps(id).map(({ doc: _d, ...info }) => info).reverse()),
-      create: async (doc, label) => {
-        const cp: StoredCp = { id: newId(), label: label.trim() || 'Контрольная версия', kind: 'manual', createdAt: new Date().toISOString(), revision: doc.revision, doc };
+      create: async (doc, label, kind) => {
+        const cp: StoredCp = { id: newId(), label: label.trim() || 'Контрольная версия', kind: kind === 'test' ? 'test' : 'manual', createdAt: new Date().toISOString(), revision: doc.revision, doc };
         setCps(doc.id, [...cps(doc.id), cp]);
         const { doc: _d, ...info } = cp;
         return ok(info);
@@ -183,7 +184,11 @@ export function webApi(): ElabApi {
         const cp = list.find((c) => c.id === cpId);
         if (!cp) return fail('not-found', 'Контрольная версия не найдена');
         setCps(current.id, [...list, { id: newId(), label: 'Перед возвратом', kind: 'before-restore', createdAt: new Date().toISOString(), revision: current.revision, doc: current }]);
-        return ok({ ...cp.doc, revision: current.revision + 1 });
+        return ok({ ...keepJournal(cp.doc, current), revision: current.revision + 1 });
+      },
+      get: async (projectId, cpId) => {
+        const cp = cps(projectId).find((c) => c.id === cpId);
+        return cp ? ok(cp.doc) : fail('not-found', 'Контрольная версия не найдена');
       },
     },
     catalog: {
@@ -217,11 +222,13 @@ export function webApi(): ElabApi {
         };
         return ok(res);
       },
+      expected: async () => ok({ status: 'failed', values: [], runs: 0, message: 'В браузерной демо-версии расчётные значения не получаются: ngspice работает только в программе для ПК.' }),
       measure: async (_doc, req) => ok({
         kind: req.kind, status: 'failed', display: '—', value: null, beep: false, method: '', esr: null, netlist: '',
         message: 'В браузерной демо-версии измерения не выполняются: прибор считает схему через ngspice, который работает только в программе для ПК.',
       }),
     },
+    attachments: { add: noWeb, read: noWeb },
     files: {
       exportProject: noWeb, importProject: noWeb, resolveImport: noWeb, backupAll: noWeb, restoreBackup: noWeb,
       saveSvg: noWeb, saveDrawing: noWeb, savePdf: noWeb, saveGerber: noWeb,

@@ -5,7 +5,12 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import JSZip from 'jszip';
 import { APP_VERSION } from '../core/appinfo';
 import { newId } from '../core/ids';
-import type { ProjectDoc } from '../core/model';
+import { AttachmentRefSchema, TestRecordSchema, type AttachmentRef, type ProjectDoc, type TestRecord } from '../core/model';
+import { loadDocument } from '../core/migrations';
+import { keepJournal } from '../core/testlog';
+import { expectedValues } from '../sim/expected';
+
+const IMAGE_MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 import { AppError, fail, ok, type Result } from '../core/result';
 import { IPC, type AppInfo, type ImportOutcome } from '../shared/api';
 import { createBackup, restoreBackup, verifyBackup } from '../storage/backup';
@@ -186,6 +191,36 @@ export function registerIpc(ctx: MainContext): void {
     const f = Number(req.freqHz);
     return measure(doc, findNgspice(), { kind, red: req.red ?? null, black: req.black ?? null, freqHz: Number.isFinite(f) && f > 0 && f <= 1e7 ? f : undefined });
   }));
+  ipcMain.handle(IPC.simExpected, wrap(async (doc: ProjectDoc, record: TestRecord) => {
+    const parsed = TestRecordSchema.safeParse(record);
+    if (!parsed.success) throw new AppError('bad-request', 'Запись журнала повреждена');
+    const loaded = loadDocument(doc);
+    if (!loaded.ok) throw new AppError('bad-request', 'Документ ревизии повреждён');
+    return expectedValues(loaded.doc, findNgspice(), parsed.data);
+  }));
+  ipcMain.handle(IPC.attAdd, wrap(async (projectId: string) => {
+    const r = await dialog.showOpenDialog(win()!, {
+      title: 'Фото к испытанию', defaultPath: lastDir, properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Изображения', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }],
+    });
+    if (r.canceled || r.filePaths.length === 0) return null;
+    lastDir = path.dirname(r.filePaths[0]!);
+    const refs: AttachmentRef[] = [];
+    for (const p of r.filePaths.slice(0, 20)) {
+      const ext = path.extname(p).toLowerCase().slice(1);
+      const mime = IMAGE_MIME[ext];
+      if (!mime) throw new AppError('bad-file', `«${path.basename(p)}»: поддерживаются только изображения JPEG, PNG, GIF, WebP, BMP`);
+      refs.push(await store().addAttachment(String(projectId), path.basename(p), await fs.readFile(p), mime));
+    }
+    return refs;
+  }));
+  ipcMain.handle(IPC.attRead, wrap(async (projectId: string, ref: AttachmentRef) => {
+    const parsed = AttachmentRefSchema.safeParse(ref);
+    if (!parsed.success) throw new AppError('bad-request', 'Неверная ссылка на вложение');
+    const data = await store().readAttachment(String(projectId), parsed.data);
+    const mime = /^image\/(jpeg|png|gif|webp|bmp)$/.test(parsed.data.mime) ? parsed.data.mime : 'application/octet-stream';
+    return `data:${mime};base64,${data.toString('base64')}`;
+  }));
   ipcMain.handle(IPC.setDirty, wrap(async (dirty: boolean) => { ctx.setDirty(Boolean(dirty)); }));
   ipcMain.handle(IPC.openExternal, wrap(async (url: string) => {
     const u = String(url ?? '');
@@ -206,11 +241,13 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle(IPC.remove, wrap(async (id: string) => { await store().deleteProject(id); }));
 
   ipcMain.handle(IPC.cpList, wrap((id: string) => store().listCheckpoints(id)));
-  ipcMain.handle(IPC.cpCreate, wrap((doc: ProjectDoc, label: string) => store().createCheckpoint(doc, String(label ?? ''))));
+  ipcMain.handle(IPC.cpCreate, wrap((doc: ProjectDoc, label: string, kind?: string) => store().createCheckpoint(doc, String(label ?? ''), kind === 'test' ? 'test' : 'manual')));
+  ipcMain.handle(IPC.cpGet, wrap(async (projectId: string, checkpointId: string) => (await store().readCheckpoint(String(projectId), String(checkpointId))).doc));
   ipcMain.handle(IPC.cpRestore, wrap(async (current: ProjectDoc, checkpointId: string) => {
     const cp = await store().readCheckpoint(current.id, checkpointId);
     await store().createCheckpoint(current, `Перед возвратом к «${cp.label}»`, 'before-restore');
-    return cp.doc;
+    // Журнал испытаний и вложения — история: возврат схемы и платы их не стирает.
+    return keepJournal(cp.doc, current);
   }));
 
   ipcMain.handle(IPC.exportProject, wrap(async (doc: ProjectDoc) => {

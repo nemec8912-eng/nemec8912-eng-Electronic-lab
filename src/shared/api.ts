@@ -1,5 +1,6 @@
 /** Контракт IPC между окном и главным процессом (window.elab). Только типы. */
-import type { CheckpointInfo, ProjectDoc } from '../core/model';
+import type { AttachmentRef, CheckpointInfo, ProjectDoc, TestRecord } from '../core/model';
+import type { ExpectedOutcome } from '../sim/expected';
 import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
 import type { SimResult } from '../sim/results';
@@ -64,8 +65,14 @@ export interface ElabApi {
   };
   checkpoints: {
     list(projectId: string): Promise<Result<CheckpointInfo[]>>;
-    create(doc: ProjectDoc, label: string): Promise<Result<CheckpointInfo>>;
-    /** Возвращает документ контрольной версии; перед этим сохраняет текущее состояние как контрольную версию. */
+    /** kind 'test' — снимок ревизии для записи журнала испытаний (не удаляется автоматически). */
+    create(doc: ProjectDoc, label: string, kind?: 'manual' | 'test'): Promise<Result<CheckpointInfo>>;
+    /** Документ контрольной версии (для сравнения ревизий и расчёта по ревизии испытания). */
+    get(projectId: string, checkpointId: string): Promise<Result<ProjectDoc>>;
+    /**
+     * Возвращает документ контрольной версии (схема, детали, плата) с текущим журналом испытаний и
+     * вложениями; перед этим сохраняет текущее состояние как контрольную версию.
+     */
     restore(current: ProjectDoc, checkpointId: string): Promise<Result<ProjectDoc>>;
   };
   catalog: {
@@ -90,6 +97,14 @@ export interface ElabApi {
     run(doc: ProjectDoc, opts: { analysis?: 'op' | 'tran' | 'dc' | 'ac' }): Promise<Result<SimResult>>;
     /** Измерение прибором со своим тестовым сигналом (Ω, прозвонка, диод, ESR); питание схемы отключается. */
     measure(doc: ProjectDoc, req: MeasureRequest): Promise<Result<MeasureResult>>;
+    /** Расчётные значения и разброс по допускам для измерений записи журнала (doc — ревизия испытания). */
+    expected(doc: ProjectDoc, record: TestRecord): Promise<Result<ExpectedOutcome>>;
+  };
+  attachments: {
+    /** Выбрать фото на компьютере и скопировать их в папку проекта. null — выбор отменён. */
+    add(projectId: string): Promise<Result<AttachmentRef[] | null>>;
+    /** Содержимое вложения как data: URL (для показа фото). */
+    read(projectId: string, ref: AttachmentRef): Promise<Result<string>>;
   };
   files: {
     exportProject(doc: ProjectDoc): Promise<Result<{ path: string; bytes: number } | null>>;
@@ -129,6 +144,10 @@ export const IPC = {
   cpList: 'checkpoints:list',
   cpCreate: 'checkpoints:create',
   cpRestore: 'checkpoints:restore',
+  cpGet: 'checkpoints:get',
+  simExpected: 'sim:expected',
+  attAdd: 'attachments:add',
+  attRead: 'attachments:read',
   exportProject: 'files:export-project',
   importProject: 'files:import-project',
   resolveImport: 'files:resolve-import',

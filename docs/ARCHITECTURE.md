@@ -65,6 +65,11 @@
 | `src/core/outline.ts` | Контур платы: многоугольник (дуги шагом 3°), точка внутри, SVG-путь с точными дугами, проверка многоугольника (самопересечения, площадь), разбор точек |
 | `src/core/pour.ts` | Медная заливка: растровая связность (шаг ≥ 0,1 мм), острова, добавление/удаление; точная геометрия для SVG и Gerber строится из контура и меди |
 | `src/core/projectPart.ts` | Изменение детали внутри проекта с защитой выводов, к которым подведены провода, и корпусов на плате; запись в журнал изменений |
+| `src/core/field.ts`, `src/core/cnc.ts` | Поле расстояний до меди и контуры уровня; траектории изоляции, сверловки и обрезки, проверки «фреза не проходит», G-code GRBL |
+| `src/core/checks.ts`, `src/sim/checks.ts` | Условия работоспособности и их расчёт ngspice, итог «работает / не работает» |
+| `src/core/autoplace.ts`, `src/core/autoroute.ts` | Авторасстановка (жадная, по связям) и согласованная автотрассировка по сетке (PathFinder), с переходами и заливкой |
+| `src/core/stdModels.ts` | Типовые SPICE-шаблоны с параметрами на схеме (потенциометр, трансформатор, кварц, реле, варистор, L + R…) |
+| `src/core/instanceCard.ts` | Карточка детали: номиналы экземпляра, ответвление общей детали, модель и выводы по маркировке |
 | `src/core/testlog.ts` | Записи журнала: измерения, события деталей, фото; сравнение «измерено — расчёт» с разбросом допусков и погрешностью прибора; гипотезы для проверки из фактов записи; возврат ревизии без потери журнала (`keepJournal`) |
 | `src/core/diff.ts` | Сравнение двух ревизий: детали, номиналы, сведения и модели деталей, соединения (по составу цепей), плата, настройки расчёта |
 | `src/sim/expected.ts` | Расчётные значения для записи: рабочая точка ngspice ревизии испытания, разброс по допускам сопротивлений (наихудший случай), подстановка измеренного питания |
@@ -104,7 +109,7 @@
 
 Дальнейшие модули (по этапам): полноценный редактор и ERC (этап 3), анализы AC и параметрические (этап 4), приборы (этап 5), двухслойная плата и Gerber (этап 6), журнал испытаний (этап 7). Все работают с тем же документом и ссылаются на сущности только по UUID и номерам выводов.
 
-## 2. Модель данных проекта (базовая схема v1; изменения v2–v8 — ниже)
+## 2. Модель данных проекта (базовая схема v1; изменения v2–v9 — ниже)
 
 Единственный источник истины — документ проекта `ProjectDoc` (`src/core/model.ts`). У каждой сущности стабильный UUID v4 (`id`). Экранные координаты — только атрибут отображения, связи по ним не определяются.
 
@@ -182,6 +187,10 @@ ProjectDoc
 
 `schemaVersion: 8`: у платы контур `board.outline` — `{kind:'rect'}`, `{kind:'rounded', radiusMm}`, `{kind:'circle'}` (вписан в габарит, ширина = высота) или `{kind:'polygon', points}` (точки в мм от левого верхнего угла габарита, без самопересечений); `widthMm/heightMm` — габарит. Заливки `pcb.pours[]` — `{ id, netId, layer, clearanceMm }`, не больше одной на слой. Миграция v7 → v8: контур прямоугольный, заливок нет. Целостность: заливка ссылается на существующую цепь. Подробнее — [ADR-0009](adr/0009-board-outline-pour-examples.md).
 
+### Формат v9 (этап 8)
+
+`schemaVersion: 9`: настройки фрезерования `pcb.cnc` (рабочее поле, отступ, толщина, фреза изоляции, сверловка и набор свёрл, обрезка с перемычками, реперные отверстия) и тест работоспособности `checks` (`items` — условия «величина в диапазоне» по выводам деталей; `noOverload`). Миграция v8 → v9 ставит настройки CNC 3018 по умолчанию и пустой список условий. Карточка детали (ADR-0010) формат не меняет.
+
 ## 3. Миграции
 
 `src/core/migrations.ts`: цепочка шагов `from → to`. При открытии/импорте документ поднимается до текущей `schemaVersion`, затем проходит zod-валидацию и проверку целостности. Документ более новой версии, чем знает программа, не открывается (сообщение «создан более новой версией программы»), ничего не перезаписывается. Версия 0 — формат раннего прототипа, хранится как фикстура `tests/fixtures/project-v0.json` для проверки цепочки.
@@ -241,7 +250,7 @@ data/
 
 Все вызовы асинхронные, ответ `{ ok: true, value } | { ok: false, error: { code, message, details? } }`.
 
-`app.info/setDirty/openExternal`, `projects.list/create/open/examples/openExample/save/autosave/discardRecovery/rename/duplicate/saveAs/delete`, `checkpoints.list/create/get/restore`, `catalog.list/save/remove/fromProject`, `kicad.openOnline/openFile/describe/build`, `sim.run/measure/expected`, `attachments.add/read`, `files.exportProject/importProject/resolveImport/backupAll/restoreBackup/saveSvg/saveDrawing/savePdf/print/saveGerber`. Примеры — файлы `.elab` в папке `examples` рядом с программой (только чтение), открываются копией с новыми UUID. Диалоги выбора файлов показывает главный процесс; в тестах они подменяются.
+`app.info/setDirty/openExternal`, `projects.list/create/open/examples/openExample/save/autosave/discardRecovery/rename/duplicate/saveAs/delete`, `checkpoints.list/create/get/restore`, `catalog.list/save/remove/fromProject`, `kicad.openOnline/openFile/describe/build`, `sim.run/measure/expected/checks`, `attachments.add/read`, `files.exportProject/importProject/resolveImport/backupAll/restoreBackup/saveSvg/saveDrawing/savePdf/print/saveGerber/saveCnc`. Примеры — файлы `.elab` в папке `examples` рядом с программой (только чтение), открываются копией с новыми UUID. Диалоги выбора файлов показывает главный процесс; в тестах они подменяются.
 
 ## 9. Безопасность и офлайн
 

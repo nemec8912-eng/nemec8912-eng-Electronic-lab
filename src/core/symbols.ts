@@ -41,6 +41,14 @@ export const STANDARD_SYMBOLS: Record<string, () => SymbolTemplate> = {
   'transformer': () => ({ name: 'Трансформатор', standard: STD, graphic: 'transformer', box: null, pins: [
     pin('1', 'I1', 'passive', -40, -30, 'первичная обмотка'), pin('2', 'I2', 'passive', -40, 30, 'первичная обмотка'),
     pin('3', 'II1', 'passive', 40, -30, 'вторичная обмотка'), pin('4', 'II2', 'passive', 40, 30, 'вторичная обмотка')] }),
+  'potentiometer': () => ({ name: 'Резистор переменный', standard: STD, graphic: 'potentiometer', box: null, pins: [
+    pin('1', '1', 'passive', -30, 0, 'конец'), pin('2', '2', 'passive', 0, -30, 'движок'), pin('3', '3', 'passive', 30, 0, 'конец')] }),
+  'crystal': () => ({ name: 'Резонатор кварцевый', standard: STD, graphic: 'crystal', box: null, pins: [pin('1', '1', 'passive', -30, 0), pin('2', '2', 'passive', 30, 0)] }),
+  'speaker': () => ({ name: 'Громкоговоритель', standard: STD, graphic: 'speaker', box: null, pins: [pin('1', '1', 'passive', -30, -10), pin('2', '2', 'passive', -30, 10)] }),
+  'buzzer': () => ({ name: 'Звуковой излучатель', standard: STD, graphic: 'buzzer', box: null, pins: [pin('1', '+', 'passive', -30, -10, 'плюс'), pin('2', '−', 'passive', -30, 10)] }),
+  'thermistor': () => ({ name: 'Терморезистор', standard: STD, graphic: 'thermistor', box: null, pins: [pin('1', '1', 'passive', -30, 0), pin('2', '2', 'passive', 30, 0)] }),
+  'photoresistor': () => ({ name: 'Фоторезистор', standard: STD, graphic: 'photoresistor', box: null, pins: [pin('1', '1', 'passive', -30, 0), pin('2', '2', 'passive', 30, 0)] }),
+  'button': () => ({ name: 'Кнопка', standard: STD, graphic: 'button', box: null, pins: [pin('1', '1', 'passive', -30, 0), pin('2', '2', 'passive', 30, 0)] }),
   'iec-dc-source': () => ({ name: 'Источник ЭДС', standard: STD, graphic: 'iec-dc-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
   'iec-ac-source': () => ({ name: 'Источник синусоидального напряжения', standard: STD, graphic: 'iec-ac-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
   'iec-pulse-source': () => ({ name: 'Источник импульсного напряжения', standard: STD, graphic: 'iec-pulse-source', box: null, pins: [pin('+', '+', 'power-out', 0, -30), pin('-', '−', 'power-out', 0, 30)] }),
@@ -53,6 +61,7 @@ export const SYMBOL_FOR_CATEGORY: Record<string, string> = {
   resistor: 'iec-resistor', capacitor: 'iec-capacitor', 'capacitor-polar': 'iec-capacitor-polar', inductor: 'iec-inductor',
   diode: 'diode', zener: 'zener', led: 'led', bridge: 'bridge', bjt: 'npn', mosfet: 'nmos', thyristor: 'thyristor', triac: 'triac',
   varistor: 'varistor', fuse: 'fuse', relay: 'relay', transformer: 'transformer', switch: 'switch',
+  potentiometer: 'potentiometer', crystal: 'crystal', acoustic: 'buzzer',
 };
 
 export function standardSymbol(graphic: string): SymbolTemplate {

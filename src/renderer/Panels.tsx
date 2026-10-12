@@ -263,7 +263,7 @@ function InstProps({ doc, inst, onInstValue, onInstRefDes, onInstRotate, onInstD
       </dl>
       {part && part.category !== 'reference' && !model && (
         <p className="stage-note small" data-testid="no-model-warning">{part.category === 'ic-digital' || part.category === 'mcu'
-          ? 'Цифровые микросхемы и микроконтроллеры не моделируются: расчёт аналоговый, логика и прошивка не исполняются.'
+          ? 'У этой цифровой микросхемы нет модели: прошивка микроконтроллеров, счётчики и регистры не моделируются. Простая логика (CD4011, CD4093, 74HC00 и др.) в справочнике моделируется.'
           : 'Нет SPICE-модели — эта деталь не моделируется. Схему с ней можно рисовать и разводить на плате, но расчёт будет остановлен с объяснением.'}</p>
       )}
       {part && !model && catalogModel && (

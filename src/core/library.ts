@@ -33,6 +33,13 @@ export const PARAMS: Record<string, ParamDef> = {
   esr: { key: 'esr', label: 'ESR (эквивалентное последовательное сопротивление)', unit: 'Ω', unitRu: 'Ом', min: 0, max: 1e6 },
   inductance: { key: 'inductance', label: 'Индуктивность', unit: 'H', unitRu: 'Гн', min: 0, max: 1e4 },
   zenerVoltage: { key: 'zenerVoltage', label: 'Напряжение стабилизации', unit: 'V', unitRu: 'В', min: 0, max: 1e3 },
+  /** Положение движка потенциометра: 0 % — у вывода 1, 100 % — у вывода 3. */
+  position: { key: 'position', label: 'Положение движка (0 % — у вывода 1)', unit: '%', unitRu: '%', min: 0, max: 100, signed: true },
+  turnsRatio: { key: 'turnsRatio', label: 'Коэффициент трансформации (первичная / вторичная)', unit: '', unitRu: '', min: 0.001, max: 1e4 },
+  temperature: { key: 'temperature', label: 'Температура датчика', unit: '°C', unitRu: '°C', min: -55, max: 200, signed: true },
+  illuminance: { key: 'illuminance', label: 'Освещённость', unit: 'lx', unitRu: 'лк', min: 0.01, max: 1e5 },
+  /** Кнопка или выключатель: 1 — замкнут, 0 — разомкнут. */
+  closed: { key: 'closed', label: 'Замкнут (1/0)', unit: '', unitRu: '', min: 0, max: 1, signed: true },
 };
 
 /** Пределы деталей (ratings) — для предупреждений о перегрузке. */

@@ -13,6 +13,9 @@ import type { ComponentInstance, PartDef, PinRef, ProjectDoc, SimModel } from '.
 import { symbolOf } from '../core/schematic';
 import { checkModelTemplate, evalExpr } from '../core/spice';
 
+/** Выводы, которые можно оставить свободными: выходы и «не подключать». */
+const FREE_OK = new Set(['output', 'nc']);
+
 export interface SimIssue {
   severity: 'error' | 'warning';
   code:
@@ -108,6 +111,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
   });
   if (resolved.length === 0) err('empty', 'Схема пуста — нечего рассчитывать.');
 
+  const freeOutputs = new Set<string>();
   const netOfPin = new Map<string, string>();
   for (const n of doc.schematic.nets) for (const c of n.connections) netOfPin.set(`${c.instanceId}#${c.pin}`, n.id);
 
@@ -150,7 +154,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
     const { inst, part, model } = r;
     if (!part || !model) {
       if (part && DIGITAL.has(part.category)) {
-        err('not-simulated', `${inst.refDes} (${part.name}): цифровые микросхемы и микроконтроллеры не моделируются — расчёт аналоговый, логика и прошивка не исполняются. Уберите деталь из схемы для расчёта или замените её источником сигнала.`, [inst.id]);
+        err('not-simulated', `${inst.refDes} (${part.name}): у этой цифровой микросхемы нет модели — микроконтроллеры (прошивка не исполняется), счётчики и регистры не моделируются; простая логика (CD4011, CD4093, CD4001, CD4069, 74HC00, 74HC14) моделируется. Уберите деталь из схемы для расчёта или замените её источником сигнала.`, [inst.id]);
       } else {
         err('no-model', `${inst.refDes}: нет электрической модели — деталь не может быть рассчитана. Описание выводов само по себе не создаёт модель поведения; модель можно добавить в редакторе детали.`, [inst.id]);
       }
@@ -185,6 +189,20 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
     let line = elementTpl!.replace(/^[A-Za-z]/, el);
     line = line.replace(/\{n:([^}]+)\}/g, (_m, pin: string) => {
       const net = netOfPin.get(`${inst.id}#${pin}`);
+      // Свободный выход микросхемы или вывод «не подключать» — нормальная ситуация: свой узел без ошибки.
+      const freeOk = !net && !opts.leak && FREE_OK.has(symbolOf(doc, inst)?.pins.find((x) => x.number === pin)?.electricalType ?? '');
+      if (freeOk) {
+        const free = `fo${freeOutputs.size + 1}`;
+        freeOutputs.add(free);
+        nodes.push(free);
+        nodeUse.set(free, [{ inst: inst.id, pin }]);
+        if (!withAmmeters) return free;
+        pinIndex += 1;
+        const inner = `${elLower}_p${pinIndex}`;
+        ammeters.push(`v_${elLower}_${pinIndex} ${free} ${inner} 0`);
+        pinVectors.set(pin, `i(v_${elLower}_${pinIndex})`);
+        return inner;
+      }
       if (!net && opts.leak) {
         // Измерение прибором: свободный вывод — свой узел (щуп можно приложить прямо к выводу детали).
         let free = freePinNodes.get(`${inst.id}#${pin}`);
@@ -267,7 +285,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
   }
   // Висящие узлы: подключён ровно один вывод (кроме земли).
   for (const [node, uses] of nodeUse) {
-    if (opts.leak || node === '0' || uses.length > 1) continue;
+    if (opts.leak || node === '0' || uses.length > 1 || freeOutputs.has(node)) continue;
     const inst = doc.schematic.instances.find((i) => i.id === uses[0]!.inst);
     err('dangling-node', `${inst?.refDes}.${uses[0]!.pin}: узел соединён только с этим выводом — цепь разомкнута.`, [uses[0]!.inst]);
   }
@@ -283,7 +301,7 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
       }
     }
     for (const node of nodeUse.keys()) {
-      if (reach.has(node)) continue;
+      if (reach.has(node) || freeOutputs.has(node)) continue;
       const net = [...nodeOfNet.entries()].find(([, v]) => v === node)?.[0];
       err('no-dc-path', `Узел ${node} не имеет пути постоянного тока к земле (подключён только через конденсаторы, затвор MOSFET или источник тока) — рабочая точка не определена.`, net ? [net] : []);
     }

@@ -284,6 +284,16 @@ export function checkLimits(doc: ProjectDoc, op: OpResult | null, tran: TranResu
       }
       const outs = sym.filter((p) => p.electricalType === 'output' || p.electricalType === 'power-out').map((p) => p.number);
       add('current', R.current?.value, (s, i) => Math.max(...outs.map((p) => Math.abs(d.iin(s, p, i)))), (v, l, w) => `ток выхода ${A(v)} больше допустимого ${A(l)} (${w}) — в реальной микросхеме сработает ограничение или защита; модель его не воспроизводит.`);
+    } else if (cat === 'fuse') {
+      add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, p1, i)), (v, l, w) => `ток ${A(v)} больше номинала вставки ${A(l)} (${w}) — предохранитель перегорит (в расчёте он остаётся целым).`);
+    } else if (cat === 'relay') {
+      const a1 = d.byName('A1'), a2 = d.byName('A2'), com = d.byName('COM');
+      if (a1 && a2) add('voltage', R.voltage?.value, (s, i) => Math.abs(d.v(s, a1, i) - d.v(s, a2, i)), (v, l, w) => `напряжение на катушке ${V(v)} больше допустимого ${V(l)} (${w}) — катушка перегреется.`);
+      if (com) add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, com, i)), (v, l, w) => `ток контактов ${A(v)} больше допустимого ${A(l)} (${w}) — контакты обгорят.`);
+    } else if (cat === 'thyristor' || cat === 'triac') {
+      add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, p1, i)), (v, l, w) => `ток ${A(v)} больше допустимого ${A(l)} (${w}) — нужен радиатор или более мощный прибор.`);
+    } else if (cat === 'optocoupler') {
+      add('current', R.current?.value, (s, i) => Math.abs(d.iin(s, p1, i)), (v, l, w) => `ток светодиода оптопары ${A(v)} больше допустимого ${A(l)} (${w}).`);
     } else {
       add('power', R.power?.value, (s, i) => Math.abs(d.power(s, i)), (v, l, w) => `мощность ${W(v)} больше допустимой ${W(l)} (${w}). Оценка без тепловой модели.`);
     }

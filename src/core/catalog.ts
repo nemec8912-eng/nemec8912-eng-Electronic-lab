@@ -54,6 +54,10 @@ export const CATEGORIES: Array<{ id: string; label: string; prefix: string }> = 
   { id: 'triac', label: 'Симисторы', prefix: 'VS' },
   { id: 'varistor', label: 'Варисторы', prefix: 'RU' },
   { id: 'fuse', label: 'Предохранители', prefix: 'FU' },
+  { id: 'potentiometer', label: 'Резисторы переменные и подстроечные', prefix: 'R' },
+  { id: 'crystal', label: 'Кварцевые резонаторы', prefix: 'ZQ' },
+  { id: 'optocoupler', label: 'Оптопары', prefix: 'U' },
+  { id: 'acoustic', label: 'Звукоизлучатели и динамики', prefix: 'BA' },
   { id: 'relay', label: 'Реле', prefix: 'K' },
   { id: 'transformer', label: 'Трансформаторы', prefix: 'T' },
   { id: 'connector', label: 'Разъёмы и клеммники', prefix: 'X' },
@@ -181,7 +185,8 @@ export function lintBundle(b: PartBundle, others: PartDef[] = [], builtin: PartD
     const pads = new Set(pkg.pads.map((x) => x.number));
     const padCounts = new Map<string, number>();
     for (const pad of pkg.pads) padCounts.set(pad.number, (padCounts.get(pad.number) ?? 0) + 1);
-    for (const [n, c] of padCounts) if (c > 1) err('packages', `${pkg.name}: номер площадки «${n}» повторяется`);
+    // Площадки с одним номером — один вывод, соединённый внутри корпуса (кнопки, крепёжные выводы), как в KiCad.
+    for (const [n, c] of padCounts) if (c > 1 && pkg.pads.filter((x) => x.number === n).some((x) => !x.drill)) err('packages', `${pkg.name}: номер SMD-площадки «${n}» повторяется`);
     const mappedPins = new Set<string>();
     const mappedPads = new Set<string>();
     for (const m of ref.pinMap) {

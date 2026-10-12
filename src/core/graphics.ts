@@ -118,6 +118,13 @@ export function symbolPrims(symbol: SymbolDef): Prim[] {
     case 'lab-psu': return [
       L(0, -40, 0, -20), R(-20, -20, 40, 40), T(0, -6, 'БП', 'sym-sign', 'middle'), T(0, 10, 'CV/CC', 'pin-num', 'middle'), T(7, -26, '+'), L(0, 20, 0, 40),
     ];
+    case 'potentiometer': return [L(-30, 0, -16, 0), R(-16, -6, 32, 12), L(16, 0, 30, 0), L(0, -30, 0, -10), P('M -4 -14 L 0 -7 L 4 -14 Z', 'fill')];
+    case 'crystal': return [L(-30, 0, -10, 0), L(-10, -10, -10, 10, 'thick'), R(-6, -12, 12, 24), L(10, -10, 10, 10, 'thick'), L(10, 0, 30, 0)];
+    case 'speaker': return [L(-30, -10, -16, -10), L(-30, 10, -16, 10), R(-16, -12, 10, 24), P('M -6 -12 L 8 -24 L 8 24 L -6 12 Z')];
+    case 'buzzer': return [L(-30, -10, -16, -10), L(-30, 10, -16, 10), P('M -16 -16 L -16 16 A 16 16 0 0 0 -16 -16 Z'), T(-26, -14, '+')];
+    case 'thermistor': return [L(-30, 0, -16, 0), R(-16, -6, 32, 12), L(16, 0, 30, 0), P('M -20 12 L -12 12 L 14 -12'), T(10, 18, 't°', 'pin-num', 'middle')];
+    case 'photoresistor': return [L(-30, 0, -16, 0), R(-16, -6, 32, 12), L(16, 0, 30, 0), L(-14, -22, -6, -10), P('M -9 -13 L -6 -10 L -10 -9', 'arrow'), L(-2, -22, 6, -10), P('M 3 -13 L 6 -10 L 2 -9', 'arrow')];
+    case 'button': return [L(-30, 0, -12, 0), L(-12, -6, 12, -6), L(0, -6, 0, -16), L(-6, -16, 6, -16), L(12, 0, 30, 0)];
     case 'ground': return [L(0, -10, 0, 0), L(-12, 0, 12, 0, 'thick'), L(-8, 4, 8, 4), L(-4, 8, 4, 8)];
     default: return boxSymbol(symbol);
   }
@@ -127,8 +134,12 @@ export function symbolPrims(symbol: SymbolDef): Prim[] {
 export function symbolBounds(symbol: SymbolDef): { x: number; y: number; w: number; h: number } {
   switch (symbol.graphic) {
     case 'iec-resistor': case 'iec-capacitor': case 'iec-capacitor-polar': case 'diode': case 'zener': case 'led':
-    case 'varistor': case 'fuse': case 'switch':
+    case 'varistor': case 'fuse': case 'switch': case 'crystal': case 'thermistor':
       return { x: -30, y: -13, w: 60, h: 26 };
+    case 'potentiometer': return { x: -30, y: -30, w: 60, h: 43 };
+    case 'photoresistor': return { x: -30, y: -24, w: 60, h: 37 };
+    case 'button': return { x: -30, y: -18, w: 60, h: 26 };
+    case 'speaker': case 'buzzer': return { x: -30, y: -25, w: 40, h: 50 };
     case 'thyristor': case 'triac': return { x: -30, y: -13, w: 60, h: 43 };
     case 'iec-inductor': return { x: -40, y: -10, w: 80, h: 20 };
     case 'bridge': return { x: -40, y: -40, w: 80, h: 80 };

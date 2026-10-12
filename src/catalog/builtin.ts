@@ -5,13 +5,13 @@
  *    по типовым данным даташитов. Все они помечены «не сверено с даташитом» (origin.verified = false):
  *    перед применением пользователь сверяет сведения с даташитом своего производителя.
  * SPICE-модели (этап 4) — src/catalog/spiceModels.ts: модели производителей и упрощённые/поведенческие модели
- * по даташиту, все помечены «не проверены». Тиристор, симистор, мост, цифровые микросхемы и микроконтроллер
- * не моделируются — это показывается явно.
+ * по даташиту, все помечены «не проверены». Простая логика КМОП, реле, тиристоры, оптопары — поведенческие модели.
+ * Диодный мост без корпуса и микроконтроллер не моделируются — это показывается явно.
  */
 import { builtinBundle, stableId, type PartBundle } from '../core/catalog';
 import { BUILTIN_PARTS, PART_INFO_DEFAULTS } from '../core/library';
 import type { PartDef, Quantity, SimModel } from '../core/model';
-import { generatePackage, type GenParams } from '../core/packages';
+import { generatePackage, type GenParams, type PackageTemplate } from '../core/packages';
 import * as SM from './spiceModels';
 import { icSymbol, standardSymbol, type IcPinInput, type SymbolTemplate } from '../core/symbols';
 
@@ -32,7 +32,7 @@ interface Def {
   temperature?: { minC: number; maxC: number };
   polarized?: boolean;
   symbol: SymbolTemplate;
-  packages: Array<{ family: string; params?: GenParams; pinMap: PinMap }>;
+  packages: Array<{ family: string; params?: GenParams; pinMap: PinMap } | { custom: PackageTemplate; pinMap: PinMap }>;
   model: Omit<SimModel, 'id'> | null;
   generic: boolean;
 }
@@ -47,7 +47,7 @@ function make(d: Def): PartBundle {
   const id = (s: string) => stableId(`builtin/${d.key}/${s}`);
   const symbolId = id('symbol');
   const modelId = d.model ? id('model') : null;
-  const packages = d.packages.map((p, i) => ({ ...generatePackage(p.family, p.params ?? {}), id: id(`package/${i}`) }));
+  const packages = d.packages.map((p, i) => ({ ...('custom' in p ? p.custom : generatePackage(p.family, p.params ?? {})), id: id(`package/${i}`) }));
   const part: PartDef = {
     id: id('part'),
     name: d.name,
@@ -88,6 +88,28 @@ function make(d: Def): PartBundle {
 }
 
 const sym = standardSymbol;
+
+/** Корпус по координатам площадок (мм, вид сверху). Источник координат — в описании детали. */
+function custom(name: string, pads: Array<[number: string, x: number, y: number, size: number, drill: number, rect?: boolean]>, body: { x: number; y: number; w: number; h: number }, extra: Partial<PackageTemplate> = {}): PackageTemplate {
+  return {
+    name, family: 'CUSTOM', mount: 'THT', generator: null, pitchMm: null, numbering: null, pin1Marker: null, body,
+    pads: pads.map(([number, x, y, size, drill, rect]) => ({ number, x, y, shape: rect ? 'rect' : 'round', w: size, h: size, drill })),
+    ...extra,
+  };
+}
+
+/** Координаты площадок — по библиотеке посадочных мест KiCad (CC-BY-SA 4.0 с исключением для проектов). */
+const PKG_SRD = custom('Реле SRD (Songle/Sanyou, форма C)', [
+  ['1', 0, 0, 3, 1.3], ['2', 1.95, 6.05, 2.5, 1], ['3', 14.15, 6.05, 3, 1.3], ['4', 14.2, -6, 3, 1.3], ['5', 1.95, -5.95, 2.5, 1],
+], { x: -1.3, y: -7.7, w: 19.6, h: 15.4 }, { numbering: '1 — COM, 2 и 5 — катушка, 3 — NO, 4 — NC (по KiCad SANYOU_SRD)', pin1Marker: 'вывод 1 — в середине короткой стороны' });
+const PKG_3296W = custom('Подстроечный 3296W (вертикальный)', [['1', 0, 0, 1.44, 0.8], ['2', -2.54, 0, 1.44, 0.8], ['3', -5.08, 0, 1.44, 0.8]],
+  { x: -7.305, y: -2.41, w: 9.53, h: 4.83 }, { pitchMm: 2.54, numbering: 'в ряд: 1, 2 (движок), 3' });
+const PKG_PT10V = custom('Подстроечный PT-10 (вертикальный)', [['1', 0, 0, 2.34, 1.3], ['2', 10, -2.5, 2.34, 1.3], ['3', 0, -5, 2.34, 1.3]],
+  { x: -0.5, y: -7.5, w: 11.5, h: 10 }, { numbering: '1 и 3 — концы, 2 (движок) — напротив' });
+const PKG_HC49 = custom('HC-49/U (вертикальный)', [['1', 0, 0, 1.5, 0.8], ['2', 4.88, 0, 1.5, 0.8]], { x: -0.685, y: -2.325, w: 6.25, h: 4.65 }, { pitchMm: 4.88 });
+const PKG_BUZZER12 = custom('Зуммер ∅12 мм, шаг 7,6', [['1', 0, 0, 2, 1, true], ['2', 7.6, 0, 2, 1]], { x: -2.2, y: -6, w: 12, h: 12 }, { pitchMm: 7.6, pin1Marker: 'квадратная площадка — «+»' });
+const PKG_TACT6 = custom('Кнопка 6×6 мм (4 вывода)', [['1', 0, 0, 2, 1.1], ['1', 6.5, 0, 2, 1.1], ['2', 0, 4.5, 2, 1.1], ['2', 6.5, 4.5, 2, 1.1]],
+  { x: 0.25, y: -0.75, w: 6, h: 6 }, { numbering: 'выводы 1 соединены внутри, выводы 2 — тоже' });
 const ic = (name: string, pins: Array<[string, string, IcPinInput['electricalType'], string?]>) =>
   icSymbol(name, pins.map(([number, n, electricalType, description]) => ({ number, name: n, electricalType, description: description ?? '' })));
 
@@ -118,10 +140,10 @@ const DEFS: Def[] = [
     symbol: sym('iec-inductor'), packages: [{ family: 'RADIAL', params: { pitch: 5, diameter: 8, polar: false }, pinMap: 'identity' }], model: L_MODEL },
   { key: 'fuse/5x20', name: 'Предохранитель 5×20 мм в держателе', category: 'fuse', refPrefix: 'FU', description: 'Плавкая вставка в держателе для печатной платы', generic: true,
     ratings: { current: q(1, 'A'), voltage: q(250, 'V') },
-    symbol: sym('fuse'), packages: [{ family: 'AXIAL', params: { pitch: 22.6, bodyL: 20, bodyD: 5, drill: 1.3 }, pinMap: 'identity' }], model: null },
+    symbol: sym('fuse'), packages: [{ family: 'AXIAL', params: { pitch: 22.6, bodyL: 20, bodyD: 5, drill: 1.3 }, pinMap: 'identity' }], model: SM.FUSE_1A },
   { key: 'varistor/14d471', name: 'Варистор 470 В', category: 'varistor', refPrefix: 'RU', description: 'Металлооксидный варистор ∅14 мм для сети 230 В', generic: false, partNumber: '14D471K', marking: '14D471K',
     ratings: { voltage: q(300, 'V') },
-    symbol: sym('varistor'), packages: [{ family: 'RADIAL', params: { pitch: 7.5, diameter: 15.5, drill: 1, polar: false }, pinMap: 'identity' }], model: null },
+    symbol: sym('varistor'), packages: [{ family: 'RADIAL', params: { pitch: 7.5, diameter: 15.5, drill: 1, polar: false }, pinMap: 'identity' }], model: SM.VARISTOR_471 },
   { key: 'conn/header-1x2', name: 'Штыревой разъём 1×2', category: 'connector', refPrefix: 'X', description: 'PLS, шаг 2,54 мм', generic: true,
     symbol: ic('Разъём 1×2', [['1', '1', 'passive'], ['2', '2', 'passive']]), packages: [{ family: 'HEADER', params: { rows: 1, pins: 2 }, pinMap: 'identity' }], model: CONNECTOR },
   { key: 'conn/header-1x4', name: 'Штыревой разъём 1×4', category: 'connector', refPrefix: 'X', description: 'PLS, шаг 2,54 мм', generic: true,
@@ -131,7 +153,7 @@ const DEFS: Def[] = [
     symbol: ic('Клеммник 2', [['1', '1', 'passive'], ['2', '2', 'passive']]), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: 'identity' }], model: CONNECTOR },
   { key: 'switch/tact', name: 'Кнопка тактовая 6×6', category: 'switch', refPrefix: 'SB', description: 'Без фиксации. Корпус не задан: у кнопок 6×6 четыре вывода, попарно соединённых внутри, — добавьте корпус по даташиту', generic: true,
     ratings: { current: q(0.05, 'A'), voltage: q(12, 'V') },
-    symbol: sym('switch'), packages: [], model: null },
+    values: { closed: q(0, '') }, symbol: sym('switch'), packages: [], model: SM.SWITCH_SPST },
   { key: 'led/5mm-red', name: 'Светодиод 5 мм красный', category: 'led', refPrefix: 'HL', description: 'Индикаторный светодиод; вывод катода короче, у катода срез на корпусе', generic: true,
     ratings: { current: q(0.02, 'A'), reverseVoltage: q(5, 'V') },
     symbol: sym('led'), packages: [{ family: 'RADIAL', params: { pitch: 2.54, diameter: 5, polar: false }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_LED_RED },
@@ -195,10 +217,10 @@ const DEFS: Def[] = [
     symbol: sym('nmos'), packages: [{ family: 'TO-92', params: { pitch: 1.27 }, pinMap: [['3', '1'], ['1', '2'], ['2', '3']] }], model: SM.M_2N7000 },
   { key: 'thy/bt151', name: 'Тиристор BT151-500R', category: 'thyristor', refPrefix: 'VS', description: 'Тиристор 500 В, 12 А (действующее значение)', generic: false, partNumber: 'BT151-500R',
     ratings: { reverseVoltage: q(500, 'V'), current: q(12, 'A') },
-    symbol: sym('thyristor'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: null },
+    symbol: sym('thyristor'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['2', '1'], ['1', '2'], ['3', '3']] }], model: SM.SCR_BT151 },
   { key: 'triac/bt136', name: 'Симистор BT136-600', category: 'triac', refPrefix: 'VS', description: 'Симистор 600 В, 4 А (действующее значение)', generic: false, partNumber: 'BT136-600',
     ratings: { voltage: q(600, 'V'), current: q(4, 'A') },
-    symbol: sym('triac'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['1', '1'], ['2', '2'], ['3', '3']] }], model: null },
+    symbol: sym('triac'), packages: [{ family: 'TO-220', params: { pins: 3 }, pinMap: [['1', '1'], ['2', '2'], ['3', '3']] }], model: SM.TRIAC_BT136 },
 
   // ---------- Микросхемы ----------
   { key: 'ic/ne555', name: 'Таймер NE555', category: 'ic-analog', refPrefix: 'DA', description: 'Универсальный таймер: генератор, одновибратор', generic: false, partNumber: 'NE555',
@@ -223,7 +245,7 @@ const DEFS: Def[] = [
     ratings: { supplyMin: q(2, 'V'), supplyMax: q(6, 'V') },
     symbol: ic('74HC00', [['1', '1A', 'input'], ['2', '1B', 'input'], ['4', '2A', 'input'], ['5', '2B', 'input'], ['9', '3A', 'input'], ['10', '3B', 'input'], ['12', '4A', 'input'], ['13', '4B', 'input'],
       ['3', '1Y', 'output'], ['6', '2Y', 'output'], ['8', '3Y', 'output'], ['11', '4Y', 'output'], ['14', 'VCC', 'power-in'], ['7', 'GND', 'ground']]),
-    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: null },
+    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: SM.IC_74HC00 },
   { key: 'mcu/atmega328p', name: 'Микроконтроллер ATmega328P', category: 'mcu', refPrefix: 'DD', description: '8-битный AVR, 32 КБ Flash (как в Arduino Uno). Прошивка не исполняется.', generic: false, partNumber: 'ATMEGA328P-PU', manufacturer: 'Microchip',
     ratings: { supplyMin: q(1.8, 'V'), supplyMax: q(5.5, 'V') },
     symbol: ic('ATmega328P', [
@@ -236,6 +258,110 @@ const DEFS: Def[] = [
       ['7', 'VCC', 'power-in'], ['20', 'AVCC', 'power-in'], ['8', 'GND', 'ground'], ['22', 'GND', 'ground'],
     ]),
     packages: [{ family: 'DIP', params: { pins: 28 }, pinMap: 'identity' }], model: null },
+
+  // ---------- Этап 8: коммутация, датчики, звук, логика ----------
+  { key: 'relay/srd-05vdc', name: 'Реле SRD-05VDC-SL-C (5 В, 10 А)', category: 'relay', refPrefix: 'K', generic: false, partNumber: 'SRD-05VDC-SL-C', manufacturer: 'Songle',
+    description: 'Электромагнитное реле: катушка 5 В / 70 Ом, переключающий контакт 10 А. Проверьте прозвонкой: без питания NC замкнут с COM.',
+    ratings: { voltage: q(6.5, 'V'), current: q(10, 'A') },
+    symbol: sym('relay'), packages: [{ custom: PKG_SRD, pinMap: [['1', '2'], ['2', '5'], ['3', '1'], ['4', '3'], ['5', '4']] }], model: SM.REL_SRD05 },
+  { key: 'tr/generic', name: 'Трансформатор (вне платы, клеммы)', category: 'transformer', refPrefix: 'T', generic: true,
+    description: 'Сетевой или согласующий трансформатор: индуктивность первичной обмотки и коэффициент трансформации задаются на схеме. По умолчанию 230 В → 12,6 В. На плате — клеммник на 4 провода.',
+    values: { inductance: q(10, 'H'), turnsRatio: q(18.25, '') },
+    symbol: sym('transformer'), packages: [{ family: 'TERMINAL', params: { pins: 4 }, pinMap: 'identity' }], model: SM.TR_GENERIC },
+  { key: 'pot/3296w', name: 'Резистор подстроечный 3296W', category: 'potentiometer', refPrefix: 'R', generic: true,
+    description: 'Многооборотный подстроечный резистор; положение движка задаётся на схеме (0 % — у вывода 1).',
+    values: { resistance: q(10_000, 'Ω'), position: q(50, '%') }, ratings: { power: q(0.5, 'W') }, tolerancePct: 10,
+    symbol: sym('potentiometer'), packages: [{ custom: PKG_3296W, pinMap: 'identity' }], model: SM.POT },
+  { key: 'pot/pt10', name: 'Резистор подстроечный PT-10', category: 'potentiometer', refPrefix: 'R', generic: true,
+    description: 'Однооборотный подстроечный резистор 10 мм; положение движка задаётся на схеме.',
+    values: { resistance: q(10_000, 'Ω'), position: q(50, '%') }, ratings: { power: q(0.15, 'W') }, tolerancePct: 20,
+    symbol: sym('potentiometer'), packages: [{ custom: PKG_PT10V, pinMap: 'identity' }], model: SM.POT },
+  { key: 'pot/panel', name: 'Потенциометр (на корпусе прибора, провода)', category: 'potentiometer', refPrefix: 'R', generic: true,
+    description: 'Переменный резистор с ручкой, подключается к плате проводами через клеммник на 3 контакта.',
+    values: { resistance: q(10_000, 'Ω'), position: q(50, '%') }, ratings: { power: q(0.25, 'W') }, tolerancePct: 20,
+    symbol: sym('potentiometer'), packages: [{ family: 'TERMINAL', params: { pins: 3 }, pinMap: 'identity' }], model: SM.POT },
+  { key: 'xtal/hc49', name: 'Кварцевый резонатор HC-49', category: 'crystal', refPrefix: 'ZQ', generic: true,
+    description: 'Кварц в корпусе HC-49/U; частота задаётся на схеме. Нагрузочные конденсаторы — по даташиту (обычно 15–22 пФ).',
+    values: { frequency: q(4_000_000, 'Hz') },
+    symbol: sym('crystal'), packages: [{ custom: PKG_HC49, pinMap: 'identity' }], model: SM.XTAL },
+  { key: 'opto/pc817', name: 'Оптопара PC817', category: 'optocoupler', refPrefix: 'U', generic: false, partNumber: 'PC817', manufacturer: 'Sharp',
+    description: 'Транзисторная оптопара: светодиод (1 — анод, 2 — катод) и фототранзистор (3 — эмиттер, 4 — коллектор). Ток светодиода до 50 мА.',
+    ratings: { current: q(0.05, 'A') },
+    symbol: ic('PC817', [['1', 'A', 'passive', 'анод светодиода'], ['2', 'K', 'passive', 'катод светодиода'], ['4', 'C', 'passive', 'коллектор'], ['3', 'E', 'passive', 'эмиттер']]),
+    packages: [{ family: 'DIP', params: { pins: 4 }, pinMap: 'identity' }], model: SM.OPTO_PC817 },
+  { key: 'snd/speaker8', name: 'Динамик 8 Ом (провода)', category: 'acoustic', refPrefix: 'BA', generic: true,
+    description: 'Малогабаритный громкоговоритель 8 Ом 0,5 Вт; подключается проводами через клеммник.',
+    ratings: { power: q(0.5, 'W') },
+    symbol: sym('speaker'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: 'identity' }], model: SM.SPEAKER_8 },
+  { key: 'snd/buzzer-active', name: 'Зуммер активный 5 В ∅12 мм', category: 'acoustic', refPrefix: 'HA', generic: true,
+    description: 'Зуммер со встроенным генератором: звучит при подаче постоянного 5 В; вывод 1 — «+» (длинный).',
+    ratings: { power: q(0.25, 'W') },
+    symbol: sym('buzzer'), packages: [{ custom: PKG_BUZZER12, pinMap: 'identity' }], model: SM.BUZZER_ACTIVE },
+  { key: 'snd/piezo', name: 'Пьезоизлучатель ∅12 мм (без генератора)', category: 'acoustic', refPrefix: 'HA', generic: true,
+    description: 'Пассивный пьезоизлучатель: звучит от переменного сигнала (генератор, выход микросхемы).',
+    symbol: sym('buzzer'), packages: [{ custom: PKG_BUZZER12, pinMap: 'identity' }], model: SM.PIEZO },
+  { key: 'sens/ntc10k', name: 'Терморезистор NTC 10 кОм (B 3950)', category: 'sensor', refPrefix: 'RK', generic: true,
+    description: 'Терморезистор с отрицательным ТКС: 10 кОм при 25 °C. Температура задаётся на схеме — можно проверить схему при нагреве и охлаждении.',
+    values: { temperature: q(25, '°C') }, tolerancePct: 1,
+    symbol: sym('thermistor'), packages: [{ family: 'RADIAL', params: { pitch: 2.54, diameter: 4, polar: false }, pinMap: 'identity' }], model: SM.NTC_10K },
+  { key: 'sens/gl5528', name: 'Фоторезистор GL5528', category: 'sensor', refPrefix: 'R', generic: false, partNumber: 'GL5528',
+    description: 'Фоторезистор: около 10 кОм при 10 лк, около 1 МОм в темноте. Освещённость задаётся на схеме.',
+    values: { illuminance: q(10, 'lx') }, ratings: { power: q(0.1, 'W') },
+    symbol: sym('photoresistor'), packages: [{ family: 'RADIAL', params: { pitch: 3.4, diameter: 5, polar: false }, pinMap: 'identity' }], model: SM.LDR_GL5528 },
+  { key: 'sw/tact6', name: 'Кнопка тактовая 6×6 (4 вывода)', category: 'switch', refPrefix: 'SB', generic: true,
+    description: 'Кнопка без фиксации; выводы попарно соединены внутри. Нажата или нет — параметр «Замкнут (1/0)» на схеме.',
+    values: { closed: q(0, '') }, ratings: { current: q(0.05, 'A') },
+    symbol: sym('button'), packages: [{ custom: PKG_TACT6, pinMap: 'identity' }], model: SM.SWITCH_SPST },
+  { key: 'sw/toggle', name: 'Выключатель (тумблер, провода)', category: 'switch', refPrefix: 'SA', generic: true,
+    description: 'Выключатель на корпусе прибора, подключается проводами. Положение — параметр «Замкнут (1/0)».',
+    values: { closed: q(1, '') }, ratings: { current: q(3, 'A') },
+    symbol: sym('switch'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: 'identity' }], model: SM.SWITCH_SPST },
+  { key: 'ind/search-coil', name: 'Катушка с сопротивлением (выносная)', category: 'inductor', refPrefix: 'L', generic: true,
+    description: 'Катушка с заметным сопротивлением провода — например, поисковая катушка металлоискателя. Подключается проводами.',
+    values: { inductance: q(300e-6, 'H'), resistance: q(2, 'Ω') }, ratings: { current: q(1, 'A') },
+    symbol: sym('iec-inductor'), packages: [{ family: 'TERMINAL', params: { pins: 2 }, pinMap: 'identity' }], model: SM.L_WITH_R },
+  { key: 'zener/generic', name: 'Стабилитрон 0,5 Вт (напряжение — на схеме)', category: 'zener', refPrefix: 'VD', generic: true,
+    description: 'Типовой стабилитрон в корпусе DO-35: напряжение стабилизации задаётся на схеме.',
+    values: { zenerVoltage: q(5.1, 'V') }, ratings: { power: q(0.5, 'W') }, tolerancePct: 5,
+    symbol: sym('zener'), packages: [{ family: 'AXIAL', params: { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_ZENER_GENERIC },
+
+  // ---------- Логика КМОП ----------
+  { key: 'ic/cd4011', name: '4 элемента 2И-НЕ CD4011 (К561ЛА7)', category: 'ic-digital', refPrefix: 'DD', generic: false, partNumber: 'CD4011B',
+    description: 'Четыре элемента 2И-НЕ, КМОП, питание 3…18 В. Отечественный аналог — К561ЛА7.',
+    ratings: { supplyMin: q(3, 'V'), supplyMax: q(18, 'V') },
+    symbol: ic('CD4011', [['1', '1A', 'input'], ['2', '1B', 'input'], ['5', '2A', 'input'], ['6', '2B', 'input'], ['8', '3A', 'input'], ['9', '3B', 'input'], ['12', '4A', 'input'], ['13', '4B', 'input'],
+      ['3', '1Y', 'output'], ['4', '2Y', 'output'], ['10', '3Y', 'output'], ['11', '4Y', 'output'], ['14', 'VDD', 'power-in'], ['7', 'VSS', 'ground']]),
+    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: SM.IC_CD4011 },
+  { key: 'ic/cd4093', name: '4 элемента 2И-НЕ с триггером Шмитта CD4093 (К561ТЛ1)', category: 'ic-digital', refPrefix: 'DD', generic: false, partNumber: 'CD4093B',
+    description: 'Четыре элемента 2И-НЕ с гистерезисом, КМОП 3…18 В — генераторы на RC, формирователи. Аналог — К561ТЛ1.',
+    ratings: { supplyMin: q(3, 'V'), supplyMax: q(18, 'V') },
+    symbol: ic('CD4093', [['1', '1A', 'input'], ['2', '1B', 'input'], ['5', '2A', 'input'], ['6', '2B', 'input'], ['8', '3A', 'input'], ['9', '3B', 'input'], ['12', '4A', 'input'], ['13', '4B', 'input'],
+      ['3', '1Y', 'output'], ['4', '2Y', 'output'], ['10', '3Y', 'output'], ['11', '4Y', 'output'], ['14', 'VDD', 'power-in'], ['7', 'VSS', 'ground']]),
+    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: SM.IC_CD4093 },
+  { key: 'ic/cd4001', name: '4 элемента 2ИЛИ-НЕ CD4001 (К561ЛЕ5)', category: 'ic-digital', refPrefix: 'DD', generic: false, partNumber: 'CD4001B',
+    description: 'Четыре элемента 2ИЛИ-НЕ, КМОП, питание 3…18 В. Аналог — К561ЛЕ5.',
+    ratings: { supplyMin: q(3, 'V'), supplyMax: q(18, 'V') },
+    symbol: ic('CD4001', [['1', '1A', 'input'], ['2', '1B', 'input'], ['5', '2A', 'input'], ['6', '2B', 'input'], ['8', '3A', 'input'], ['9', '3B', 'input'], ['12', '4A', 'input'], ['13', '4B', 'input'],
+      ['3', '1Y', 'output'], ['4', '2Y', 'output'], ['10', '3Y', 'output'], ['11', '4Y', 'output'], ['14', 'VDD', 'power-in'], ['7', 'VSS', 'ground']]),
+    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: SM.IC_CD4001 },
+  { key: 'ic/cd4069', name: '6 инверторов CD4069 (К561ЛН2)', category: 'ic-digital', refPrefix: 'DD', generic: false, partNumber: 'CD4069UB',
+    description: 'Шесть инверторов, КМОП 3…18 В. Аналог — К561ЛН2.',
+    ratings: { supplyMin: q(3, 'V'), supplyMax: q(18, 'V') },
+    symbol: ic('CD4069', [['1', '1A', 'input'], ['3', '2A', 'input'], ['5', '3A', 'input'], ['9', '4A', 'input'], ['11', '5A', 'input'], ['13', '6A', 'input'],
+      ['2', '1Y', 'output'], ['4', '2Y', 'output'], ['6', '3Y', 'output'], ['8', '4Y', 'output'], ['10', '5Y', 'output'], ['12', '6Y', 'output'], ['14', 'VDD', 'power-in'], ['7', 'VSS', 'ground']]),
+    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: SM.IC_CD4069 },
+  { key: 'ic/74hc14', name: '6 инверторов с триггером Шмитта 74HC14', category: 'ic-digital', refPrefix: 'DD', generic: false, partNumber: '74HC14',
+    description: 'Шесть инверторов с гистерезисом, 74HC, питание 2…6 В.',
+    ratings: { supplyMin: q(2, 'V'), supplyMax: q(6, 'V') },
+    symbol: ic('74HC14', [['1', '1A', 'input'], ['3', '2A', 'input'], ['5', '3A', 'input'], ['9', '4A', 'input'], ['11', '5A', 'input'], ['13', '6A', 'input'],
+      ['2', '1Y', 'output'], ['4', '2Y', 'output'], ['6', '3Y', 'output'], ['8', '4Y', 'output'], ['10', '5Y', 'output'], ['12', '6Y', 'output'], ['14', 'VCC', 'power-in'], ['7', 'GND', 'ground']]),
+    packages: [{ family: 'DIP', params: { pins: 14 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 14 }, pinMap: 'identity' }], model: SM.IC_74HC14 },
+  { key: 'ic/lm393', name: 'Сдвоенный компаратор LM393', category: 'ic-analog', refPrefix: 'DA', generic: false, partNumber: 'LM393',
+    description: 'Два компаратора с выходом «открытый коллектор» (нужен подтягивающий резистор), питание 2…36 В.',
+    ratings: { supplyMin: q(2, 'V'), supplyMax: q(36, 'V'), current: q(0.02, 'A') },
+    symbol: ic('LM393', [['3', '+IN A', 'input'], ['2', '−IN A', 'input'], ['5', '+IN B', 'input'], ['6', '−IN B', 'input'],
+      ['1', 'OUT A', 'output', 'открытый коллектор'], ['7', 'OUT B', 'output', 'открытый коллектор'], ['8', 'V+', 'power-in'], ['4', 'GND', 'ground']]),
+    packages: [{ family: 'DIP', params: { pins: 8 }, pinMap: 'identity' }, { family: 'SOIC', params: { pins: 8 }, pinMap: 'identity' }], model: SM.IC_LM393 },
 ];
 
 let cache: PartBundle[] | null = null;

@@ -1,6 +1,6 @@
 /** Сведения о программе. Версия сверяется с package.json автотестом. */
 export const APP_NAME = 'Электронная лаборатория';
-export const APP_VERSION = '0.8.0';
+export const APP_VERSION = '0.9.0';
 
 /** Версии форматов файлов. Повышаются только вместе с миграцией и тестом. */
 export const ELAB_FORMAT = 'electronic-lab-project';

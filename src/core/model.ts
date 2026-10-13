@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import { isUuid } from './ids';
 
-export const CURRENT_SCHEMA_VERSION = 9 as const;
+export const CURRENT_SCHEMA_VERSION = 10 as const;
 
 const Id = z.string().refine(isUuid, { message: 'некорректный UUID' });
 const IsoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: 'некорректная дата' });
@@ -336,6 +336,12 @@ export const PcbSchema = z.object({
   vias: z.array(z.object({
     id: Id, netId: Id, position: PointSchema, drillMm: Finite.positive(), diameterMm: Finite.positive(),
   }).strict()),
+  /**
+   * Проволочные перемычки (v10): провод со стороны деталей между двумя отверстиями aViaId и bViaId
+   * (это переходы из vias). На односторонней плате переход существует только как конец перемычки: медь снизу,
+   * отверстие, провод сверху. Концы — той же цепи, что и перемычка.
+   */
+  jumpers: z.array(z.object({ id: Id, netId: Id, aViaId: Id, bViaId: Id }).strict()),
   pours: z.array(PourSchema),
   cnc: CncSettingsSchema,
 }).strict();
@@ -559,6 +565,7 @@ export type Pcb = z.infer<typeof PcbSchema>;
 export type Placement = Pcb['placements'][number];
 export type Track = Pcb['tracks'][number];
 export type Via = Pcb['vias'][number];
+export type Jumper = Pcb['jumpers'][number];
 export type Board = NonNullable<Pcb['board']>;
 export type BoardOutline = z.infer<typeof BoardOutlineSchema>;
 export type Pour = z.infer<typeof PourSchema>;

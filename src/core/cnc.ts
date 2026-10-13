@@ -22,7 +22,7 @@ import { APP_VERSION } from './appinfo';
 import { contours, distanceTransform, loopArea, loopLength, newField, pointInPoly, polyMask, simplifyLoop, stampShape, type Field } from './field';
 import type { CncSettings, Point, ProjectDoc } from './model';
 import { DEFAULT_CNC } from './model';
-import { allPads, boardPolygon, netName, padShape, trackShapes, viaShape, type Layer, type Shape } from './pcb';
+import { allPads, boardPolygon, boardVias, jumperEnds, jumperLength, jumperName, jumperOfVia, viaLayers, netName, padShape, trackShapes, viaShape, type Layer, type Shape } from './pcb';
 import { logChange, touch } from './factory';
 
 export interface CncIssue { severity: 'error' | 'warning'; message: string; at?: Point }
@@ -89,7 +89,7 @@ interface CopperItem { shape: Shape; net: string; label: string }
 function copperOf(doc: ProjectDoc, layer: Layer): CopperItem[] {
   const out: CopperItem[] = [];
   for (const p of allPads(doc)) if (p.layers.includes(layer)) out.push({ shape: padShape(p), net: p.netId ?? `pad:${p.ref.placementId}#${p.ref.pad}`, label: `${p.refDes}.${p.ref.pad}` });
-  if (doc.pcb.board?.layers === 2) for (const v of doc.pcb.vias) out.push({ shape: viaShape(v), net: v.netId, label: `переход (${netName(doc, v.netId)})` });
+  for (const v of boardVias(doc)) if (viaLayers(doc).includes(layer)) out.push({ shape: viaShape(v), net: v.netId, label: `${jumperOfVia(doc, v.id) ? 'перемычка' : 'переход'} (${netName(doc, v.netId)})` });
   for (const t of doc.pcb.tracks) if (t.layer === layer) for (const s of trackShapes(t)) out.push({ shape: s, net: t.netId, label: `дорожка ${netName(doc, t.netId)}` });
   return out;
 }
@@ -298,7 +298,7 @@ interface Hole { x: number; y: number; d: number; kind: 'drill' | 'align' }
 function holesOf(doc: ProjectDoc): Hole[] {
   const out: Hole[] = [];
   for (const p of allPads(doc)) if (p.drill) out.push({ x: p.pos.x, y: p.pos.y, d: p.drill, kind: 'drill' });
-  if (doc.pcb.board?.layers === 2) for (const v of doc.pcb.vias) out.push({ x: v.position.x, y: v.position.y, d: v.drillMm, kind: 'drill' });
+  for (const v of boardVias(doc)) out.push({ x: v.position.x, y: v.position.y, d: v.drillMm, kind: 'drill' });
   return out;
 }
 
@@ -495,9 +495,19 @@ function readme(doc: ProjectDoc, plan: CncPlan, s: CncSettings, isoTool: string)
     `Шпиндель: S${s.spindle}. Между файлами меняйте инструмент и заново выставляйте Z0.`,
     `Общее время — около ${Math.max(1, Math.round(total))} мин (по подачам; разгон станка не учтён).`,
     '',
+    ...jumperList(doc),
     ...(plan.issues.length ? ['ВНИМАНИЕ:', ...plan.issues.map((i) => `  ${i.severity === 'error' ? 'ОШИБКА' : 'Предупреждение'}: ${i.message}`), ''] : []),
     'Файлы — обычный G-code (G0/G1, M3/M5, G4), без смены инструмента и без циклов сверления: GRBL их не поддерживает.',
   ].join('\r\n');
+}
+
+/** Перемычки для сборки: длина и концы (координаты платы, вид со стороны деталей). */
+function jumperList(doc: ProjectDoc): string[] {
+  const rows = doc.pcb.jumpers.flatMap((j) => {
+    const e = jumperEnds(doc, j);
+    return e ? [`  ${jumperName(doc, j)} — ${ru(jumperLength(e), 2)} мм, цепь ${netName(doc, j.netId)}: (${ru(e.a.position.x, 2)}; ${ru(e.a.position.y, 2)}) — (${ru(e.b.position.x, 2)}; ${ru(e.b.position.y, 2)})`] : [];
+  });
+  return rows.length ? [`Проволочные перемычки (${rows.length}): луженый провод 0,5–0,6 мм со стороны деталей, ставятся до деталей. Отверстия — в файле сверловки.`, ...rows, ''] : [];
 }
 
 const TR: Record<string, string> = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };

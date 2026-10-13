@@ -11,7 +11,7 @@ import { logChange, touch } from './factory';
 import { newId } from './ids';
 import {
   DEFAULT_RULES, type Board, type DesignRules, type PackageDef, type PadRef, type PartDef, type Placement, type Point,
-  type ProjectDoc, type Track, type TrackEnd, type Via,
+  type ProjectDoc, type Track, type TrackEnd, type Via, type Jumper,
 } from './model';
 import { netDisplayName } from './connectivity';
 import { netOfPin } from './schematic';
@@ -118,6 +118,66 @@ export function findPad(doc: ProjectDoc, ref: PadRef): PadInfo | undefined {
 }
 
 export const padKey = (r: PadRef) => `${r.placementId}#${r.pad}`;
+
+// ---------- Перемычки ----------
+
+/** Перемычка, концом которой служит переход. */
+export const jumperOfVia = (doc: ProjectDoc, viaId: string): Jumper | undefined => doc.pcb.jumpers.find((j) => j.aViaId === viaId || j.bViaId === viaId);
+/** Слои меди перехода: на двухсторонней — оба; на односторонней (конец перемычки) — только низ. */
+export const viaLayers = (doc: ProjectDoc): Layer[] => (doc.pcb.board?.layers === 2 ? ['top', 'bottom'] : ['bottom']);
+/** Переходы, которые есть в меди и сверловке: на двухсторонней — все, на односторонней — концы перемычек. */
+export function boardVias(doc: ProjectDoc): Via[] {
+  if (doc.pcb.board?.layers === 2) return doc.pcb.vias;
+  const ends = new Set(doc.pcb.jumpers.flatMap((j) => [j.aViaId, j.bViaId]));
+  return doc.pcb.vias.filter((v) => ends.has(v.id));
+}
+/** Позиционное обозначение перемычки на сборочном чертеже: П1, П2… */
+export const jumperName = (doc: ProjectDoc, j: Jumper) => `П${doc.pcb.jumpers.indexOf(j) + 1}`;
+/** Концы перемычки (null — отверстие удалено). */
+export function jumperEnds(doc: ProjectDoc, j: Jumper): { a: Via; b: Via } | null {
+  const a = doc.pcb.vias.find((v) => v.id === j.aViaId), b = doc.pcb.vias.find((v) => v.id === j.bViaId);
+  return a && b ? { a, b } : null;
+}
+export const jumperLength = (e: { a: Via; b: Via }) => Math.hypot(e.a.position.x - e.b.position.x, e.a.position.y - e.b.position.y);
+/** Радиус провода перемычки (луженый провод 0,5–0,6 мм) — для проверок касания. */
+export const JUMPER_WIRE_R = 0.3;
+/** Зазор между голым проводом перемычки и выводами деталей или другими перемычками, мм. */
+export const JUMPER_GAP = 0.5;
+/** Минимальная длина перемычки: отверстия не ближе шага 2,54 мм — иначе провод не согнуть. */
+export const JUMPER_MIN_MM = 2.54;
+/** Отверстие и площадка конца перемычки: сверло 0,8 мм (провод до 0,6 мм), площадка 1,8 мм — паять вручную. */
+export function jumperHole(doc: ProjectDoc): { drillMm: number; diameterMm: number } {
+  const r = rulesOf(doc);
+  const drillMm = Math.max(0.8, r.minDrillMm);
+  return { drillMm, diameterMm: Math.max(1.8, drillMm + 2 * r.minAnnularMm + 0.2) };
+}
+export const jumperShape = (e: { a: Via; b: Via }): Shape => ({ pts: [e.a.position, e.b.position], closed: false, r: JUMPER_WIRE_R });
+
+/** Перемычка цепи между двумя точками: два отверстия и провод сверху. Дорожки к ним ведутся отдельно. */
+export function addJumper(doc: ProjectDoc, a: Point, b: Point, netId: string): { doc: ProjectDoc; id: string | null; viaA: string | null; viaB: string | null; error: string | null } {
+  const fail = (error: string) => ({ doc, id: null, viaA: null, viaB: null, error });
+  if (!doc.pcb.board) return fail('Плата не создана');
+  if (!doc.schematic.nets.some((n) => n.id === netId)) return fail('Цепь не найдена в схеме');
+  if (Math.hypot(a.x - b.x, a.y - b.y) < JUMPER_MIN_MM - 1e-6) return fail(`Перемычка короче ${fmtLen(JUMPER_MIN_MM)} — провод не согнуть`);
+  const h = jumperHole(doc);
+  const va: Via = { id: newId(), netId, position: { x: a.x, y: a.y }, ...h };
+  const vb: Via = { id: newId(), netId, position: { x: b.x, y: b.y }, ...h };
+  const j: Jumper = { id: newId(), netId, aViaId: va.id, bViaId: vb.id };
+  return { doc: touch({ ...doc, pcb: { ...doc.pcb, vias: [...doc.pcb.vias, va, vb], jumpers: [...doc.pcb.jumpers, j] } }), id: j.id, viaA: va.id, viaB: vb.id, error: null };
+}
+
+/** Удаление перемычки вместе с её отверстиями и дорожками к ним. */
+export function deleteJumper(doc: ProjectDoc, id: string): { doc: ProjectDoc; tracks: number } {
+  const j = doc.pcb.jumpers.find((x) => x.id === id);
+  if (!j) return { doc, tracks: 0 };
+  const ends = new Set([j.aViaId, j.bViaId]);
+  const at = (e: TrackEnd | null) => e?.kind === 'via' && ends.has(e.viaId);
+  const tracks = doc.pcb.tracks.filter((t) => !at(t.from) && !at(t.to));
+  return {
+    doc: touch({ ...doc, pcb: { ...doc.pcb, jumpers: doc.pcb.jumpers.filter((x) => x.id !== id), vias: doc.pcb.vias.filter((v) => !ends.has(v.id)), tracks } }),
+    tracks: doc.pcb.tracks.length - tracks.length,
+  };
+}
 export const endKey = (e: TrackEnd) => (e.kind === 'pad' ? padKey(e) : `via:${e.viaId}`);
 const sameEnd = (a: TrackEnd | null, b: TrackEnd | null) => !!a && !!b && endKey(a) === endKey(b);
 
@@ -125,7 +185,9 @@ const sameEnd = (a: TrackEnd | null, b: TrackEnd | null) => !!a && !!b && endKey
 export function endInfo(doc: ProjectDoc, e: TrackEnd): { pos: Point; netId: string | null; layers: Layer[]; label: string } | null {
   if (e.kind === 'via') {
     const v = doc.pcb.vias.find((x) => x.id === e.viaId);
-    return v ? { pos: v.position, netId: v.netId, layers: ['top', 'bottom'], label: 'переходное отверстие' } : null;
+    if (!v) return null;
+    const j = jumperOfVia(doc, v.id);
+    return { pos: v.position, netId: v.netId, layers: viaLayers(doc), label: j ? `перемычка ${jumperName(doc, j)}` : 'переходное отверстие' };
   }
   const p = findPad(doc, e);
   return p ? { pos: p.pos, netId: p.netId, layers: p.layers, label: `${p.refDes}.${p.ref.pad}` } : null;
@@ -296,7 +358,7 @@ export function setBoard(doc: ProjectDoc, patch: Partial<Omit<Board, 'id' | 'rul
   if (r.viaDrillMm >= r.viaDiameterMm) return { doc, error: 'Диаметр площадки переходного отверстия должен быть больше сверла' };
   if (r.trackMm < r.minTrackMm) return { doc, error: 'Ширина новой дорожки меньше минимальной' };
   if (next.layers === 1 && cur.layers === 2) {
-    const top = doc.pcb.tracks.filter((t) => t.layer === 'top').length, vias = doc.pcb.vias.length;
+    const top = doc.pcb.tracks.filter((t) => t.layer === 'top').length, vias = doc.pcb.vias.filter((v) => !jumperOfVia(doc, v.id)).length;
     if (top || vias) return { doc, error: `Нельзя сделать плату односторонней: на верхнем слое ${top} дорожек, переходных отверстий ${vias}. Удалите их или перенесите разводку.` };
   }
   if (doc.pcb.board && JSON.stringify(next) === JSON.stringify(doc.pcb.board)) return { doc, error: null };
@@ -418,6 +480,7 @@ export function syncFromSchematic(doc: ProjectDoc): { doc: ProjectDoc; report: S
   }
   const netIds = new Set(d.schematic.nets.map((n) => n.id));
   for (const v of d.pcb.vias) {
+    if (jumperOfVia(d, v.id)) continue;
     const used = d.pcb.tracks.filter((t) => (t.from?.kind === 'via' && t.from.viaId === v.id) || (t.to?.kind === 'via' && t.to.viaId === v.id));
     if (!netIds.has(v.netId)) report.problems.push(`Переходное отверстие (${fmtLen(v.position.x)}; ${fmtLen(v.position.y)}): его цепи больше нет в схеме`);
     else if (used.length === 0) report.problems.push(`Переходное отверстие (${fmtLen(v.position.x)}; ${fmtLen(v.position.y)}) ни с чем не соединено`);
@@ -539,14 +602,33 @@ export function addRoute(doc: ProjectDoc, r: { from: TrackEnd; to: TrackEnd; wid
   if (r.legs.length !== r.vias.length + 1) return { doc, error: 'Неверная трасса' };
   const a = endInfo(doc, r.from);
   if (!a?.netId) return { doc, error: 'Начало дорожки не подключено к цепи' };
+  // На односторонней плате участок «верх» — проволочная перемычка: прямая между двумя отверстиями.
+  const oneSide = doc.pcb.board?.layers === 1;
+  if (oneSide) {
+    for (const [i, leg] of r.legs.entries()) {
+      if (leg.layer !== 'top') continue;
+      if (i === 0 || i === r.legs.length - 1) return { doc, error: 'Перемычка начинается и кончается своими отверстиями: сначала дорожка от площадки, потом J — перемычка' };
+      if (leg.bends.length) return { doc, error: 'Перемычка — прямой провод: без изгибов' };
+      if (r.legs[i - 1]!.layer === 'top') return { doc, error: 'Между перемычками нужна дорожка' };
+    }
+  }
   let d = doc;
   let start = r.from;
+  let jumperEnd: string | null = null;
   for (let i = 0; i < r.legs.length; i++) {
+    if (oneSide && r.legs[i]!.layer === 'top') { start = { kind: 'via', viaId: jumperEnd! }; continue; }
     let end: TrackEnd = r.to;
     if (i < r.vias.length) {
-      const v = addVia(d, r.vias[i]!, a.netId);
-      if (v.error) return { doc, error: v.error };
-      d = v.doc; end = { kind: 'via', viaId: v.id! };
+      if (oneSide) {
+        if (r.legs[i + 1]?.layer !== 'top') return { doc, error: 'На односторонней плате переходных отверстий нет — только перемычки' };
+        const j = addJumper(d, { x: snapMm(r.vias[i]!.x), y: snapMm(r.vias[i]!.y) }, { x: snapMm(r.vias[i + 1]!.x), y: snapMm(r.vias[i + 1]!.y) }, a.netId);
+        if (j.error) return { doc, error: j.error };
+        d = j.doc; end = { kind: 'via', viaId: j.viaA! }; jumperEnd = j.viaB;
+      } else {
+        const v = addVia(d, r.vias[i]!, a.netId);
+        if (v.error) return { doc, error: v.error };
+        d = v.doc; end = { kind: 'via', viaId: v.id! };
+      }
     }
     const t = addTrack(d, { from: start, to: end, layer: r.legs[i]!.layer, widthMm: r.widthMm, bends: r.legs[i]!.bends });
     if (t.error) return { doc, error: t.error };
@@ -563,6 +645,8 @@ export function deleteTrack(doc: ProjectDoc, id: string): ProjectDoc {
 /** Удаление перехода вместе с дорожками, которые к нему подходят (их число возвращается). */
 export function deleteVia(doc: ProjectDoc, id: string): { doc: ProjectDoc; tracks: number } {
   if (!doc.pcb.vias.some((v) => v.id === id)) return { doc, tracks: 0 };
+  const j = jumperOfVia(doc, id);
+  if (j) return deleteJumper(doc, j.id);
   const at = (e: TrackEnd | null) => e?.kind === 'via' && e.viaId === id;
   const tracks = doc.pcb.tracks.filter((t) => !at(t.from) && !at(t.to));
   return { doc: touch({ ...doc, pcb: { ...doc.pcb, vias: doc.pcb.vias.filter((v) => v.id !== id), tracks } }), tracks: doc.pcb.tracks.length - tracks.length };
@@ -583,6 +667,13 @@ export function copperGroups(doc: ProjectDoc, withPours = true): (key: string) =
   for (const t of doc.pcb.tracks) {
     if (!t.from || !t.to || trackProblem(doc, t)) continue;
     const a = find(endKey(t.from)), b = find(endKey(t.to));
+    if (a !== b) parent.set(a, b);
+  }
+  // Перемычка соединяет свои отверстия (если оба есть и цепь совпадает).
+  for (const j of doc.pcb.jumpers) {
+    const e = jumperEnds(doc, j);
+    if (!e || e.a.netId !== j.netId || e.b.netId !== j.netId) continue;
+    const a = find(`via:${j.aViaId}`), b = find(`via:${j.bViaId}`);
     if (a !== b) parent.set(a, b);
   }
   // Медная заливка соединяет всё, что касается одного её участка.
@@ -664,10 +755,13 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
     }
     items.push({ kind: 'pad', id: p.ref.placementId, label: `площадка ${p.refDes}.${p.ref.pad}`, netId: p.netId, layers, shape: padShape(p), at: p.pos });
   }
+  const viaL = viaLayers(doc);
   for (const v of doc.pcb.vias) {
-    if (board.layers === 1) out.push({ severity: 'error', code: 'layer', message: 'Переходное отверстие на односторонней плате', at: v.position, ids: [v.id] });
-    items.push({ kind: 'via', id: v.id, label: 'переходное отверстие', netId: v.netId, layers: ['top', 'bottom'], shape: viaShape(v), at: v.position });
+    const j = jumperOfVia(doc, v.id);
+    if (board.layers === 1 && !j) out.push({ severity: 'error', code: 'layer', message: 'Переходное отверстие на односторонней плате', at: v.position, ids: [v.id] });
+    items.push({ kind: 'via', id: v.id, label: j ? `отверстие перемычки ${jumperName(doc, j)}` : 'переходное отверстие', netId: v.netId, layers: viaL, shape: viaShape(v), at: v.position });
   }
+  out.push(...jumperIssues(doc));
   for (const t of doc.pcb.tracks) {
     const pr = trackProblem(doc, t);
     if (pr) out.push({ severity: 'error', code: pr.includes('слое') || pr.includes('односторонняя') ? 'layer' : 'net', message: pr, at: t.points[0] ?? null, ids: [t.id] });
@@ -766,6 +860,58 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * Проверки перемычек: концы на месте и той же цепи, длина, провода не касаются друг друга и выводов
+ * других цепей (провод голый и лежит со стороны деталей), концы — не под корпусами.
+ */
+function jumperIssues(doc: ProjectDoc): DrcIssue[] {
+  const out: DrcIssue[] = [];
+  const nets = new Set(doc.schematic.nets.map((n) => n.id));
+  const wires: Array<{ j: Jumper; name: string; shape: Shape }> = [];
+  for (const j of doc.pcb.jumpers) {
+    const name = jumperName(doc, j);
+    const e = jumperEnds(doc, j);
+    if (!e) { out.push({ severity: 'error', code: 'net', message: `Перемычка ${name}: нет отверстия на конце — удалите её`, at: null, ids: [j.id] }); continue; }
+    const at = e.a.position;
+    if (!nets.has(j.netId)) out.push({ severity: 'error', code: 'net', message: `Перемычка ${name}: её цепи больше нет в схеме`, at, ids: [j.id] });
+    else if (e.a.netId !== j.netId || e.b.netId !== j.netId) out.push({ severity: 'error', code: 'net', message: `Перемычка ${name}: отверстия другой цепи`, at, ids: [j.id] });
+    if (jumperLength(e) < JUMPER_MIN_MM - 1e-6) out.push({ severity: 'error', code: 'hole', message: `Перемычка ${name} короче ${fmtLen(JUMPER_MIN_MM)} — провод не согнуть`, at, ids: [j.id] });
+    wires.push({ j, name, shape: jumperShape(e) });
+  }
+  const GAP = JUMPER_GAP;
+  for (let i = 0; i < wires.length; i++) for (let k = i + 1; k < wires.length; k++) {
+    const a = wires[i]!, b = wires[k]!;
+    if (a.j.netId === b.j.netId) continue;
+    if (shapeGap(a.shape, b.shape) < GAP) out.push({ severity: 'error', code: 'short', message: `Перемычки ${a.name} и ${b.name} пересекаются — голые провода разных цепей замкнут`, at: a.shape.pts[0]!, ids: [a.j.id, b.j.id] });
+  }
+  const pads = allPads(doc);
+  for (const w of wires) {
+    for (const p of pads) {
+      if (!p.drill || p.netId === w.j.netId) continue;
+      // Вывод детали торчит из отверстия со стороны деталей: провод не должен его касаться.
+      if (shapeGap(w.shape, { pts: [p.pos], closed: false, r: p.drill / 2 }) < GAP) {
+        out.push({ severity: 'error', code: 'short', message: `Перемычка ${w.name} проходит над выводом ${p.refDes}.${p.ref.pad} (${netName(doc, p.netId)}) — коснётся его`, at: p.pos, ids: [w.j.id, p.ref.placementId] });
+      }
+    }
+    if (doc.pcb.board?.layers === 2) {
+      const touches = doc.pcb.tracks.some((t) => t.layer === 'top' && t.netId !== w.j.netId && trackShapes(t).some((s) => shapeGap(w.shape, s) < GAP))
+        || pads.some((p) => p.layers.includes('top') && p.netId !== w.j.netId && shapeGap(w.shape, padShape(p)) < GAP);
+      if (touches) out.push({ severity: 'warning', code: 'clearance', message: `Перемычка ${w.name} лежит на меди верхнего слоя другой цепи — нужен провод в изоляции`, at: w.shape.pts[0]!, ids: [w.j.id] });
+    }
+    for (const pl of doc.pcb.placements) {
+      if (pl.side !== 'top') continue;
+      const b = bodyRect(doc, pl);
+      if (!b) continue;
+      for (const q of w.shape.pts) if (q.x > b.x + 0.2 && q.x < b.x + b.w - 0.2 && q.y > b.y + 0.2 && q.y < b.y + b.h - 0.2) {
+        const ref = doc.schematic.instances.find((i) => i.id === pl.instanceId)?.refDes ?? '?';
+        out.push({ severity: 'warning', code: 'overlap', message: `Перемычка ${w.name}: отверстие под корпусом ${ref} — запаять её можно только до установки детали`, at: q, ids: [w.j.id, pl.id] });
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 /** Всего неразведённых соединений (для краткой сводки). */
 export const unroutedCount = (doc: ProjectDoc) => ratsnest(doc).length;

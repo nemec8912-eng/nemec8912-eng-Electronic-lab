@@ -83,6 +83,7 @@ export function makeRichDoc(name = 'Делитель'): ProjectDoc {
       ],
       tracks: [{ id: newId(), netId: netMid, layer: 'bottom', widthMm: 0.8, from: { kind: 'pad', placementId: pl1, pad: 'B' }, to: { kind: 'pad', placementId: pl2, pad: '1' }, points: [{ x: 20.16, y: 10 }, { x: 30, y: 9.05 }] }],
       vias: [],
+      jumpers: [],
       pours: [], cnc: structuredClone(DEFAULT_CNC),
     },
     tests: [{

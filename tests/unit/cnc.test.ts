@@ -66,8 +66,8 @@ describe('ЧПУ (GRBL)', () => {
   test('светодиод: изоляция, сверловка, обрезка — без ошибок, медь не задета, цепи разделены', async () => {
     const doc = await load('пример-светодиод.elab');
     assert.equal(doc.schemaVersion, CURRENT_SCHEMA_VERSION);
-    assert.deepEqual(doc.pcb.cnc, DEFAULT_CNC, 'миграция v8 → v9 ставит настройки по умолчанию');
-    assert.deepEqual(doc.checks, { items: [], noOverload: true });
+    assert.deepEqual(doc.pcb.cnc, DEFAULT_CNC, 'настройки станка по умолчанию');
+    assert.equal(doc.checks.items.length, 1, 'в примере есть условие работоспособности');
     const plan = cncPlan(doc);
     assert.deepEqual(plan.issues.filter((i) => i.severity === 'error'), []);
     assert.deepEqual(plan.files.map((f) => f.name), ['1_isolation_bottom.nc', '2_drill_0.8mm.nc', '3_drill_1mm.nc', '4_cutout.nc']);

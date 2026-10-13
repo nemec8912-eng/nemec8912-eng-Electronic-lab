@@ -3,12 +3,14 @@
  * Полотно — вид со стороны деталей; детали перетаскиваются, R — поворот, F — на другую сторону.
  * Дорожка: щелчок по площадке → щелчки по полю ставят изгибы → щелчок по площадке той же цепи.
  * На двухсторонней плате V (или кнопка «Переход») ставит переходное отверстие и меняет слой.
+ * На односторонней J (или кнопка «Перемычка») ставит начало проволочной перемычки, следующий щелчок — её
+ * конец, дальше снова дорожка.
  * Backspace — убрать последний изгиб, Esc — отмена. Настройки, DRC и вывод — BoardSide.tsx.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from 'react';
 import type { Point, ProjectDoc, TrackEnd } from '../core/model';
 import {
-  addRoute, allPads, bodyRect, copperLayers, deleteTrack, deleteVia, drc, endInfo, flipPlacement, fmtLen, footprintBox, type Layer,
+  addRoute, allPads, bodyRect, boardVias, copperLayers, deleteTrack, deleteVia, drc, endInfo, flipPlacement, fmtLen, footprintBox, jumperEnds, jumperHole, jumperLength, jumperName, jumperOfVia, type Layer,
   movePlacement, netName, parseLen, ratsnest, rotatePlacement, rulesOf, snapMm, type DrcIssue,
 } from '../core/pcb';
 import { BoardSide } from './BoardSide';
@@ -109,6 +111,14 @@ export function BoardPanel(p: Props) {
     p.onEdit(route.vias.length ? 'Дорожка с переходом' : 'Дорожка', (d) => addRoute(d, spec).doc);
     setRoute(null);
   };
+  /** Перемычка (односторонняя плата): J — начало у курсора; следующий щелчок по полю — конец. */
+  const placeJumper = useCallback(() => {
+    if (!route || two || !board) return;
+    if (route.legs[route.legs.length - 1]!.layer === 'top') return;
+    const at = cursor ? snap(cursor) : lastPoint(doc, route);
+    setRoute({ ...route, vias: [...route.vias, at], legs: [...route.legs, { layer: 'top', bends: [] }] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, two, cursor, doc, board]);
   const placeVia = useCallback(() => {
     if (!route || !two) return;
     const at = cursor ? snap(cursor) : lastPoint(doc, route);
@@ -121,7 +131,7 @@ export function BoardPanel(p: Props) {
     if (!route) return;
     const leg = route.legs[route.legs.length - 1]!;
     if (leg.bends.length) setRoute({ ...route, legs: [...route.legs.slice(0, -1), { ...leg, bends: leg.bends.slice(0, -1) }] });
-    else if (route.vias.length) { setRoute({ ...route, vias: route.vias.slice(0, -1), legs: route.legs.slice(0, -1) }); setLayer(route.legs[route.legs.length - 2]!.layer); }
+    else if (route.vias.length) { setRoute({ ...route, vias: route.vias.slice(0, -1), legs: route.legs.slice(0, -1) }); if (two) setLayer(route.legs[route.legs.length - 2]!.layer); }
     else setRoute(null);
   }, [route]);
 
@@ -134,6 +144,7 @@ export function BoardPanel(p: Props) {
         if (e.key === 'Escape') setRoute(null);
         else if (e.key === 'Backspace') undoPoint();
         else if (e.code === 'KeyV') placeVia();
+        else if (e.code === 'KeyJ') placeJumper();
         else return;
         e.preventDefault(); e.stopImmediatePropagation();
         return;
@@ -142,7 +153,7 @@ export function BoardPanel(p: Props) {
       const sel = selection;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (sel.kind === 'track') p.onEdit('Удаление дорожки', (d) => deleteTrack(d, sel.id));
-        else if (sel.kind === 'via') p.onEdit('Удаление переходного отверстия', (d) => deleteVia(d, sel.id).doc);
+        else if (sel.kind === 'via') p.onEdit(jumperOfVia(doc, sel.id) ? 'Удаление перемычки' : 'Удаление переходного отверстия', (d) => deleteVia(d, sel.id).doc);
         else return;
         p.onSelect(null);
       } else if (e.code === 'KeyR' && sel.kind === 'placement') p.onEdit('Поворот детали на плате', (d) => rotatePlacement(d, sel.id));
@@ -153,7 +164,7 @@ export function BoardPanel(p: Props) {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [route, selection, p, undoPoint, placeVia]);
+  }, [route, selection, p, undoPoint, placeVia, placeJumper]);
 
   const endFromTarget = (t: Element): TrackEnd | null => {
     const padEl = t.closest('[data-pad]');
@@ -172,7 +183,12 @@ export function BoardPanel(p: Props) {
     setError(null);
     const end = endFromTarget(t);
     if (route) {
-      if (end) finishRoute(end);
+      const jumping = !two && route.legs[route.legs.length - 1]!.layer === 'top';
+      if (jumping) {
+        // Конец перемычки — точка на поле; дальше снова дорожка по меди
+        if (end) { setError('Перемычка кончается своим отверстием: щёлкните по свободному месту, затем ведите дорожку к площадке'); return; }
+        setRoute({ ...route, vias: [...route.vias, snap(m)], legs: [...route.legs, { layer: 'bottom', bends: [] }] });
+      } else if (end) finishRoute(end);
       else {
         const leg = route.legs[route.legs.length - 1]!;
         setRoute({ ...route, legs: [...route.legs.slice(0, -1), { ...leg, bends: [...leg.bends, snap(m)] }] });
@@ -223,6 +239,7 @@ export function BoardPanel(p: Props) {
     if (id) {
       if (doc.pcb.tracks.some((t) => t.id === id)) p.onSelect({ kind: 'track', id });
       else if (doc.pcb.vias.some((v) => v.id === id)) p.onSelect({ kind: 'via', id });
+      else if (doc.pcb.jumpers.some((j) => j.id === id)) p.onSelect({ kind: 'via', id: doc.pcb.jumpers.find((j) => j.id === id)!.aViaId });
       else if (doc.pcb.placements.some((x) => x.id === id)) p.onSelect({ kind: 'placement', id });
     }
   };
@@ -289,7 +306,7 @@ export function BoardPanel(p: Props) {
                     const w = pd.w + 2 * pr.clearanceMm, h = pd.h + 2 * pr.clearanceMm;
                     return <rect key={`${pd.ref.placementId}#${pd.ref.pad}`} x={pd.pos.x - w / 2} y={pd.pos.y - h / 2} width={w} height={h} rx={pd.shape === 'rect' ? 0 : Math.min(w, h) / 2} fill="#000" />;
                   })}
-                  {two && doc.pcb.vias.filter((v) => v.netId !== pr.netId).map((v) => <circle key={v.id} cx={v.position.x} cy={v.position.y} r={v.diameterMm / 2 + pr.clearanceMm} fill="#000" />)}
+                  {boardVias(doc).filter((v) => v.netId !== pr.netId).map((v) => <circle key={v.id} cx={v.position.x} cy={v.position.y} r={v.diameterMm / 2 + pr.clearanceMm} fill="#000" />)}
                 </mask>
                 <path d={outlineSvgPath(board)} mask={`url(#pour-${pr.id})`} className="pour-fill" />
               </g>
@@ -331,16 +348,28 @@ export function BoardPanel(p: Props) {
                 </g>
               );
             })}
+            {doc.pcb.jumpers.map((j) => {
+              const e = jumperEnds(doc, j);
+              if (!e) return null;
+              const A = e.a.position, B = e.b.position;
+              const sel = selection?.kind === 'via' && (selection.id === j.aViaId || selection.id === j.bViaId);
+              return (
+                <g key={j.id} data-jumper-id={j.id} className={`jumper ${sel ? 'selected' : ''} ${routeNet === j.netId ? 'same-net' : ''}`} pointerEvents="none">
+                  <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} className="jumper-wire" />
+                  <text x={(A.x + B.x) / 2} y={(A.y + B.y) / 2 - 0.6} className="pl-label jumper-label" textAnchor="middle">{jumperName(doc, j)}</text>
+                </g>
+              );
+            })}
             {doc.pcb.vias.map((v) => (
-              <g key={v.id} data-via-id={v.id} className={`via ${selection?.kind === 'via' && selection.id === v.id ? 'selected' : ''} ${routeNet === v.netId ? 'same-net' : ''}`}>
-                <title>{`Переходное отверстие — ${netName(doc, v.netId)}`}</title>
+              <g key={v.id} data-via-id={v.id} className={`via ${jumperOfVia(doc, v.id) ? 'jumper-end' : ''} ${selection?.kind === 'via' && selection.id === v.id ? 'selected' : ''} ${routeNet === v.netId ? 'same-net' : ''}`}>
+                <title>{(() => { const j = jumperOfVia(doc, v.id); const e = j && jumperEnds(doc, j); return j ? `Перемычка ${jumperName(doc, j)}${e ? `, ${fmtLen(jumperLength(e), units)}` : ''} — ${netName(doc, v.netId)}` : `Переходное отверстие — ${netName(doc, v.netId)}`; })()}</title>
                 <circle cx={v.position.x} cy={v.position.y} r={v.diameterMm / 2} className="via-cu" />
                 <circle cx={v.position.x} cy={v.position.y} r={v.drillMm / 2} className="pad-hole" />
               </g>
             ))}
-            {routePts.map((s, i) => s.pts.length > 1 && <polyline key={i} points={s.pts.map((q) => `${q.x},${q.y}`).join(' ')} strokeWidth={width} className={`track-rubber ${s.layer}`} />)}
-            {route?.vias.map((v, i) => <circle key={i} cx={v.x} cy={v.y} r={rules.viaDiameterMm / 2} className="via-ghost" />)}
-            {tail && cursorSnap && <line x1={tail.x} y1={tail.y} x2={cursorSnap.x} y2={cursorSnap.y} strokeWidth={width} className={`track-rubber ${activeLayer}`} />}
+            {routePts.map((s, i) => s.pts.length > 1 && <polyline key={i} points={s.pts.map((q) => `${q.x},${q.y}`).join(' ')} strokeWidth={!two && s.layer === 'top' ? 0.6 : width} className={!two && s.layer === 'top' ? 'jumper-rubber' : `track-rubber ${s.layer}`} />)}
+            {route?.vias.map((v, i) => <circle key={i} cx={v.x} cy={v.y} r={(two ? rules.viaDiameterMm : jumperHole(doc).diameterMm) / 2} className="via-ghost" />)}
+            {tail && cursorSnap && <line x1={tail.x} y1={tail.y} x2={cursorSnap.x} y2={cursorSnap.y} strokeWidth={!two && activeLayer === 'top' ? 0.6 : width} className={!two && activeLayer === 'top' ? 'jumper-rubber' : `track-rubber ${activeLayer}`} />}
             {focus?.at && <circle cx={focus.at.x} cy={focus.at.y} r={Math.max(1.2, 12 / view.scale)} className="drc-mark" />}
             {cnc && (
               <g className="cnc-preview" data-testid="cnc-preview" pointerEvents="none">
@@ -357,8 +386,11 @@ export function BoardPanel(p: Props) {
         </div>
         {route && (
           <div className="canvas-status" data-testid="route-status">
-            Дорожка {netName(doc, route.netId)}, {activeLayer === 'top' ? 'верхний слой' : 'нижний слой'}: щелчок по полю — изгиб, по площадке той же цепи — конец.
-            {two && <> <button className="btn small" onClick={placeVia}>Переход (V)</button></>} Backspace — назад, Esc — отмена
+            {!two && activeLayer === 'top'
+              ? <>Перемычка {netName(doc, route.netId)}: щёлкните, где поставить её второе отверстие (провод — прямой, со стороны деталей).</>
+              : <>Дорожка {netName(doc, route.netId)}, {activeLayer === 'top' ? 'верхний слой' : 'нижний слой'}: щелчок по полю — изгиб, по площадке той же цепи — конец.</>}
+            {two && <> <button className="btn small" onClick={placeVia}>Переход (V)</button></>}
+            {!two && activeLayer !== 'top' && <> <button className="btn small" onClick={placeJumper}>Перемычка (J)</button></>} Backspace — назад, Esc — отмена
           </div>
         )}
         {error && <div className="canvas-error" role="alert">{error}</div>}

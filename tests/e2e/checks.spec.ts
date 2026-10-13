@@ -16,6 +16,10 @@ test('проверка работы: LM317 — «работает», завыш�
   const { page } = await launch({ dataDir: temp('e2e-checks-') });
   await page.getByRole('button', { name: 'Открыть пример Пример — стабилизатор 5 В на LM317' }).click();
   await page.getByRole('tab', { name: 'Проверка работы' }).click();
+  // В примере уже есть условие — убираем его, проверяем своё
+  await expect(page.getByTestId('check-item')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Удалить условие' }).click();
+  await expect(page.getByTestId('check-item')).toHaveCount(0);
   await page.getByRole('button', { name: 'Добавить условие' }).click();
   const item = page.getByTestId('check-item').first();
   await item.getByRole('textbox', { name: 'Название условия' }).fill('Выход 5 В');

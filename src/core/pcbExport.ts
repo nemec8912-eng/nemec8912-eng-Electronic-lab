@@ -9,7 +9,7 @@
  */
 import type { ProjectDoc } from './model';
 import { outlineSvgPath } from './outline';
-import { allPads, bodyRect, DEFAULT_BOARD, newBoard, type Layer, padsOf } from './pcb';
+import { allPads, bodyRect, boardVias, DEFAULT_BOARD, fmtLen, jumperEnds, jumperLength, jumperName, newBoard, type Layer, padsOf, viaLayers } from './pcb';
 
 export interface ArtworkOptions {
   layer: Layer;
@@ -62,8 +62,8 @@ function copperMarkup(doc: ProjectDoc, layer: Layer, color: string, grow = 0, sk
       out.push(`<rect${attr} x="${f(x - w / 2)}" y="${f(y - h / 2)}" width="${f(w)}" height="${f(h)}" rx="${f(r)}" ry="${f(r)}" fill="${color}"/>`);
     } else out.push(`<circle${attr} cx="${f(x)}" cy="${f(y)}" r="${f(Math.max(w, h) / 2)}" fill="${color}"/>`);
   }
-  if (board.layers === 2) {
-    for (const v of doc.pcb.vias) {
+  if (viaLayers(doc).includes(layer)) {
+    for (const v of boardVias(doc)) {
       if (!keep(v.netId)) continue;
       out.push(`<circle${tag ? ` data-via="${v.id}"` : ''} cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(v.diameterMm / 2 + grow)}" fill="${color}"/>`);
     }
@@ -88,7 +88,7 @@ export function artworkSvg(doc: ProjectDoc, opts: ArtworkOptions): Artwork {
   const holes: string[] = [];
   if (opts.drillMarks !== false && doc.pcb.board) {
     for (const p of allPads(doc)) if (p.drill && p.layers.includes(opts.layer)) holes.push(`<circle cx="${f(p.pos.x)}" cy="${f(p.pos.y)}" r="${f(Math.min(p.drill / 2, 0.4))}" fill="#fff"/>`);
-    if (board.layers === 2) for (const v of doc.pcb.vias) holes.push(`<circle cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(Math.min(v.drillMm / 2, 0.3))}" fill="#fff"/>`);
+    for (const v of boardVias(doc)) if (viaLayers(doc).includes(opts.layer)) holes.push(`<circle cx="${f(v.position.x)}" cy="${f(v.position.y)}" r="${f(Math.min(v.drillMm / 2, 0.3))}" fill="#fff"/>`);
   }
   const content = parts.join('') + holes.join('');
   const g = opts.mirror ? `<g transform="translate(${f(board.widthMm)} 0) scale(-1 1)" data-mirrored="1">${content}</g>` : `<g>${content}</g>`;
@@ -112,5 +112,15 @@ export function assemblySvg(doc: ProjectDoc): Artwork {
     const at = b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 + 0.9 } : pl.position;
     parts.push(`<text x="${f(at.x)}" y="${f(at.y)}" font-size="1.8" text-anchor="middle" font-family="Arial, sans-serif">${esc(inst?.refDes ?? '?')}${pl.side === 'bottom' ? ' (снизу)' : ''}</text>`);
   }
-  return sheet(doc, parts.join(''), 'Сборочный чертёж · вид со стороны деталей · пунктир — детали снизу · масштаб 1:1', `${doc.name} — сборочный чертёж`);
+  for (const j of doc.pcb.jumpers) {
+    const e = jumperEnds(doc, j);
+    if (!e) continue;
+    const A = e.a.position, B = e.b.position;
+    parts.push(`<line data-jumper="${j.id}" x1="${f(A.x)}" y1="${f(A.y)}" x2="${f(B.x)}" y2="${f(B.y)}" stroke="#000" stroke-width="0.5" stroke-linecap="round"/>`);
+    for (const q of [A, B]) parts.push(`<circle cx="${f(q.x)}" cy="${f(q.y)}" r="${f(e.a.diameterMm / 2)}" fill="#fff" stroke="#000" stroke-width="0.15"/>`);
+    const vert = Math.abs(B.y - A.y) > Math.abs(B.x - A.x);
+    const mx = (A.x + B.x) / 2 + (vert ? 1.2 : 0), my = (A.y + B.y) / 2 + (vert ? 0.6 : -0.8);
+    parts.push(`<text x="${f(mx)}" y="${f(my)}" font-size="1.5" text-anchor="${vert ? 'start' : 'middle'}" font-family="Arial, sans-serif">${esc(jumperName(doc, j))} ${esc(fmtLen(jumperLength(e)))}</text>`);
+  }
+  return sheet(doc, parts.join(''), doc.pcb.jumpers.length ? 'Сборочный чертёж · вид со стороны деталей · пунктир — детали снизу · П — проволочные перемычки · масштаб 1:1' : 'Сборочный чертёж · вид со стороны деталей · пунктир — детали снизу · масштаб 1:1', `${doc.name} — сборочный чертёж`);
 }

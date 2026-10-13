@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { gerberFiles } from '../core/gerber';
 import type { DesignRules, ProjectDoc } from '../core/model';
 import {
-  deleteTrack, deleteVia, flipPlacement, fmtLen, LAYER_NAME, netName, parseLen, rotatePlacement, setBoard, setOutline, setTrackWidth,
+  deleteTrack, deleteVia, flipPlacement, fmtLen, jumperEnds, jumperLength, jumperName, jumperOfVia, LAYER_NAME, netName, parseLen, rotatePlacement, setBoard, setOutline, setTrackWidth,
   syncFromSchematic, type DrcIssue, type Layer, type SyncReport,
 } from '../core/pcb';
 import { artworkSvg, assemblySvg, lutMirror, type Artwork } from '../core/pcbExport';
@@ -103,6 +103,8 @@ export function BoardSide(p: Props) {
   const sel = p.selection;
   const track = sel?.kind === 'track' ? doc.pcb.tracks.find((t) => t.id === sel.id) : undefined;
   const via = sel?.kind === 'via' ? doc.pcb.vias.find((v) => v.id === sel.id) : undefined;
+  const jumper = via ? jumperOfVia(doc, via.id) : undefined;
+  const jumperE = jumper ? jumperEnds(doc, jumper) : null;
   const placement = sel?.kind === 'placement' ? doc.pcb.placements.find((x) => x.id === sel.id) : undefined;
   const plRef = placement ? doc.schematic.instances.find((i) => i.id === placement.instanceId)?.refDes ?? 'удалена' : '';
 
@@ -177,7 +179,14 @@ export function BoardSide(p: Props) {
             <LenField label="Ширина выделенной дорожки" mm={track.widthMm} units={units} onCommit={(v) => p.onEdit('Ширина дорожки', (d) => setTrackWidth(d, track.id, v))} />
             <button className="btn danger" onClick={() => { p.onEdit('Удаление дорожки', (d) => deleteTrack(d, track.id)); p.onSelect(null); }}>Удалить дорожку</button>
           </>}
-          {via && <>
+          {via && jumper && <>
+            <p>Перемычка {jumperName(doc, jumper)}: {netName(doc, via.netId)}{jumperE ? `, длина ${fmtLen(jumperLength(jumperE), units)}` : ''}, отверстия {fmtLen(via.drillMm, units)}, площадки {fmtLen(via.diameterMm, units)}. Провод — со стороны деталей.</p>
+            <div className="row">
+              <button className="btn" onClick={() => p.onRouteFromVia(via.id)}>Вести дорожку от этого конца</button>
+              <button className="btn danger" onClick={() => { p.onEdit('Удаление перемычки', (d) => deleteVia(d, via.id).doc); p.onSelect(null); }}>Удалить перемычку</button>
+            </div>
+          </>}
+          {via && !jumper && <>
             <p>Переходное отверстие: {netName(doc, via.netId)}, сверло {fmtLen(via.drillMm, units)}, площадка {fmtLen(via.diameterMm, units)}</p>
             <div className="row">
               <button className="btn" onClick={() => p.onRouteFromVia(via.id)}>Вести дорожку от перехода</button>
@@ -237,7 +246,12 @@ export function BoardSide(p: Props) {
 /** Авторасстановка и автотрассировка: одна правка каждая, отменяется Ctrl+Z. */
 function AutoPanel({ doc, onEdit, confirm }: { doc: ProjectDoc; onEdit(label: string, fn: (d: ProjectDoc) => ProjectDoc): void; confirm(title: string, message: string, ok: string): Promise<boolean> }) {
   const [busy, setBusy] = useState<'place' | 'route' | null>(null);
-  const [msg, setMsg] = useState<{ text: string; ok: boolean; revision: number } | null>(null);
+  // revision: ревизия документа, к которой относится сообщение (null — правка ещё не применилась:
+  // редактор ставит свою ревизию, её узнаём при следующей отрисовке).
+  const [msg, setMsg] = useState<{ text: string; ok: boolean; base: number; revision: number | null } | null>(null);
+  useEffect(() => {
+    if (msg && msg.revision === null && doc.revision !== msg.base) setMsg({ ...msg, revision: doc.revision });
+  }, [doc.revision, msg]);
   const missing = missingConnections(doc).length;
   const run = (kind: 'place' | 'route') => {
     setBusy(kind);
@@ -246,14 +260,14 @@ function AutoPanel({ doc, onEdit, confirm }: { doc: ProjectDoc; onEdit(label: st
         if (kind === 'place') {
           const r = autoplace(doc);
           if (r.placed) onEdit('Авторасстановка деталей', () => r.doc);
-          setMsg({ text: r.placed ? `Расставлено деталей: ${r.placed}.${r.notPlaced.length ? ` Не поместились: ${r.notPlaced.join(', ')} — увеличьте плату.` : ''} Отменить — Ctrl+Z.` : 'Нечего расставлять', ok: !r.notPlaced.length, revision: doc.revision + (r.placed ? 1 : 0) });
+          setMsg({ text: r.placed ? `Расставлено деталей: ${r.placed}.${r.notPlaced.length ? ` Не поместились: ${r.notPlaced.join(', ')} — увеличьте плату.` : ''} Отменить — Ctrl+Z.` : 'Нечего расставлять', ok: !r.notPlaced.length, base: doc.revision, revision: r.placed ? null : doc.revision });
         } else {
           const r = autoroute(doc);
           if (r.routed) onEdit('Автотрассировка', () => r.doc);
           setMsg({
             text: r.total === 0 ? 'Все соединения уже разведены.'
-              : `Разведено ${r.routed} из ${r.total}${r.vias ? `, переходов: ${r.vias}` : ''}.${r.failed.length ? ` Не удалось: ${r.failed.map((f) => `${f.from}–${f.to}`).join(', ')} — раздвиньте детали, увеличьте плату или сделайте её двухсторонней.` : ''}${r.routed ? ' Отменить — Ctrl+Z.' : ''}`,
-            ok: r.failed.length === 0, revision: doc.revision + (r.routed ? 1 : 0),
+              : `Разведено ${r.routed} из ${r.total}${r.vias ? `, переходов: ${r.vias}` : ''}${r.jumpers ? `, проволочных перемычек: ${r.jumpers} (П1… на сборочном чертеже)` : ''}.${r.failed.length ? ` Не удалось: ${r.failed.map((f) => `${f.from}–${f.to}`).join(', ')} — раздвиньте детали, увеличьте плату или сделайте её двухсторонней.` : ''}${r.routed ? ' Отменить — Ctrl+Z.' : ''}`,
+            ok: r.failed.length === 0, base: doc.revision, revision: r.routed ? null : doc.revision,
           });
         }
       } finally { setBusy(null); }
@@ -270,7 +284,7 @@ function AutoPanel({ doc, onEdit, confirm }: { doc: ProjectDoc; onEdit(label: st
         <button className="btn primary" disabled={busy !== null || missing === 0} onClick={() => run('route')}>{busy === 'route' ? 'Развожу…' : `Развести дорожки${missing ? ` (${missing})` : ''}`}</button>
       </div>
       {msg && msg.revision === doc.revision && <p className={`small ${msg.ok ? 'ok-text' : 'warning-text'}`} data-testid="auto-result">{msg.text}</p>}
-      <p className="muted small">Расстановка группирует связанные детали и тянет разъёмы к краю. Трассировка ведёт дорожки по правилам платы (ширина, зазор, край), уже проложенные дорожки не трогает.</p>
+      <p className="muted small">Расстановка группирует связанные детали и тянет разъёмы к краю. Трассировка ведёт дорожки по правилам платы (ширина, зазор, край), уже проложенные дорожки не трогает.{doc.pcb.board?.layers === 1 ? ' На односторонней плате, если дорожкой не пройти, ставит проволочные перемычки со стороны деталей (прямые, длиной кратной 2,54 мм).' : ''}</p>
     </section>
   );
 }

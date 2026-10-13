@@ -40,6 +40,7 @@ export function collectEntityIds(doc: ProjectDoc): Array<{ id: string; where: st
   add(doc.pcb.placements, 'pcb.placements');
   add(doc.pcb.tracks, 'pcb.tracks');
   add(doc.pcb.vias, 'pcb.vias');
+  add(doc.pcb.jumpers, 'pcb.jumpers');
   add(doc.pcb.pours, 'pcb.pours');
   add(doc.tests, 'tests');
   for (const t of doc.tests) { add(t.measurements, 'tests.measurements'); add(t.events, 'tests.events'); }
@@ -182,6 +183,15 @@ export function checkIntegrity(doc: ProjectDoc): IntegrityIssue[] {
   }
   const placements = new Map(doc.pcb.placements.map((p) => [p.id, p]));
   const vias = new Set(doc.pcb.vias.map((v) => v.id));
+  const jumperEnds = new Set<string>();
+  for (const j of doc.pcb.jumpers) {
+    for (const end of [j.aViaId, j.bViaId]) {
+      if (!vias.has(end)) dangling(j.id, 'aViaId/bViaId (отверстие перемычки)', end);
+      else if (jumperEnds.has(end)) issues.push({ code: 'duplicate-id', message: `Отверстие ${end} — конец двух перемычек`, ids: [j.id] });
+      jumperEnds.add(end);
+    }
+    if (j.aViaId === j.bViaId) issues.push({ code: 'duplicate-id', message: `Перемычка ${j.id}: оба конца — одно отверстие`, ids: [j.id] });
+  }
   for (const t of doc.pcb.tracks) {
     for (const end of [t.from, t.to]) {
       if (!end) continue;

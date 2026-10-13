@@ -12,13 +12,20 @@
  *  - если что-то не развелось, порядок меняется (неразведённые — первыми) и попытка повторяется;
  *    остаётся лучший результат. В конце DRC: дорожка, нарушившая зазор, убирается.
  * Существующие дорожки не трогаются. Заливка не считается препятствием: она обтекает новые дорожки.
+ *
+ * Перемычки (односторонняя плата): если дорожкой не пройти, соединение может «перепрыгнуть» проволочной
+ * перемычкой со стороны деталей — прямой по горизонтали или вертикали, длиной кратной 2,54 мм (до 25 мм).
+ * Провод не должен касаться выводов других цепей и других перемычек, отверстия — не под корпусами.
+ * Перемычка стоит дорого (её паять вручную), поэтому ставится, только когда без неё не обойтись или
+ * обход очень длинный.
  */
 import { distToShape, polyMask } from './field';
 import { logChange, touch } from './factory';
 import { newId } from './ids';
-import type { Point, ProjectDoc, Track, TrackEnd, Via } from './model';
+import type { Jumper, Point, ProjectDoc, Track, TrackEnd, Via } from './model';
 import {
-  allPads, boardPolygon, checkTrack, copperGroups, copperLayers, drc, netName, padKey, padShape, rulesOf, trackShapes, viaShape,
+  allPads, bodyRect, boardPolygon, boardVias, checkTrack, copperGroups, copperLayers, drc, jumperEnds, jumperHole, jumperShape, JUMPER_GAP, JUMPER_MIN_MM, JUMPER_WIRE_R,
+  netName, padKey, padShape, rulesOf, trackShapes, viaLayers, viaShape,
   type Layer, type PadInfo, type Shape,
 } from './pcb';
 
@@ -29,7 +36,14 @@ export interface AutorouteOptions {
   stepMm?: number;
   /** Число попыток с разным порядком соединений. */
   passes?: number;
+  /** Проволочные перемычки на односторонней плате (по умолчанию — да). */
+  jumpers?: boolean;
 }
+
+/** Самая длинная перемычка автотрассировки, мм. */
+export const JUMPER_MAX_MM = 25;
+/** «Цена» перемычки в шагах сетки: столько стоит обход, чтобы обойтись без неё. */
+const JUMPER_COST = 60;
 
 export interface AutorouteResult {
   doc: ProjectDoc;
@@ -37,6 +51,8 @@ export interface AutorouteResult {
   total: number;
   failed: Array<{ netId: string; net: string; from: string; to: string }>;
   vias: number;
+  /** Поставлено перемычек. */
+  jumpers: number;
   lengthMm: number;
 }
 
@@ -128,13 +144,15 @@ class Heap {
 /** Развести недостающие соединения. Одна правка документа (отменяется Ctrl+Z). */
 export function autoroute(doc0: ProjectDoc, opts: AutorouteOptions = {}): AutorouteResult {
   const board = doc0.pcb.board;
-  if (!board) return { doc: doc0, routed: 0, total: 0, failed: [], vias: 0, lengthMm: 0 };
+  if (!board) return { doc: doc0, routed: 0, total: 0, failed: [], vias: 0, jumpers: 0, lengthMm: 0 };
   const rules = rulesOf(doc0);
   const w = opts.widthMm ?? rules.trackMm;
   // Заливка ненадёжна как соединение (новые дорожки меняют её форму): сначала разводим всё дорожками,
   // потом убираем дорожки цепи заливки, без которых соединение через заливку сохраняется.
   const conns0 = missingConnections(doc0, false);
-  if (!conns0.length) return { doc: doc0, routed: 0, total: 0, failed: [], vias: 0, lengthMm: 0 };
+  // Сколько соединений не хватает на самом деле (с учётом заливки) — это и показывается пользователю.
+  const need = missingConnections(doc0, true).length;
+  if (!conns0.length || !need) return { doc: doc0, routed: 0, total: 0, failed: [], vias: 0, jumpers: 0, lengthMm: 0 };
   const passes = opts.passes ?? 3;
   const pourNets = new Set(doc0.pcb.pours.map((p) => p.netId));
   const label = (c: Conn) => `${c.a.refDes}.${c.a.ref.pad}|${c.b.refDes}.${c.b.ref.pad}`;
@@ -148,23 +166,30 @@ export function autoroute(doc0: ProjectDoc, opts: AutorouteOptions = {}): Autoro
     const pruned = prunePourTracks(r.doc, doc0);
     const still = missingConnections(pruned.doc, true);
     const failed = still.map((c) => ({ netId: c.netId, net: netName(doc0, c.netId), from: `${c.a.refDes}.${c.a.ref.pad}`, to: `${c.b.refDes}.${c.b.ref.pad}` }));
-    return { ...r, doc: pruned.doc, failed, routed: Math.max(0, r.total - failed.length), lengthMm: r.lengthMm - pruned.lengthMm };
+    return { ...r, doc: pruned.doc, failed, total: need, routed: Math.max(0, need - failed.length), lengthMm: r.lengthMm - pruned.lengthMm };
   };
   let best: AutorouteResult | null = null;
-  for (let pass = 0; pass < passes; pass++) {
-    const raw = routeOnce(doc0, order, w, opts.stepMm);
+  // Сначала без перемычек; если что-то не развелось на односторонней плате — ещё раз, с перемычками.
+  // Попытка без перемычек одна: перестановки порядка редко спасают, а каждая неудачная попытка долгая.
+  const withJ = board.layers === 1 && opts.jumpers !== false;
+  const plain = withJ ? 1 : passes;
+  const runs = withJ ? plain + passes : passes;
+  for (let pass = 0; pass < runs; pass++) {
+    const jumpers = pass >= plain;
+    if (jumpers && pass === plain) { order = sorted; seed = 12345; }
+    const raw = routeOnce(doc0, order, w, opts.stepMm, jumpers);
     const r = finish(raw);
-    if (!best || r.failed.length < best.failed.length || (r.failed.length === best.failed.length && r.lengthMm < best.lengthMm)) best = r;
+    if (!best || r.failed.length < best.failed.length || (r.failed.length === best.failed.length && r.jumpers < best.jumpers) || (r.failed.length === best.failed.length && r.jumpers === best.jumpers && r.lengthMm < best.lengthMm)) best = r;
     if (r.failed.length === 0) break;
     // Неразведённые — первыми; со второй половины попыток — ещё и случайный порядок остальных
     const failedKeys = new Set(raw.failed.map((f) => `${f.from}|${f.to}`));
     const rest = order.filter((c) => !failedKeys.has(label(c)));
-    if (pass >= passes / 2) for (let k = rest.length - 1; k > 0; k--) { const m = Math.floor(rnd() * (k + 1)); [rest[k], rest[m]] = [rest[m]!, rest[k]!]; }
+    if ((jumpers ? pass - plain : pass) >= passes / 2) for (let k = rest.length - 1; k > 0; k--) { const m = Math.floor(rnd() * (k + 1)); [rest[k], rest[m]] = [rest[m]!, rest[k]!]; }
     order = [...order.filter((c) => failedKeys.has(label(c))), ...rest];
   }
   const res = best!;
   if (res.total - res.failed.length === 0 && res.doc.pcb.tracks.length === doc0.pcb.tracks.length) return { ...res, doc: doc0, routed: 0 };
-  const msg = `Автотрассировка: разведено ${res.routed} из ${res.total}${res.vias ? `, переходов ${res.vias}` : ''}${res.failed.length ? `; не удалось: ${res.failed.map((f) => `${f.from}–${f.to}`).join(', ')}` : ''}`;
+  const msg = `Автотрассировка: разведено ${res.routed} из ${res.total}${res.vias ? `, переходов ${res.vias}` : ''}${res.jumpers ? `, перемычек ${res.jumpers}` : ''}${res.failed.length ? `; не удалось: ${res.failed.map((f) => `${f.from}–${f.to}`).join(', ')}` : ''}`;
   return { ...res, doc: logChange(touch(res.doc), 'pcb-autoroute', msg) };
 }
 
@@ -185,17 +210,23 @@ function prunePourTracks(doc: ProjectDoc, doc0: ProjectDoc): { doc: ProjectDoc; 
   return { doc, lengthMm: removed };
 }
 
-function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number): AutorouteResult {
+function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number, allowJumpers = true): AutorouteResult {
   const board = doc0.pcb.board!;
   const rules = rulesOf(doc0);
-  const layers = copperLayers(doc0);
+  const cuLayers = copperLayers(doc0);
+  // Слои поиска: медь платы и (на односторонней плате) «слой перемычек» — сторона деталей.
+  const useJ = board.layers === 1 && allowJumpers;
+  const layers: Layer[] = useJ ? ['bottom', 'top'] : cuLayers;
+  const J = useJ ? 1 : -1;
+  const isCu = layers.map((l) => cuLayers.includes(l));
   const poly = boardPolygon(board);
   const W = board.widthMm, H = board.heightMm;
   const step = stepOpt ?? Math.max(0.3175, Math.sqrt((W * H) / 150_000));
   const base = new Grid(step, 0, 0, W, H, layers);
   const margin = step * 0.36 + 0.01;
   const keep = rules.clearanceMm + w / 2 + margin;
-  const viaR = rules.viaDiameterMm / 2;
+  const jh = jumperHole(doc0);
+  const viaR = (useJ ? jh.diameterMm : rules.viaDiameterMm) / 2;
   const keepVia = rules.clearanceMm + viaR + margin;
   const nx = base.nx, ny = base.ny;
   const N = nx * ny, L = layers.length;
@@ -213,30 +244,50 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number)
     for (let k = 0; k < inside.length; k++) if (!inside[k]) { base.track[li]![k] = -1; base.via[li]![k] = -1; }
     for (let i = 0; i < poly.length; i++) {
       const s: Shape = { pts: [poly[i]!, poly[(i + 1) % poly.length]!], closed: false, r: 0 };
-      base.claim(base.track[li]!, s, edgeKeep, -1);
+      base.claim(base.track[li]!, s, isCu[li] ? edgeKeep : JUMPER_WIRE_R + margin, -1);
       base.claim(base.via[li]!, s, edgeKeepVia, -1);
     }
   }
   const claimBase = (layer: Layer, s: Shape, net: number) => {
     const li = layers.indexOf(layer);
-    if (li < 0) return;
+    if (li < 0 || !isCu[li]) return;
     base.claim(base.track[li]!, s, keep, net);
     base.claim(base.via[li]!, s, keepVia, net);
   };
-  for (const p of allPads(doc0)) for (const l of p.layers) claimBase(l, padShape(p), idx(p.netId ?? `pad:${padKey(p.ref)}`));
+  const pads = allPads(doc0);
+  for (const p of pads) for (const l of p.layers) claimBase(l, padShape(p), idx(p.netId ?? `pad:${padKey(p.ref)}`));
   for (const t of doc0.pcb.tracks) for (const s of trackShapes(t)) claimBase(t.layer as Layer, s, idx(t.netId));
-  if (board.layers === 2) for (const v of doc0.pcb.vias) for (const l of layers) claimBase(l, viaShape(v), idx(v.netId));
+  for (const v of boardVias(doc0)) for (const l of viaLayers(doc0)) claimBase(l, viaShape(v), idx(v.netId));
+  if (useJ) {
+    // Сторона деталей: провод не касается выводов чужих цепей и чужих перемычек; отверстие перемычки —
+    // не ближе 0,25 мм к другим отверстиям и не под корпусом детали.
+    const GAP = JUMPER_GAP;
+    for (const p of pads) {
+      if (!p.drill) continue;
+      const hole: Shape = { pts: [p.pos], closed: false, r: p.drill / 2 };
+      base.claim(base.track[J]!, hole, JUMPER_WIRE_R + GAP + margin, idx(p.netId ?? `pad:${padKey(p.ref)}`));
+      base.claim(base.via[J]!, hole, jh.drillMm / 2 + 0.25 + margin, -1);
+    }
+    for (const v of boardVias(doc0)) base.claim(base.via[J]!, { pts: [v.position], closed: false, r: v.drillMm / 2 }, jh.drillMm / 2 + 0.25 + margin, -1);
+    for (const j of doc0.pcb.jumpers) { const e = jumperEnds(doc0, j); if (e) base.claim(base.track[J]!, jumperShape(e), 2 * JUMPER_WIRE_R + GAP + margin, idx(j.netId)); }
+    for (const pl of doc0.pcb.placements) {
+      const b = pl.side === 'top' ? bodyRect(doc0, pl) : null;
+      if (b) base.claim(base.via[J]!, { pts: [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y }, { x: b.x + b.w, y: b.y + b.h }, { x: b.x, y: b.y + b.h }], closed: true, r: 0 }, jh.diameterMm / 2, -1);
+    }
+  }
 
   // Согласованная трассировка (PathFinder): занятость клеток трассами по цепям, история перегрузки
   // Занятость считается для осей трасс: ось чужой дорожки ближе (ширина + зазор) — наложение;
   // для перехода — ближе (радиус площадки + зазор + половина ширины).
   const sepT = w + rules.clearanceMm + margin, sepV = Math.max(viaR + rules.clearanceMm + w / 2, 2 * viaR + rules.clearanceMm) + margin;
+  const sepJ = 2 * JUMPER_WIRE_R + JUMPER_GAP + margin;
   const rV = Math.ceil(Math.max(sepT, sepV) / step);
-  const discT: Array<[number, number]> = [], discV: Array<[number, number]> = [];
+  const discT: Array<[number, number]> = [], discV: Array<[number, number]> = [], discJ: Array<[number, number]> = [];
   for (let dj = -rV; dj <= rV; dj++) for (let di = -rV; di <= rV; di++) {
     const d = Math.hypot(di, dj) * step;
     if (d < sepT) discT.push([di, dj]);
     if (d < sepV) discV.push([di, dj]);
+    if (d < sepJ) discJ.push([di, dj]);
   }
   const total = layers.map(() => new Uint16Array(N));
   const perNet = new Map<number, Uint16Array[]>();
@@ -260,11 +311,15 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number)
     };
     for (let n = 0; n < path.length; n++) {
       const q = path[n]!;
-      stamp(q.li, q.k, discT);
-      if (n > 0 && path[n - 1]!.li !== q.li) for (let li = 0; li < L; li++) stamp(li, q.k, discV);
+      stamp(q.li, q.k, q.li === J ? discJ : discT);
+      if (n > 0 && path[n - 1]!.li !== q.li) for (let li = 0; li < L; li++) if (isCu[li] || li === J) stamp(li, q.k, li === J ? discJ : discV);
     }
   };
   const ok = (o: number, net: number) => o === 0 || o === net;
+
+  const jMin = Math.ceil(JUMPER_MIN_MM / step - 1e-9), jMax = Math.floor(JUMPER_MAX_MM / step);
+  const jStride = Math.max(1, Math.round(2.54 / step));
+  const ORTHO = [0, 2, 4, 6];
 
   const search = (ci: number, pres: number): Path | null => {
     const c = conns[ci]!;
@@ -293,7 +348,7 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number)
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const k = j * nx + i;
         if (distToShape(base.pt(k), sh) > -0.05) continue;
-        for (const l of p.layers) { const li = layers.indexOf(l); if (li >= 0 && cellCost(li, k) >= 0) out.push({ li, k }); }
+        for (const l of p.layers) { const li = layers.indexOf(l); if (li >= 0 && isCu[li] && cellCost(li, k) >= 0) out.push({ li, k }); }
       }
       return out;
     };
@@ -328,7 +383,7 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number)
         const ns = (li * N + nk) * 9 + d;
         if (nc < gs[ns]!) { gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(nk), ns); }
       }
-      if (L === 2) {
+      if (L === 2 && !useJ) {
         const vc = viaCost(k);
         const ol = 1 - li;
         if (vc >= 0 && cellCost(ol, k) >= 0) {
@@ -337,11 +392,58 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number)
           if (nc < gs[ns]!) { gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(k), ns); }
         }
       }
+      if (useJ) {
+        // Перемычка: прыжок по прямой на n клеток (n кратно шагу 2,54 мм) — в клетку, где можно поставить отверстие.
+        const vc0 = viaCost(k);
+        if (vc0 < 0) continue;
+        // Только что приземлились с перемычки — сразу вторую не ставим (отверстия совпали бы).
+        const pst = from[st]!;
+        if (pst >= 0) {
+          const pk = ((pst - (pst % 9)) / 9) % N, pi = pk % nx, pj = (pk - pi) / nx;
+          if (Math.max(Math.abs(pi - i), Math.abs(pj - j)) > 1) continue;
+        }
+        for (const d of ORTHO) {
+          const [dx, dy] = DIRS[d]!;
+          let acc = 0;
+          for (let n = 1; n <= jMax; n++) {
+            const ni = i + dx * n, nj = j + dy * n;
+            if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) break;
+            const nk = nj * nx + ni;
+            const jc = cellCost(J, nk);
+            if (jc < 0) break;
+            acc += jc;
+            if (n < jMin || n % jStride) continue;
+            const pc = cellCost(li, nk);
+            if (pc < 0) continue;
+            const vc1 = viaCost(nk);
+            if (vc1 < 0) continue;
+            const ns = (li * N + nk) * 9 + 8;
+            const nc = cost + JUMPER_COST + n * 0.5 + acc + vc0 + vc1 + pc;
+            if (nc < gs[ns]!) { gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(nk), ns); }
+          }
+        }
+      }
     }
     if (found < 0) return null;
+    const rev: Path = [];
+    for (let st = found; st >= 0; st = from[st]!) { const lk = (st - (st % 9)) / 9; const li = Math.floor(lk / N); rev.push({ li, k: lk - li * N }); }
+    rev.reverse();
+    // Прыжок (соседние точки пути не рядом) — перемычка: вставить клетки провода на слое перемычек.
     const path: Path = [];
-    for (let st = found; st >= 0; st = from[st]!) { const lk = (st - (st % 9)) / 9; const li = Math.floor(lk / N); path.push({ li, k: lk - li * N }); }
-    return path.reverse();
+    for (let n = 0; n < rev.length; n++) {
+      const q = rev[n]!;
+      const prev = rev[n - 1];
+      if (prev) {
+        const pi = prev.k % nx, pj = (prev.k - pi) / nx, qi = q.k % nx, qj = (q.k - qi) / nx;
+        const len = Math.max(Math.abs(qi - pi), Math.abs(qj - pj));
+        if (len > 1) {
+          const sx = Math.sign(qi - pi), sy = Math.sign(qj - pj);
+          for (let m = 0; m <= len; m++) path.push({ li: J, k: (pj + sy * m) * nx + pi + sx * m });
+        }
+      }
+      path.push(q);
+    }
+    return path;
   };
   /** Цепи, с которыми трасса делит клетки. */
   const conflicted = (ci: number): boolean => {
@@ -388,68 +490,106 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number)
     unroutable.add(worst);
   }
 
-  // Трассы → дорожки и переходы
+  // Трассы → дорожки, переходы и перемычки
   const newTracks: Track[] = [];
   const newVias: Via[] = [];
+  const newJumpers: Jumper[] = [];
   let length = 0;
   const simplify = (pts: Point[]) => pts.filter((p, n) => {
     if (n === 0 || n === pts.length - 1) return true;
     const a = pts[n - 1]!, b = pts[n + 1]!;
     return Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) > 1e-9;
   });
-  const byConn = new Map<number, { tracks: Track[]; vias: Via[] }>();
+  const round = (q: Point): Point => ({ x: Number(q.x.toFixed(4)), y: Number(q.y.toFixed(4)) });
+  const byConn = new Map<number, { tracks: Track[]; vias: Via[]; jumpers: Jumper[] }>();
   for (const [ci, path] of paths) {
     const c = conns[ci]!;
-    const legs: Array<{ layer: Layer; pts: Point[] }> = [];
-    let cur = { layer: layers[path[0]!.li]!, pts: [] as Point[] };
+    const legs: Array<{ li: number; pts: Point[] }> = [];
+    let cur = { li: path[0]!.li, pts: [] as Point[] };
     for (const q of path) {
-      if (layers[q.li] !== cur.layer) { legs.push(cur); cur = { layer: layers[q.li]!, pts: [] }; }
+      if (q.li !== cur.li) { legs.push(cur); cur = { li: q.li, pts: [] }; }
       cur.pts.push(base.pt(q.k));
     }
     legs.push(cur);
-    const mine = { tracks: [] as Track[], vias: [] as Via[] };
-    let startEnd: TrackEnd = { kind: 'pad', ...c.a.ref };
-    let prevPt: Point = c.a.pos;
+    const mine = { tracks: [] as Track[], vias: [] as Via[], jumpers: [] as Jumper[] };
+    // Концы участков меди: площадка, переход или отверстие перемычки
+    const ends: Array<{ end: TrackEnd; pt: Point }> = [{ end: { kind: 'pad', ...c.a.ref }, pt: c.a.pos }];
+    const cuLegs: Array<{ layer: Layer; pts: Point[] }> = [];
     for (let n = 0; n < legs.length; n++) {
       const leg = legs[n]!;
-      let endEnd: TrackEnd, endPt: Point;
-      if (n === legs.length - 1) { endEnd = { kind: 'pad', ...c.b.ref }; endPt = c.b.pos; }
-      else {
-        const vp = leg.pts[leg.pts.length - 1]!;
-        const via: Via = { id: newId(), netId: c.netId, position: { x: Number(vp.x.toFixed(4)), y: Number(vp.y.toFixed(4)) }, drillMm: rules.viaDrillMm, diameterMm: rules.viaDiameterMm };
-        mine.vias.push(via);
-        endEnd = { kind: 'via', viaId: via.id }; endPt = via.position;
+      if (leg.li === J) {
+        const a: Via = { id: newId(), netId: c.netId, position: round(leg.pts[0]!), ...jh };
+        const b: Via = { id: newId(), netId: c.netId, position: round(leg.pts[leg.pts.length - 1]!), ...jh };
+        mine.vias.push(a, b);
+        mine.jumpers.push({ id: newId(), netId: c.netId, aViaId: a.id, bViaId: b.id });
+        ends.push({ end: { kind: 'via', viaId: a.id }, pt: a.position });
+        ends.push({ end: { kind: 'via', viaId: b.id }, pt: b.position });
+        continue;
       }
-      const pts = simplify([prevPt, ...leg.pts, endPt]).map((q) => ({ x: Number(q.x.toFixed(4)), y: Number(q.y.toFixed(4)) }));
+      cuLegs.push({ layer: layers[leg.li]!, pts: leg.pts });
+      if (n < legs.length - 1 && legs[n + 1]!.li !== J) {
+        const vp = round(leg.pts[leg.pts.length - 1]!);
+        const via: Via = { id: newId(), netId: c.netId, position: vp, drillMm: rules.viaDrillMm, diameterMm: rules.viaDiameterMm };
+        mine.vias.push(via);
+        ends.push({ end: { kind: 'via', viaId: via.id }, pt: via.position });
+      }
+    }
+    ends.push({ end: { kind: 'pad', ...c.b.ref }, pt: c.b.pos });
+    // ends: [начало, (конец участка, начало следующего)…, конец]; для перехода конец и начало — одна точка
+    const pairs: Array<[{ end: TrackEnd; pt: Point }, { end: TrackEnd; pt: Point }]> = [];
+    {
+      let n = 0;
+      const seq: Array<{ end: TrackEnd; pt: Point }> = [];
+      for (const e of ends) seq.push(e);
+      // Переход общий для двух участков — дублируем его в последовательности.
+      const flat: Array<{ end: TrackEnd; pt: Point }> = [seq[0]!];
+      for (let m = 1; m < seq.length - 1; m++) {
+        const e = seq[m]!;
+        const isJumperEnd = e.end.kind === 'via' && mine.jumpers.some((j) => j.aViaId === (e.end as { viaId: string }).viaId || j.bViaId === (e.end as { viaId: string }).viaId);
+        flat.push(e);
+        if (!isJumperEnd) flat.push(e);
+      }
+      flat.push(seq[seq.length - 1]!);
+      for (; n + 1 < flat.length; n += 2) pairs.push([flat[n]!, flat[n + 1]!]);
+    }
+    for (const [n, leg] of cuLegs.entries()) {
+      const [s0, e0] = pairs[n]!;
+      const pts = simplify([s0.pt, ...leg.pts, e0.pt]).map(round);
       const dedup = pts.filter((q, m) => m === 0 || q.x !== pts[m - 1]!.x || q.y !== pts[m - 1]!.y);
-      if (dedup.length < 2) dedup.push(endPt);
-      mine.tracks.push({ id: newId(), netId: c.netId, layer: leg.layer, widthMm: w, from: startEnd, to: endEnd, points: dedup });
+      if (dedup.length < 2) dedup.push(e0.pt);
+      mine.tracks.push({ id: newId(), netId: c.netId, layer: leg.layer, widthMm: w, from: s0.end, to: e0.end, points: dedup });
       for (let m = 1; m < dedup.length; m++) length += Math.hypot(dedup[m]!.x - dedup[m - 1]!.x, dedup[m]!.y - dedup[m - 1]!.y);
-      startEnd = endEnd; prevPt = endPt;
     }
     byConn.set(ci, mine);
-    newTracks.push(...mine.tracks); newVias.push(...mine.vias);
+    newTracks.push(...mine.tracks); newVias.push(...mine.vias); newJumpers.push(...mine.jumpers);
   }
-  let doc: ProjectDoc = { ...doc0, pcb: { ...doc0.pcb, tracks: [...doc0.pcb.tracks, ...newTracks], vias: [...doc0.pcb.vias, ...newVias] } };
+  let doc: ProjectDoc = { ...doc0, pcb: { ...doc0.pcb, tracks: [...doc0.pcb.tracks, ...newTracks], vias: [...doc0.pcb.vias, ...newVias], jumpers: [...doc0.pcb.jumpers, ...newJumpers] } };
   const label = (c: Conn) => ({ netId: c.netId, net: netName(doc0, c.netId), from: `${c.a.refDes}.${c.a.ref.pad}`, to: `${c.b.refDes}.${c.b.ref.pad}` });
   const failed = [...unroutable].map((ci) => label(conns[ci]!));
-  // Страховка: дорожка, давшая ошибку зазора или замыкания, убирается (соединение — в неудачные)
+  // Страховка: трасса, давшая ошибку DRC (зазор, замыкание, отверстия), убирается (соединение — в неудачные)
   const before = new Set(drc(doc0).filter((i) => i.severity === 'error').map((i) => i.message));
   const bad = new Set<number>();
   for (const i of drc(doc)) {
     if (i.severity !== 'error' || before.has(i.message)) continue;
-    for (const [ci, m] of byConn) if (m.tracks.some((t) => i.ids.includes(t.id)) || m.vias.some((v) => i.ids.includes(v.id))) bad.add(ci);
+    for (const [ci, m] of byConn) if (m.tracks.some((t) => i.ids.includes(t.id)) || m.vias.some((v) => i.ids.includes(v.id)) || m.jumpers.some((j) => i.ids.includes(j.id))) bad.add(ci);
   }
   if (bad.size) {
     const dropT = new Set([...bad].flatMap((ci) => byConn.get(ci)!.tracks.map((t) => t.id)));
     const dropV = new Set([...bad].flatMap((ci) => byConn.get(ci)!.vias.map((v) => v.id)));
-    doc = { ...doc, pcb: { ...doc.pcb, tracks: doc.pcb.tracks.filter((t) => !dropT.has(t.id)), vias: doc.pcb.vias.filter((v) => !dropV.has(v.id)) } };
+    const dropJ = new Set([...bad].flatMap((ci) => byConn.get(ci)!.jumpers.map((j) => j.id)));
+    doc = { ...doc, pcb: { ...doc.pcb, tracks: doc.pcb.tracks.filter((t) => !dropT.has(t.id)), vias: doc.pcb.vias.filter((v) => !dropV.has(v.id)), jumpers: doc.pcb.jumpers.filter((j) => !dropJ.has(j.id)) } };
     for (const ci of bad) { failed.push(label(conns[ci]!)); byConn.delete(ci); }
   }
   for (const m of byConn.values()) for (const t of m.tracks) {
-    if (t.from?.kind !== 'pad' || t.to?.kind !== 'pad') continue;
+    if (!t.from || !t.to) continue;
     const ck = checkTrack(doc, { from: t.from, to: t.to, layer: t.layer as Layer, widthMm: t.widthMm });
     if ('error' in ck) throw new Error(`Автотрассировка: недопустимая дорожка: ${ck.error}`);
   }
-  return { doc, routed: byConn.size, total: conns.length, failed, vias: [...byConn.values()].reduce((a, m) => a + m.vias.length, 0), lengthMm: length };
+  const vals = [...byConn.values()];
+  return {
+    doc, routed: byConn.size, total: conns.length, failed,
+    vias: vals.reduce((a, m) => a + m.vias.length - 2 * m.jumpers.length, 0),
+    jumpers: vals.reduce((a, m) => a + m.jumpers.length, 0),
+    lengthMm: length,
+  };
 }

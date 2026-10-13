@@ -126,6 +126,7 @@ export function diffDocs(a: ProjectDoc, b: ProjectDoc): DiffItem[] {
   const changedT = [...tb.entries()].filter(([k, v]) => ta.has(k) && ta.get(k) !== v).length;
   if (addedT || removedT || changedT) out.push({ section: 'Плата', text: `Дорожки: добавлено ${addedT}, удалено ${removedT}, изменено ${changedT}` });
   if (a.pcb.vias.length !== b.pcb.vias.length) out.push({ section: 'Плата', text: `Переходных отверстий: ${a.pcb.vias.length} → ${b.pcb.vias.length}` });
+  if (a.pcb.jumpers.length !== b.pcb.jumpers.length) out.push({ section: 'Плата', text: `Перемычек: ${a.pcb.jumpers.length} → ${b.pcb.jumpers.length}` });
 
   if (JSON.stringify(a.simulation) !== JSON.stringify(b.simulation)) out.push({ section: 'Расчёт', text: 'Изменены настройки расчёта' });
   return out;

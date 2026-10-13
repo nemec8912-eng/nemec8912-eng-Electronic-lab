@@ -12,11 +12,22 @@ import { ngspiceForTests, requireNgspice } from '../sim-helpers';
 
 const NG = ngspiceForTests();
 const skip = !NG && !requireNgspice ? 'ngspice не найден' : false;
-const load = async (f: string) => (await readElab(readFileSync(path.resolve(import.meta.dirname, '../../examples', f)))).doc;
+const loadRaw = async (f: string) => (await readElab(readFileSync(path.resolve(import.meta.dirname, '../../examples', f)))).doc;
+/** Пример без его собственных условий (тесты задают свои). */
+const load = async (f: string): Promise<ProjectDoc> => { const d = await loadRaw(f); return { ...d, checks: { items: [], noOverload: true } }; };
 const pin = (d: ProjectDoc, ref: string, p: string) => ({ instanceId: d.schematic.instances.find((i) => i.refDes === ref)!.id, pin: p });
 const add = (d: ProjectDoc, c: Partial<Check> & Pick<Check, 'quantity'>) => addCheck(d, { ...newCheck(c.quantity), ...c });
 
 describe('Тест работоспособности (ngspice)', { skip }, () => {
+  for (const f of ['пример-светодиод.elab', 'пример-rc-фильтр.elab', 'пример-мультивибратор-ne555.elab', 'пример-стабилизатор-lm317.elab', 'пример-металлоискатель.elab']) {
+    test(`${f}: условия работоспособности примера выполнены`, async () => {
+      const d = await loadRaw(f);
+      assert.ok(d.checks.items.length > 0);
+      const r = await runChecks(d, NG);
+      assert.equal(r.verdict, 'works', JSON.stringify({ summary: r.summary, errors: r.errors, outcomes: r.outcomes, overload: r.overload }));
+    });
+  }
+
   test('LM317: 5 В на выходе — работает; завышенное требование — не работает; замер вне диапазона виден', async () => {
     let d = await load('пример-стабилизатор-lm317.elab');
     d = add(d, { name: 'Выход 5 В', quantity: 'dc-v', at: pin(d, 'DA1', '2'), min: 4.8, max: 5.2, measured: 4.95 });

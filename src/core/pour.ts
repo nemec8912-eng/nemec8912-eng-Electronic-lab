@@ -11,7 +11,7 @@
 import { newId } from './ids';
 import { logChange, touch } from './factory';
 import type { Layer } from './pcb';
-import { allPads, boardPolygon, copperLayers, endKey, padKey, padShape, rulesOf, trackShapes, viaShape, type Shape } from './pcb';
+import { allPads, boardPolygon, copperLayers, endKey, padKey, padShape, rulesOf, trackShapes, viaShape, boardVias, type Shape } from './pcb';
 import type { Point, Pour, ProjectDoc } from './model';
 
 export const DEFAULT_POUR_CLEARANCE = 0.5;
@@ -101,8 +101,8 @@ function computePour(doc: ProjectDoc, pour: Pour): PourResult {
     if (p.netId === pour.netId) own.push({ shape: padShape(p), key: padKey(p.ref) });
     else stamps.push({ shape: padShape(p), grow: pour.clearanceMm });
   }
-  if (board.layers === 2) {
-    for (const v of doc.pcb.vias) {
+  {
+    for (const v of boardVias(doc)) {
       if (v.netId === pour.netId) own.push({ shape: viaShape(v), key: `via:${v.id}` });
       else stamps.push({ shape: viaShape(v), grow: pour.clearanceMm });
     }

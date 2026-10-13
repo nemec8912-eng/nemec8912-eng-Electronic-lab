@@ -355,6 +355,9 @@ export function buildNetlist(doc: ProjectDoc, analyses: Analyses, title = 'Эл�
       return net ? nodeOfNet.get(net) ?? null : freePinNodes.get(`${ref.instanceId}#${ref.pin}`) ?? null;
     }));
   }
-  const text = [`* ${safeTitle}`, ...lines, ...(modelCards.length ? ['* модели', ...modelCards] : []), ...control, '.end', ''].join('\n');
+  // Поведенческие модели логики и компараторов (резкие переключения, защёлка триггера Шмитта) жёсткие:
+  // трапеции дают численный «звон», и шаг падает до наносекунд. Для таких схем — метод Гира.
+  const options = modelCards.some((c) => c.includes('tanh(')) ? ['.options method=gear'] : [];
+  const text = [`* ${safeTitle}`, ...lines, ...(modelCards.length ? ['* модели', ...modelCards] : []), ...options, ...control, '.end', ''].join('\n');
   return { text, nodeOfNet, elementOf, currentVectors, pinCurrentVectors, issues, ammeterVector };
 }

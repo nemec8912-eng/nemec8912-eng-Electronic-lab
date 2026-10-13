@@ -415,6 +415,12 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .track-rubber.top { stroke: #ff8a7a; }
 .track-rubber.bottom { stroke: #8ab8ff; }
 .one-layer .track-rubber { stroke: #6fb3ff; }
+/* Проволочная перемычка — провод со стороны деталей */
+.jumper-wire { stroke: #d9dde3; stroke-width: 0.6; stroke-linecap: round; opacity: .9; }
+.jumper.selected .jumper-wire, .jumper.same-net .jumper-wire { stroke: #ffd76e; }
+.jumper-label { fill: #d9dde3; }
+.via.jumper-end .via-cu { fill: #c9a86a; }
+.jumper-rubber { stroke: #d9dde3; opacity: .7; stroke-linecap: round; stroke-dasharray: 0.8 0.5; pointer-events: none; }
 .rat.same-net { stroke: #ffd76e; stroke-width: 0.2; }
 .pl.side-bottom .pl-body { stroke-dasharray: 0.5 0.3; }
 .drc-mark { fill: none; stroke: #ff5252; stroke-width: 0.25; pointer-events: none; }

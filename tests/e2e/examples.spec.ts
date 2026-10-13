@@ -13,7 +13,7 @@ test.afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force:
 test('примеры: светодиод с разведённой платой, стабилизатор с журналом; пример не меняется', async () => {
   const { page } = await launch({ dataDir: temp('e2e-examples-') });
   const list = page.getByRole('list', { name: 'Примеры' });
-  await expect(list.locator('li')).toHaveCount(5);
+  await expect(list.locator('li')).toHaveCount(6);
   await page.getByRole('button', { name: 'Открыть пример Пример — светодиод от 9 В' }).click();
   await expect(page.locator('[data-refdes="HL1"]')).toBeVisible();
   await page.getByRole('tab', { name: 'Плата' }).click();

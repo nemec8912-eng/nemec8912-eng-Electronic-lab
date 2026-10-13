@@ -179,6 +179,15 @@ const migrations: Migration[] = [
       return { ...r, schemaVersion: 9, pcb: { ...(r.pcb ?? {}), cnc: structuredClone(DEFAULT_CNC) }, checks: { items: [], noOverload: true } };
     },
   },
+  {
+    // v10: проволочные перемычки на плате (пока нет).
+    from: 9,
+    to: 10,
+    migrate: (raw) => {
+      const r = raw as Record<string, any>;
+      return { ...r, schemaVersion: 10, pcb: { ...(r.pcb ?? {}), jumpers: [] } };
+    },
+  },
 ];
 
 function migrateV3toV4(r: Record<string, any>): Record<string, unknown> {

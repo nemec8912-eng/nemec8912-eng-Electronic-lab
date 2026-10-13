@@ -78,7 +78,12 @@ export function autoplace(doc0: ProjectDoc): AutoplaceResult {
   const placements = doc0.pcb.placements.map((pl) => (result.has(pl.id) ? { ...pl, ...result.get(pl.id)! } : pl));
   const tracks = doc0.pcb.tracks.filter((t) => !((t.from?.kind === 'pad' && moved.has(t.from.placementId)) || (t.to?.kind === 'pad' && moved.has(t.to.placementId))));
   const removed = doc0.pcb.tracks.length - tracks.length;
-  let doc: ProjectDoc = touch({ ...doc0, pcb: { ...doc0.pcb, placements, tracks } });
+  // Переходы и перемычки, к которым больше не подходит ни одна дорожка, тоже убираются.
+  const usedVias = new Set(tracks.flatMap((t) => [t.from, t.to]).flatMap((e) => (e?.kind === 'via' ? [e.viaId] : [])));
+  const jumpers = doc0.pcb.jumpers.filter((j) => usedVias.has(j.aViaId) || usedVias.has(j.bViaId));
+  const jumperVias = new Set(jumpers.flatMap((j) => [j.aViaId, j.bViaId]));
+  const vias = doc0.pcb.vias.filter((v) => usedVias.has(v.id) || jumperVias.has(v.id));
+  let doc: ProjectDoc = touch({ ...doc0, pcb: { ...doc0.pcb, placements, tracks, vias, jumpers } });
   doc = logChange(doc, 'pcb-autoplace', `Авторасстановка: деталей ${result.size}${removed ? `, удалено дорожек ${removed}` : ''}${notPlaced.length ? `; не поместились: ${notPlaced.join(', ')}` : ''}`);
   return { doc, placed: result.size, notPlaced };
 }

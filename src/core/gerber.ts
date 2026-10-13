@@ -9,7 +9,7 @@
  */
 import { APP_VERSION } from './appinfo';
 import type { ProjectDoc } from './model';
-import { allPads, bodyRect, boardPolygon, copperLayers, type Layer, type PadInfo } from './pcb';
+import { allPads, bodyRect, boardPolygon, copperLayers, boardVias, viaLayers, jumperEnds, jumperLength, type Layer, type PadInfo } from './pcb';
 
 export interface GerberFile { name: string; content: string }
 
@@ -103,18 +103,20 @@ export function gerberFiles(doc: ProjectDoc, base = 'board'): GerberFile[] {
       g.line(2 * board.rules.edgeMm, [...poly, poly[0]!]);
       for (const t of doc.pcb.tracks) if (t.layer === layer && t.netId !== pour.netId) g.line(t.widthMm + 2 * c, t.points);
       for (const p of pads) if (p.layers.includes(layer) && p.netId !== pour.netId) g.flash(padAperture(p, c), p.pos.x, p.pos.y);
-      if (twoLayer) for (const v of doc.pcb.vias) if (v.netId !== pour.netId) g.flash({ kind: 'C', d: v.diameterMm + 2 * c }, v.position.x, v.position.y);
+      for (const v of boardVias(doc)) if (viaLayers(doc).includes(layer) && v.netId !== pour.netId) g.flash({ kind: 'C', d: v.diameterMm + 2 * c }, v.position.x, v.position.y);
       g.polarity('D');
     }
     for (const t of doc.pcb.tracks) if (t.layer === layer) g.line(t.widthMm, t.points);
     for (const p of pads) if (p.layers.includes(layer)) g.flash(padAperture(p), p.pos.x, p.pos.y);
-    if (twoLayer) for (const v of doc.pcb.vias) g.flash({ kind: 'C', d: v.diameterMm }, v.position.x, v.position.y);
+    for (const v of boardVias(doc)) if (viaLayers(doc).includes(layer)) g.flash({ kind: 'C', d: v.diameterMm }, v.position.x, v.position.y);
     const n = layer === 'top' ? 1 : board.layers;
     return g.text(`Copper,L${n},${layer === 'top' ? 'Top' : 'Bot'}`);
   };
   const mask = (layer: Layer) => {
     const g = new GerberWriter(H);
     for (const p of pads) if (p.layers.includes(layer)) g.flash(padAperture(p, MASK_EXPANSION), p.pos.x, p.pos.y);
+    // Отверстия перемычек паяются — маска над ними открыта (обычные переходы закрыты).
+    for (const j of doc.pcb.jumpers) { const e = jumperEnds(doc, j); if (e && layer === 'bottom') for (const v of [e.a, e.b]) g.flash({ kind: 'C', d: v.diameterMm + 2 * MASK_EXPANSION }, v.position.x, v.position.y); }
     return g.text(`Soldermask,${layer === 'top' ? 'Top' : 'Bot'}`, 'Negative');
   };
   const silk = (layer: Layer) => {
@@ -123,6 +125,15 @@ export function gerberFiles(doc: ProjectDoc, base = 'board'): GerberFile[] {
       if (pl.side !== layer) continue;
       const b = bodyRect(doc, pl);
       if (b) g.line(SILK_LINE, [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y }, { x: b.x + b.w, y: b.y + b.h }, { x: b.x, y: b.y + b.h }, { x: b.x, y: b.y }]);
+    }
+    // Перемычки — со стороны деталей: линия между отверстиями (короче на радиус площадки с каждой стороны).
+    if (layer === 'top') for (const j of doc.pcb.jumpers) {
+      const e = jumperEnds(doc, j);
+      if (!e) continue;
+      const L = jumperLength(e), r = e.a.diameterMm / 2 + 0.3;
+      if (L <= 2 * r) continue;
+      const ux = (e.b.position.x - e.a.position.x) / L, uy = (e.b.position.y - e.a.position.y) / L;
+      g.line(SILK_LINE, [{ x: e.a.position.x + ux * r, y: e.a.position.y + uy * r }, { x: e.b.position.x - ux * r, y: e.b.position.y - uy * r }]);
     }
     return g.text(`Legend,${layer === 'top' ? 'Top' : 'Bot'}`);
   };
@@ -147,7 +158,7 @@ export function excellon(doc: ProjectDoc): string {
   const H = board.heightMm;
   const hits: Array<{ d: number; x: number; y: number }> = [];
   for (const p of allPads(doc)) if (p.drill) hits.push({ d: p.drill, x: p.pos.x, y: p.pos.y });
-  if (board.layers === 2) for (const v of doc.pcb.vias) hits.push({ d: v.drillMm, x: v.position.x, y: v.position.y });
+  for (const v of boardVias(doc)) hits.push({ d: v.drillMm, x: v.position.x, y: v.position.y });
   const sizes = [...new Set(hits.map((h) => Number(h.d.toFixed(3))))].sort((a, b) => a - b);
   const lines = ['M48', `; Электронная лаборатория ${APP_VERSION}`, '; FILE_FORMAT=decimal mm, origin bottom-left', '; TYPE=PLATED', 'METRIC', 'FMAT,2'];
   sizes.forEach((d, i) => lines.push(`T${i + 1}C${d.toFixed(3)}`));
@@ -174,6 +185,7 @@ function readme(doc: ProjectDoc, names: string[]): string {
     'Gerber RS-274X, мм, формат 4.6, начало координат — левый нижний угол платы.',
     'Сверловка Excellon, мм, десятичные координаты; все отверстия металлизированные (для двусторонней платы).',
     'Маска открыта над площадками (+0,05 мм на сторону); переходные отверстия закрыты маской.',
+    ...(doc.pcb.jumpers.length ? [`Проволочные перемычки: ${doc.pcb.jumpers.length} (отверстия в сверловке, маска над ними открыта, на шелкографии — линия перемычки).`] : []),
     'Шелкография: только контуры корпусов, без позиционных обозначений.',
     `Контур платы: ${({ rect: 'прямоугольник', rounded: 'скруглённые углы', circle: 'круг', polygon: 'многоугольник' } as Record<string, string>)[b.outline.kind]}; дуги переданы отрезками по 3°.`,
     ...doc.pcb.pours.map((p) => `Медная заливка: слой ${p.layer === 'top' ? 'верхний' : 'нижний'}, зазор ${p.clearanceMm} мм; площадки соединены сплошь (без термобарьеров); вырезы — полярностью LPC.`),

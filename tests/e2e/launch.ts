@@ -90,29 +90,29 @@ export async function launch(opts: { dataDir?: string; appDir?: string; executab
  * app.evaluate в главном процессе. На Windows сразу после запуска вызов иногда падает с «Execution
  * context was destroyed» (окно ещё перезагружается) — тогда повторяем.
  */
-async function mainEval<A>(app: ElectronApplication, fn: Parameters<ElectronApplication['evaluate']>[0], arg: A): Promise<void> {
+async function retryMain(call: () => Promise<unknown>): Promise<void> {
   for (let i = 0; ; i++) {
-    try { await app.evaluate(fn as never, arg as never); return; }
+    try { await call(); return; }
     catch (e) { if (i >= 4 || !/context was destroyed/i.test(String(e))) throw e; await new Promise((r) => setTimeout(r, 300)); }
   }
 }
 
 /** Подменяет системные диалоги выбора файла: следующий вызов вернёт указанный путь. */
 export async function stubSaveDialog(app: ElectronApplication, filePath: string) {
-  await mainEval(app, ({ dialog }, p) => {
+  await retryMain(() => app.evaluate(({ dialog }, p) => {
     dialog.showSaveDialog = (async () => ({ canceled: false, filePath: p })) as typeof dialog.showSaveDialog;
-  }, filePath);
+  }, filePath));
 }
 export async function stubOpenDialog(app: ElectronApplication, filePath: string) {
-  await mainEval(app, ({ dialog }, p) => {
+  await retryMain(() => app.evaluate(({ dialog }, p) => {
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [p] })) as typeof dialog.showOpenDialog;
-  }, filePath);
+  }, filePath));
 }
 /** Ответ системного окна-вопроса (номер кнопки). */
 export async function stubMessageBox(app: ElectronApplication, response: number) {
-  await mainEval(app, ({ dialog }, r) => {
+  await retryMain(() => app.evaluate(({ dialog }, r) => {
     dialog.showMessageBox = (async () => ({ response: r, checkboxChecked: false })) as typeof dialog.showMessageBox;
-  }, response);
+  }, response));
 }
 
 /**

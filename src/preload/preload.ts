@@ -54,6 +54,15 @@ const api: ElabApi = {
     expected: (doc, record) => call(IPC.simExpected, doc, record),
     checks: (doc) => call(IPC.simChecks, doc),
   },
+  pcb: {
+    autoroute: (doc, opts) => call(IPC.pcbAutoroute, doc, opts),
+    cancelAutoroute: () => call(IPC.pcbAutorouteCancel),
+    onAutorouteProgress: (cb) => {
+      const listener = (_e: unknown, p: { done: number; total: number }) => cb(p);
+      ipcRenderer.on(IPC.pcbAutorouteProgress, listener);
+      return () => { ipcRenderer.removeListener(IPC.pcbAutorouteProgress, listener); };
+    },
+  },
   attachments: {
     add: (projectId) => call(IPC.attAdd, projectId),
     read: (projectId, ref) => call(IPC.attRead, projectId, ref),

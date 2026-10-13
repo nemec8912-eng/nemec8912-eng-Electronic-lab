@@ -1,5 +1,7 @@
 /** Обработчики IPC: тонкий слой между окном и хранилищем, плюс системные диалоги выбора файлов. */
 import { promises as fs } from 'node:fs';
+import { Worker } from 'node:worker_threads';
+import type { AutorouteResult } from '../core/autoroute';
 import * as path from 'node:path';
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import JSZip from 'jszip';
@@ -196,6 +198,34 @@ export function registerIpc(ctx: MainContext): void {
     const loaded = loadDocument(doc);
     if (!loaded.ok) throw new AppError('bad-request', 'Документ повреждён');
     return runChecks(loaded.doc, findNgspice());
+  }));
+  // Автотрассировка — в отдельном потоке (одна за раз); остановка завершает поток.
+  let routing: Worker | null = null;
+  let routingCancelled = false;
+  ipcMain.handle(IPC.pcbAutoroute, async (e: { sender: { send(channel: string, ...args: unknown[]): void; isDestroyed(): boolean } }, doc: ProjectDoc, opts: { jumpers?: boolean }) => wrap(async () => {
+    if (routing) throw new AppError('busy', 'Автотрассировка уже идёт');
+    const loaded = loadDocument(doc);
+    if (!loaded.ok) throw new AppError('bad-request', 'Документ повреждён');
+    const worker = new Worker(path.join(__dirname, 'autoroute-worker.js'));
+    routing = worker; routingCancelled = false;
+    try {
+      return await new Promise<AutorouteResult | null>((resolve, reject) => {
+        worker.on('message', (m: { type: 'progress'; done: number; total: number } | { type: 'done'; result: AutorouteResult } | { type: 'error'; message: string }) => {
+          if (m.type === 'progress') { if (!e.sender.isDestroyed()) e.sender.send(IPC.pcbAutorouteProgress, { done: m.done, total: m.total }); }
+          else if (m.type === 'done') resolve(m.result);
+          else reject(new Error(m.message));
+        });
+        worker.on('error', reject);
+        worker.on('exit', () => { if (routingCancelled) resolve(null); else reject(new Error('поток автотрассировки завершился без результата')); });
+        worker.postMessage({ doc: loaded.doc, opts: { jumpers: opts?.jumpers !== false } });
+      });
+    } finally {
+      routing = null;
+      void worker.terminate();
+    }
+  })(e));
+  ipcMain.handle(IPC.pcbAutorouteCancel, wrap(async () => {
+    if (routing) { routingCancelled = true; await routing.terminate(); }
   }));
   ipcMain.handle(IPC.simExpected, wrap(async (doc: ProjectDoc, record: TestRecord) => {
     const parsed = TestRecordSchema.safeParse(record);

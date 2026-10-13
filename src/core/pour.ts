@@ -5,8 +5,9 @@
  *
  * Связность заливки считается по растру с шагом 0,1 мм (на больших платах — крупнее): какие площадки,
  * переходы и дорожки своей цепи касаются каких связных участков заливки. Участок без своей меди —
- * «остров» (он есть и в Gerber — DRC предупреждает). Площадки соединяются с заливкой сплошь, без
- * термобарьеров.
+ * «остров»: он удаляется из меди везде (Gerber, печать 1:1, станок, полотно) — полосами растра,
+ * расширенными на клетку (рядом с островом — только зазор; своя и чужая медь рисуется поверх).
+ * Площадки соединяются с заливкой сплошь, без термобарьеров.
  */
 import { newId } from './ids';
 import { logChange, touch } from './factory';
@@ -24,7 +25,39 @@ export interface PourComponent {
   areaMm2: number;
   sample: Point;
 }
-export interface PourResult { pour: Pour; res: number; nx: number; ny: number; cells: Uint8Array; components: PourComponent[] }
+export interface PourResult {
+  pour: Pour; res: number; nx: number; ny: number; cells: Uint8Array; components: PourComponent[];
+  /** Номер участка клетки (1…), 0 — не заливка. */
+  labels: Int32Array;
+}
+
+/** Участок — остров (своей меди не касается). */
+export const isIsland = (c: PourComponent) => c.keys.size === 0;
+
+/** Точка (мм) лежит в острове заливки. */
+export function inIsland(r: PourResult, x: number, y: number): boolean {
+  const i = Math.floor(x / r.res), j = Math.floor(y / r.res);
+  if (i < 0 || j < 0 || i >= r.nx || j >= r.ny) return false;
+  const l = r.labels[j * r.nx + i]!;
+  return l > 0 && isIsland(r.components[l - 1]!);
+}
+
+/** Острова заливки как прямоугольники (полосы строк растра), расширенные на клетку, — для вырезания. */
+export function islandStrips(r: PourResult): Array<{ x: number; y: number; w: number; h: number }> {
+  const out: Array<{ x: number; y: number; w: number; h: number }> = [];
+  if (!r.components.some(isIsland)) return out;
+  const g = r.res;
+  for (let j = 0; j < r.ny; j++) {
+    let start = -1;
+    for (let i = 0; i <= r.nx; i++) {
+      const l = i < r.nx ? r.labels[j * r.nx + i]! : 0;
+      const on = l > 0 && isIsland(r.components[l - 1]!);
+      if (on && start < 0) start = i;
+      if (!on && start >= 0) { out.push({ x: start * g - g, y: j * g - g, w: (i - start) * g + 2 * g, h: 3 * g }); start = -1; }
+    }
+  }
+  return out;
+}
 
 interface Stamp { shape: Shape; grow: number }
 
@@ -150,7 +183,7 @@ function computePour(doc: ProjectDoc, pour: Pour): PourResult {
       if (l && distToShape({ x: (i + 0.5) * res, y: (j + 0.5) * res }, s) <= res * 0.75) comps[l - 1]!.keys.add(o.key);
     }
   }
-  return { pour, res, nx, ny, cells, components: comps };
+  return { pour, res, nx, ny, cells, components: comps, labels: lab };
 }
 
 // ---------- Правка ----------

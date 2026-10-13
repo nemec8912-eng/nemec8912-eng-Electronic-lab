@@ -22,6 +22,14 @@ await Promise.all([
   }),
   build({
     ...common,
+    entryPoints: [join(root, 'src/main/autoroute-worker.ts')],
+    outfile: join(out, 'main/autoroute-worker.js'),
+    platform: 'node',
+    format: 'cjs',
+    target: 'node22',
+  }),
+  build({
+    ...common,
     entryPoints: [join(root, 'src/preload/preload.ts')],
     outfile: join(out, 'preload/preload.js'),
     platform: 'node',

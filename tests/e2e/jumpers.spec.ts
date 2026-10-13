@@ -41,6 +41,29 @@ test('металлоискатель: перемычки на плате, уда
   await expect(auto.getByRole('button', { name: 'Развести дорожки (1)' })).toBeEnabled();
   await expect(jumpers).toHaveCount(n - 1);
 
+  // Трассировка идёт в отдельном потоке: виден ход, окно отвечает, «Остановить» — плата не меняется
+  await auto.getByRole('button', { name: 'Расставить детали' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Расставить' }).click();
+  await expect(page.locator('g.track')).toHaveCount(0);
+  await auto.getByRole('button', { name: /Развести дорожки \(\d+\)/ }).click();
+  await expect(page.getByTestId('auto-progress')).toContainText(/Попытка \d+ из \d+/);
+  await page.getByRole('tab', { name: 'Схема' }).click();
+  await page.getByRole('tab', { name: 'Плата' }).click();
+  await expect(page.getByTestId('auto-progress')).toBeVisible();
+  await auto.getByRole('button', { name: 'Остановить' }).click();
+  await expect(page.getByTestId('auto-result')).toContainText('Автотрассировка остановлена, плата не изменилась.');
+  await expect(page.locator('g.track')).toHaveCount(0);
+  // Правка во время трассировки: результат не применяется
+  await auto.getByRole('button', { name: /Развести дорожки \(\d+\)/ }).click();
+  await expect(page.getByTestId('auto-progress')).toBeVisible();
+  await page.locator('g.pl').first().click({ force: true });
+  await page.keyboard.press('r');
+  await expect(page.getByTestId('auto-result')).toContainText('результат не применён', { timeout: 180_000 });
+  await expect(page.locator('g.track')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await expect(jumpers).toHaveCount(n - 1);
+
   // Ручная прокладка: от площадки, J — перемычка, Esc — отмена
   const padEl = page.locator('g.pad.tht').first();
   await padEl.click({ force: true });

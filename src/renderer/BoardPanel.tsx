@@ -16,6 +16,7 @@ import {
 import { BoardSide } from './BoardSide';
 import type { CncPath } from '../core/cnc';
 import { outlineSvgPath } from '../core/outline';
+import { islandStrips, pourResults } from '../core/pour';
 
 export type BoardSel = { kind: 'track' | 'placement' | 'via'; id: string } | null;
 
@@ -307,6 +308,7 @@ export function BoardPanel(p: Props) {
                     return <rect key={`${pd.ref.placementId}#${pd.ref.pad}`} x={pd.pos.x - w / 2} y={pd.pos.y - h / 2} width={w} height={h} rx={pd.shape === 'rect' ? 0 : Math.min(w, h) / 2} fill="#000" />;
                   })}
                   {boardVias(doc).filter((v) => v.netId !== pr.netId).map((v) => <circle key={v.id} cx={v.position.x} cy={v.position.y} r={v.diameterMm / 2 + pr.clearanceMm} fill="#000" />)}
+                  {(() => { const res = pourResults(doc).find((r) => r.pour.id === pr.id); return res ? islandStrips(res).map((b, i) => <rect key={`isl${i}`} x={b.x} y={b.y} width={b.w} height={b.h} fill="#000" />) : null; })()}
                 </mask>
                 <path d={outlineSvgPath(board)} mask={`url(#pour-${pr.id})`} className="pour-fill" />
               </g>

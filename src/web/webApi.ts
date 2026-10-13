@@ -5,6 +5,7 @@
  * «недоступно в браузере», ничего не изображая.
  */
 import { builtinCatalog } from '../catalog/builtin';
+import { autoroute } from '../core/autoroute';
 import { bundleOf, emptyCatalog, lintBundle, removePart, upsertBundle, type CatalogFile, type PartBundle } from '../core/catalog';
 import { createProject, normalizeName, renameProject, touch } from '../core/factory';
 import { newId } from '../core/ids';
@@ -230,6 +231,12 @@ export function webApi(): ElabApi {
         kind: req.kind, status: 'failed', display: '—', value: null, beep: false, method: '', esr: null, netlist: '',
         message: 'В браузерной демо-версии измерения не выполняются: прибор считает схему через ngspice, который работает только в программе для ПК.',
       }),
+    },
+    // В браузере — в том же потоке (страница на время трассировки занята).
+    pcb: {
+      autoroute: async (doc, opts) => { await new Promise((r) => setTimeout(r, 30)); return ok(autoroute(doc, { jumpers: opts.jumpers !== false })); },
+      cancelAutoroute: async () => ok(undefined),
+      onAutorouteProgress: () => () => {},
     },
     attachments: { add: noWeb, read: noWeb },
     files: {

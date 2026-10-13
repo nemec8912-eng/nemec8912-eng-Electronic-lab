@@ -4,6 +4,8 @@
  * поставленных площадок тех же цепей минимальна, без перекрытий (зазор между корпусами) и с отступом
  * от края. Разъёмы и клеммники тянутся к краю платы — к ним подходят провода.
  * Дорожки деталей, которые переставлены, удаляются: их форма больше не подходит (одна правка, Ctrl+Z).
+ * Если с обычными полями вокруг деталей поместилось не всё, расстановка повторяется с полями уже
+ * (до 1/4): плотнее, зато всё на плате (разводить такую плату труднее — помогут перемычки).
  */
 import { logChange, touch } from './factory';
 import type { Placement, Point, ProjectDoc } from './model';
@@ -17,8 +19,9 @@ const fieldOf = (pads: number) => (pads >= 8 ? 3.2 : 1.3);
 const EDGE = 1.5; // мм от края платы
 
 export function autoplace(doc0: ProjectDoc): AutoplaceResult {
-  const board = doc0.pcb.board;
-  if (!board || !doc0.pcb.placements.length) return { doc: doc0, placed: 0, notPlaced: [] };
+  const board0 = doc0.pcb.board;
+  if (!board0 || !doc0.pcb.placements.length) return { doc: doc0, placed: 0, notPlaced: [] };
+  const board = board0;
   const refOf = (pl: Placement) => doc0.schematic.instances.find((i) => i.id === pl.instanceId)?.refDes ?? '?';
   const catOf = (pl: Placement) => {
     const inst = doc0.schematic.instances.find((i) => i.id === pl.instanceId);
@@ -37,17 +40,26 @@ export function autoplace(doc0: ProjectDoc): AutoplaceResult {
   const W = board.widthMm, H = board.heightMm;
   const poly = boardPolygon(board);
   const center: Point = { x: W / 2, y: H / 2 };
+  const g = PCB_GRID;
+  // Геометрия поворотов считается один раз на деталь
+  const geo = new Map(order.map((pl) => [pl.id, ([0, 90, 180, 270] as const).map((rotation) => ({ rotation, ...local(pl, rotation) }))]));
+  let attempt = { result: new Map<string, { position: Point; rotation: Placement['rotation'] }>(), notPlaced: [] as string[] };
+  for (const k of [1, 0.7, 0.45, 0.25]) {
+    attempt = placeAll(k);
+    if (!attempt.notPlaced.length) break;
+  }
+  const { result, notPlaced } = attempt;
+
+  function placeAll(fieldK: number) {
   const placedRects: Array<{ x: number; y: number; w: number; h: number; f: number }> = [];
   const placedPads: Array<{ x: number; y: number; net: string | null }> = [];
   const result = new Map<string, { position: Point; rotation: Placement['rotation'] }>();
   const notPlaced: string[] = [];
-  const g = PCB_GRID;
   for (const pl of order) {
     const { terminal } = catOf(pl);
-    const field = fieldOf(padsOf(doc0, pl).length);
+    const field = fieldOf(padsOf(doc0, pl).length) * fieldK;
     let best: { score: number; position: Point; rotation: Placement['rotation']; rect: { x: number; y: number; w: number; h: number }; pads: Array<{ x: number; y: number; net: string | null }> } | null = null;
-    for (const rotation of [0, 90, 180, 270] as const) {
-      const { box, pads } = local(pl, rotation);
+    for (const { rotation, box, pads } of geo.get(pl.id)!) {
       for (let y = Math.ceil(-box.y / g) * g; y + box.y + box.h <= H; y += g) {
         for (let x = Math.ceil(-box.x / g) * g; x + box.x + box.w <= W; x += g) {
           const rect = { x: box.x + x, y: box.y + y, w: box.w, h: box.h };
@@ -72,6 +84,8 @@ export function autoplace(doc0: ProjectDoc): AutoplaceResult {
     placedRects.push({ ...best.rect, f: field });
     placedPads.push(...best.pads);
     result.set(pl.id, { position: best.position, rotation: best.rotation });
+  }
+  return { result, notPlaced };
   }
   if (!result.size) return { doc: doc0, placed: 0, notPlaced };
   const moved = new Set(result.keys());

@@ -13,6 +13,9 @@
  *    остаётся лучший результат. В конце DRC: дорожка, нарушившая зазор, убирается.
  * Существующие дорожки не трогаются. Заливка не считается препятствием: она обтекает новые дорожки.
  *
+ * Узкие места: если что-то не развелось, недостающие соединения ведутся ещё раз поверх результата
+ * дорожкой минимальной ширины из правил (например, между выводами DIP при зазоре 0,25 мм).
+ *
  * Перемычки (односторонняя плата): если дорожкой не пройти, соединение может «перепрыгнуть» проволочной
  * перемычкой со стороны деталей — прямой по горизонтали или вертикали, длиной кратной 2,54 мм (до 25 мм).
  * Провод не должен касаться выводов других цепей и других перемычек, отверстия — не под корпусами.
@@ -38,6 +41,10 @@ export interface AutorouteOptions {
   passes?: number;
   /** Проволочные перемычки на односторонней плате (по умолчанию — да). */
   jumpers?: boolean;
+  /** Узкие дорожки (минимальная ширина из правил) там, где обычной не пройти (по умолчанию — да). */
+  narrow?: boolean;
+  /** Ход работы (для индикатора): номер попытки и их число. */
+  onProgress?(done: number, total: number): void;
 }
 
 /** Самая длинная перемычка автотрассировки, мм. */
@@ -177,8 +184,20 @@ export function autoroute(doc0: ProjectDoc, opts: AutorouteOptions = {}): Autoro
   for (let pass = 0; pass < runs; pass++) {
     const jumpers = pass >= plain;
     if (jumpers && pass === plain) { order = sorted; seed = 12345; }
+    opts.onProgress?.(pass, runs);
     const raw = routeOnce(doc0, order, w, opts.stepMm, jumpers);
-    const r = finish(raw);
+    let r = finish(raw);
+    // Узкие места: недостающее — ещё раз поверх, дорожкой минимальной ширины
+    const minW = rules.minTrackMm;
+    if (r.failed.length && opts.narrow !== false && minW < w - 1e-9) {
+      const failedNets = new Set(r.failed.map((f) => f.netId));
+      const rest = missingConnections(r.doc, false).filter((c) => failedNets.has(c.netId)).sort((a, b) => a.len - b.len);
+      if (rest.length) {
+        const raw2 = routeOnce(r.doc, rest, minW, opts.stepMm, jumpers);
+        const r2 = finish({ ...raw2, vias: r.vias + raw2.vias, jumpers: r.jumpers + raw2.jumpers, lengthMm: r.lengthMm + raw2.lengthMm });
+        if (r2.failed.length < r.failed.length) r = r2;
+      }
+    }
     if (!best || r.failed.length < best.failed.length || (r.failed.length === best.failed.length && r.jumpers < best.jumpers) || (r.failed.length === best.failed.length && r.jumpers === best.jumpers && r.lengthMm < best.lengthMm)) best = r;
     if (r.failed.length === 0) break;
     // Неразведённые — первыми; со второй половины попыток — ещё и случайный порядок остальных
@@ -188,6 +207,7 @@ export function autoroute(doc0: ProjectDoc, opts: AutorouteOptions = {}): Autoro
     order = [...order.filter((c) => failedKeys.has(label(c))), ...rest];
   }
   const res = best!;
+  opts.onProgress?.(runs, runs);
   if (res.total - res.failed.length === 0 && res.doc.pcb.tracks.length === doc0.pcb.tracks.length) return { ...res, doc: doc0, routed: 0 };
   const msg = `Автотрассировка: разведено ${res.routed} из ${res.total}${res.vias ? `, переходов ${res.vias}` : ''}${res.jumpers ? `, перемычек ${res.jumpers}` : ''}${res.failed.length ? `; не удалось: ${res.failed.map((f) => `${f.from}–${f.to}`).join(', ')}` : ''}`;
   return { ...res, doc: logChange(touch(res.doc), 'pcb-autoroute', msg) };
@@ -223,7 +243,9 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
   const W = board.widthMm, H = board.heightMm;
   const step = stepOpt ?? Math.max(0.3175, Math.sqrt((W * H) / 150_000));
   const base = new Grid(step, 0, 0, W, H, layers);
-  const margin = step * 0.36 + 0.01;
+  // Запас на дискретность сетки: ось трассы проходит через узлы, отрезки между ними чуть ближе к круглым
+  // площадкам (стрелка ≈ шаг²/8R). Остаток ловит проверка DRC в конце.
+  const margin = step * 0.12 + 0.02;
   const keep = rules.clearanceMm + w / 2 + margin;
   const jh = jumperHole(doc0);
   const viaR = (useJ ? jh.diameterMm : rules.viaDiameterMm) / 2;

@@ -2,6 +2,7 @@
 import type { AttachmentRef, CheckpointInfo, ProjectDoc, TestRecord } from '../core/model';
 import type { ExpectedOutcome } from '../sim/expected';
 import type { CheckReport } from '../sim/checks';
+import type { AutorouteResult } from '../core/autoroute';
 import type { Result } from '../core/result';
 import type { ProjectSummary } from '../storage/store';
 import type { SimResult } from '../sim/results';
@@ -107,6 +108,14 @@ export interface ElabApi {
     /** Тест работоспособности: нужные анализы и сверка условий. */
     checks(doc: ProjectDoc): Promise<Result<CheckReport>>;
   };
+  pcb: {
+    /** Автотрассировка в отдельном потоке. null — остановлена пользователем. */
+    autoroute(doc: ProjectDoc, opts: { jumpers?: boolean }): Promise<Result<AutorouteResult | null>>;
+    /** Остановить идущую автотрассировку. */
+    cancelAutoroute(): Promise<Result<void>>;
+    /** Ход автотрассировки: попытка done из total. Возвращает отписку. */
+    onAutorouteProgress(cb: (p: { done: number; total: number }) => void): () => void;
+  };
   attachments: {
     /** Выбрать фото на компьютере и скопировать их в папку проекта. null — выбор отменён. */
     add(projectId: string): Promise<Result<AttachmentRef[] | null>>;
@@ -158,6 +167,9 @@ export const IPC = {
   openExample: 'projects:open-example',
   simExpected: 'sim:expected',
   simChecks: 'sim:checks',
+  pcbAutoroute: 'pcb:autoroute',
+  pcbAutorouteCancel: 'pcb:autoroute-cancel',
+  pcbAutorouteProgress: 'pcb:autoroute-progress',
   attAdd: 'attachments:add',
   attRead: 'attachments:read',
   exportProject: 'files:export-project',

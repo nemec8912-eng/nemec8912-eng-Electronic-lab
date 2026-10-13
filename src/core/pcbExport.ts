@@ -9,6 +9,7 @@
  */
 import type { ProjectDoc } from './model';
 import { outlineSvgPath } from './outline';
+import { islandStrips, pourResults } from './pour';
 import { allPads, bodyRect, boardVias, DEFAULT_BOARD, fmtLen, jumperEnds, jumperLength, jumperName, newBoard, type Layer, padsOf, viaLayers } from './pcb';
 
 export interface ArtworkOptions {
@@ -82,6 +83,8 @@ export function artworkSvg(doc: ProjectDoc, opts: ArtworkOptions): Artwork {
     parts.push(`<path data-pour="${pour.id}" d="${outline}" fill="#000"/>`);
     parts.push(`<path d="${outline}" fill="none" stroke="#fff" stroke-width="${f(2 * board.rules.edgeMm)}"/>`);
     parts.push(copperMarkup(doc, opts.layer, '#fff', pour.clearanceMm, pour.netId, false));
+    const res = pourResults(doc).find((r) => r.pour.id === pour.id);
+    for (const b of res ? islandStrips(res) : []) parts.push(`<rect x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="${f(b.h)}" fill="#fff"/>`);
   }
   parts.push(`<path d="${outline}" fill="none" stroke="#000" stroke-width="0.15" data-outline="1"/>`);
   if (doc.pcb.board) parts.push(copperMarkup(doc, opts.layer, '#000'));

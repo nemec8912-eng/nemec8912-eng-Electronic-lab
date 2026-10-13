@@ -485,6 +485,9 @@ export function syncFromSchematic(doc: ProjectDoc): { doc: ProjectDoc; report: S
     if (!netIds.has(v.netId)) report.problems.push(`Переходное отверстие (${fmtLen(v.position.x)}; ${fmtLen(v.position.y)}): его цепи больше нет в схеме`);
     else if (used.length === 0) report.problems.push(`Переходное отверстие (${fmtLen(v.position.x)}; ${fmtLen(v.position.y)}) ни с чем не соединено`);
   }
+  for (const j of d.pcb.jumpers) {
+    if (!netIds.has(j.netId)) report.problems.push(`Перемычка ${jumperName(d, j)}: её цепи больше нет в схеме — удалите перемычку или разведите заново`);
+  }
   report.hasChanges = boardCreated || report.added.length > 0 || report.removed.length > 0 || report.changed.length > 0 || report.removedTracks > 0;
   if (!report.hasChanges) return { doc, report };
   const summary = [boardCreated ? 'плата создана' : '', report.added.length ? `добавлено: ${report.added.join(', ')}` : '', report.removed.length ? `удалено: ${report.removed.length}` : '', report.changed.length ? `изменено: ${report.changed.length}` : '', report.removedTracks ? `дорожек удалено: ${report.removedTracks}` : ''].filter(Boolean).join('; ');
@@ -847,10 +850,9 @@ export function drc(doc: ProjectDoc): DrcIssue[] {
     const name = netName(doc, r.pour.netId);
     if (!doc.schematic.nets.some((n) => n.id === r.pour.netId)) out.push({ severity: 'error', code: 'net', message: `Заливка: цепи больше нет в схеме — удалите заливку`, at: null, ids: [r.pour.id] });
     if (r.pour.clearanceMm < r_.clearanceMm) out.push({ severity: 'error', code: 'clearance', message: `Заливка ${name}: зазор ${len(r.pour.clearanceMm)} меньше общего ${len(r_.clearanceMm)}`, at: null, ids: [r.pour.id] });
-    const islands = r.components.filter((c) => c.keys.size === 0 && c.areaMm2 >= 0.5);
-    for (const c of islands.slice(0, 10)) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name}: остров ${len(Math.sqrt(c.areaMm2))}² не соединён с цепью — останется лишней медью`, at: c.sample, ids: [r.pour.id] });
-    if (islands.length > 10) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name}: ещё островов — ${islands.length - 10}`, at: null, ids: [r.pour.id] });
-    if (r.components.every((c) => c.keys.size === 0)) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name} не касается ни одной площадки своей цепи`, at: null, ids: [r.pour.id] });
+    // Острова (участки без своей меди) удаляются при выводе — это не замечание. Предупреждаем, только если
+    // заливка не касается своей цепи вовсе: тогда она исчезнет целиком.
+    if (r.components.length && r.components.every((c) => c.keys.size === 0)) out.push({ severity: 'warning', code: 'island', message: `Заливка ${name} не касается ни одной площадки своей цепи — вся она будет удалена как остров`, at: null, ids: [r.pour.id] });
   }
   for (const p of doc.pcb.pours) if (!L.includes(p.layer)) out.push({ severity: 'error', code: 'layer', message: 'Заливка на верхнем слое, а плата односторонняя', at: null, ids: [p.id] });
   for (const n of unroutedNets(doc)) {

@@ -8,6 +8,7 @@
  * выводятся (нужен векторный шрифт) — это сказано в readme архива.
  */
 import { APP_VERSION } from './appinfo';
+import { islandStrips, pourResults } from './pour';
 import type { ProjectDoc } from './model';
 import { allPads, bodyRect, boardPolygon, copperLayers, boardVias, viaLayers, jumperEnds, jumperLength, type Layer, type PadInfo } from './pcb';
 
@@ -104,6 +105,9 @@ export function gerberFiles(doc: ProjectDoc, base = 'board'): GerberFile[] {
       for (const t of doc.pcb.tracks) if (t.layer === layer && t.netId !== pour.netId) g.line(t.widthMm + 2 * c, t.points);
       for (const p of pads) if (p.layers.includes(layer) && p.netId !== pour.netId) g.flash(padAperture(p, c), p.pos.x, p.pos.y);
       for (const v of boardVias(doc)) if (viaLayers(doc).includes(layer) && v.netId !== pour.netId) g.flash({ kind: 'C', d: v.diameterMm + 2 * c }, v.position.x, v.position.y);
+      // Острова заливки (не касаются своей цепи) — вырезаются
+      const res = pourResults(doc).find((r) => r.pour.id === pour.id);
+      for (const b of res ? islandStrips(res) : []) g.region([{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y }, { x: b.x + b.w, y: b.y + b.h }, { x: b.x, y: b.y + b.h }]);
       g.polarity('D');
     }
     for (const t of doc.pcb.tracks) if (t.layer === layer) g.line(t.widthMm, t.points);
@@ -188,7 +192,7 @@ function readme(doc: ProjectDoc, names: string[]): string {
     ...(doc.pcb.jumpers.length ? [`Проволочные перемычки: ${doc.pcb.jumpers.length} (отверстия в сверловке, маска над ними открыта, на шелкографии — линия перемычки).`] : []),
     'Шелкография: только контуры корпусов, без позиционных обозначений.',
     `Контур платы: ${({ rect: 'прямоугольник', rounded: 'скруглённые углы', circle: 'круг', polygon: 'многоугольник' } as Record<string, string>)[b.outline.kind]}; дуги переданы отрезками по 3°.`,
-    ...doc.pcb.pours.map((p) => `Медная заливка: слой ${p.layer === 'top' ? 'верхний' : 'нижний'}, зазор ${p.clearanceMm} мм; площадки соединены сплошь (без термобарьеров); вырезы — полярностью LPC.`),
+    ...doc.pcb.pours.map((p) => `Медная заливка: слой ${p.layer === 'top' ? 'верхний' : 'нижний'}, зазор ${p.clearanceMm} мм; площадки соединены сплошь (без термобарьеров); вырезы и удалённые острова — полярностью LPC.`),
     '',
     'Экспорт проверен автотестами (обратное чтение и сравнение с моделью платы), но не производителем.',
     'Перед заказом откройте файлы в просмотрщике Gerber и сверьте с платой.',

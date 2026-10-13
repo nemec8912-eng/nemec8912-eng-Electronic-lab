@@ -4,7 +4,10 @@
  */
 import { useEffect, useState } from 'react';
 import { gerberFiles } from '../core/gerber';
-import type { DesignRules, ProjectDoc } from '../core/model';
+import { DEFAULT_RULES, type DesignRules, type ProjectDoc } from '../core/model';
+
+/** Тонкие правила для фрезерования: дорожка 0,3 мм проходит между выводами DIP при зазоре 0,25 мм. */
+const CNC_RULES: Partial<DesignRules> = { trackMm: 0.5, minTrackMm: 0.3, clearanceMm: 0.25 };
 import {
   deleteTrack, deleteVia, flipPlacement, fmtLen, jumperEnds, jumperLength, jumperName, jumperOfVia, LAYER_NAME, netName, parseLen, rotatePlacement, setBoard, setOutline, setTrackWidth,
   syncFromSchematic, type DrcIssue, type Layer, type SyncReport,
@@ -16,7 +19,7 @@ import { useDialogs } from './Dialogs';
 import { NewBoard, PourPanel, ShapeEditor } from './BoardShape';
 import { CncPanel } from './CncPanel';
 import { autoplace } from '../core/autoplace';
-import { autoroute, missingConnections } from '../core/autoroute';
+import { missingConnections, type AutorouteResult } from '../core/autoroute';
 import type { CncPath } from '../core/cnc';
 
 interface Props {
@@ -157,7 +160,11 @@ export function BoardSide(p: Props) {
           <details className="rules">
             <summary>Правила проектирования</summary>
             {RULES.map(([k, label, min]) => <LenField key={k} label={label} mm={board.rules[k]} units={units} min={min} onCommit={(v) => board_('Правила платы', { rules: { [k]: v } as Partial<DesignRules> })} />)}
-            <p className="muted small">По умолчанию — для домашнего изготовления (ЛУТ): дорожка 0,8 мм, зазор 0,4 мм, поясок 0,25 мм.</p>
+            <div className="row wrap">
+              <button className="btn small" onClick={() => board_('Правила платы: для ЛУТ', { rules: { trackMm: DEFAULT_RULES.trackMm, minTrackMm: DEFAULT_RULES.minTrackMm, clearanceMm: DEFAULT_RULES.clearanceMm } })}>Для ЛУТ (по умолчанию)</button>
+              <button className="btn small" onClick={() => board_('Правила платы: для станка', { rules: CNC_RULES })}>Тонкие — для станка</button>
+            </div>
+            <p className="muted small">По умолчанию — для домашнего изготовления (ЛУТ): дорожка 0,8 мм, зазор 0,4 мм, поясок 0,25 мм. Между выводами DIP (шаг 2,54 мм) так дорожка не проходит. «Тонкие — для станка»: дорожка 0,5 мм, в узких местах 0,3 мм, зазор 0,25 мм. V-фреза режет такой зазор, и дорожка 0,3 мм проходит между выводами DIP.</p>
           </details>
         </section>
       ) : <NewBoard doc={doc} onEdit={p.onEdit} />}
@@ -243,46 +250,109 @@ export function BoardSide(p: Props) {
   );
 }
 
+/**
+ * Автотрассировка идёт в отдельном потоке и переживает переход на другую вкладку: её состояние — здесь,
+ * вне компонента. Результат применяется, только если документ не менялся с начала трассировки
+ * (проверка — внутри правки, на том документе, к которому она применяется).
+ */
+type RouteOutcome = { r: AutorouteResult | null; error: string | null; applied: boolean | null };
+const routeJob = { running: false, startedAt: 0, done: 0, total: 1, outcome: null as RouteOutcome | null };
+const routeSubs = new Set<() => void>();
+const notifyRoute = () => queueMicrotask(() => routeSubs.forEach((f) => f()));
+function useRouteJob() {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const f = () => tick((x) => x + 1);
+    routeSubs.add(f);
+    const t = setInterval(() => { if (routeJob.running) f(); }, 500);
+    return () => { routeSubs.delete(f); clearInterval(t); };
+  }, []);
+  return routeJob;
+}
+async function startRoute(doc: ProjectDoc, onEdit: (label: string, fn: (d: ProjectDoc) => ProjectDoc) => void) {
+  if (routeJob.running) return;
+  Object.assign(routeJob, { running: true, startedAt: Date.now(), done: 0, total: 1, outcome: null });
+  notifyRoute();
+  const off = api().pcb.onAutorouteProgress((p) => { routeJob.done = p.done; routeJob.total = p.total; notifyRoute(); });
+  const outcome: RouteOutcome = { r: null, error: null, applied: null };
+  try {
+    const r = await unwrap(api().pcb.autoroute(doc, {}));
+    outcome.r = r;
+    if (r && r.routed) {
+      onEdit('Автотрассировка', (d) => {
+        if (d.revision !== doc.revision) { outcome.applied = false; notifyRoute(); return d; }
+        outcome.applied = true; notifyRoute();
+        return r.doc;
+      });
+    } else outcome.applied = false;
+  } catch (e) {
+    outcome.error = errorText(e); outcome.applied = false;
+  } finally {
+    off();
+    routeJob.running = false;
+    routeJob.outcome = outcome;
+    notifyRoute();
+  }
+}
+
+function routeMessage(o: RouteOutcome): { text: string; ok: boolean } {
+  if (o.error) return { text: o.error, ok: false };
+  const r = o.r;
+  if (!r) return { text: 'Автотрассировка остановлена, плата не изменилась.', ok: false };
+  if (r.routed && !o.applied) return { text: 'Плата или схема изменились во время трассировки — результат не применён. Запустите трассировку снова.', ok: false };
+  return {
+    text: r.total === 0 ? 'Все соединения уже разведены.'
+      : `Разведено ${r.routed} из ${r.total}${r.vias ? `, переходов: ${r.vias}` : ''}${r.jumpers ? `, проволочных перемычек: ${r.jumpers} (П1… на сборочном чертеже)` : ''}.${r.failed.length ? ` Не удалось: ${r.failed.map((f) => `${f.from}–${f.to}`).join(', ')} — раздвиньте детали, увеличьте плату, задайте тонкие правила или сделайте плату двухсторонней.` : ''}${r.routed ? ' Отменить — Ctrl+Z.' : ''}`,
+    ok: r.failed.length === 0,
+  };
+}
+
 /** Авторасстановка и автотрассировка: одна правка каждая, отменяется Ctrl+Z. */
 function AutoPanel({ doc, onEdit, confirm }: { doc: ProjectDoc; onEdit(label: string, fn: (d: ProjectDoc) => ProjectDoc): void; confirm(title: string, message: string, ok: string): Promise<boolean> }) {
-  const [busy, setBusy] = useState<'place' | 'route' | null>(null);
+  const [placing, setPlacing] = useState(false);
+  const job = useRouteJob();
   // revision: ревизия документа, к которой относится сообщение (null — правка ещё не применилась:
   // редактор ставит свою ревизию, её узнаём при следующей отрисовке).
   const [msg, setMsg] = useState<{ text: string; ok: boolean; base: number; revision: number | null } | null>(null);
   useEffect(() => {
     if (msg && msg.revision === null && doc.revision !== msg.base) setMsg({ ...msg, revision: doc.revision });
   }, [doc.revision, msg]);
+  // Итог трассировки (в том числе завершившейся, пока открыта другая вкладка)
+  const outcome = job.outcome;
+  useEffect(() => {
+    if (!outcome || job.running) return;
+    if (outcome.r?.routed && outcome.applied === null) return; // правка ещё не применена
+    routeJob.outcome = null;
+    setMsg({ ...routeMessage(outcome), base: doc.revision, revision: doc.revision });
+  });
+  const busy: 'place' | 'route' | null = placing ? 'place' : job.running ? 'route' : null;
   const missing = missingConnections(doc).length;
-  const run = (kind: 'place' | 'route') => {
-    setBusy(kind);
+  const place = () => {
+    setPlacing(true);
     setTimeout(() => {
       try {
-        if (kind === 'place') {
-          const r = autoplace(doc);
-          if (r.placed) onEdit('Авторасстановка деталей', () => r.doc);
-          setMsg({ text: r.placed ? `Расставлено деталей: ${r.placed}.${r.notPlaced.length ? ` Не поместились: ${r.notPlaced.join(', ')} — увеличьте плату.` : ''} Отменить — Ctrl+Z.` : 'Нечего расставлять', ok: !r.notPlaced.length, base: doc.revision, revision: r.placed ? null : doc.revision });
-        } else {
-          const r = autoroute(doc);
-          if (r.routed) onEdit('Автотрассировка', () => r.doc);
-          setMsg({
-            text: r.total === 0 ? 'Все соединения уже разведены.'
-              : `Разведено ${r.routed} из ${r.total}${r.vias ? `, переходов: ${r.vias}` : ''}${r.jumpers ? `, проволочных перемычек: ${r.jumpers} (П1… на сборочном чертеже)` : ''}.${r.failed.length ? ` Не удалось: ${r.failed.map((f) => `${f.from}–${f.to}`).join(', ')} — раздвиньте детали, увеличьте плату или сделайте её двухсторонней.` : ''}${r.routed ? ' Отменить — Ctrl+Z.' : ''}`,
-            ok: r.failed.length === 0, base: doc.revision, revision: r.routed ? null : doc.revision,
-          });
-        }
-      } finally { setBusy(null); }
+        const r = autoplace(doc);
+        if (r.placed) onEdit('Авторасстановка деталей', () => r.doc);
+        setMsg({ text: r.placed ? `Расставлено деталей: ${r.placed}.${r.notPlaced.length ? ` Не поместились: ${r.notPlaced.join(', ')} — увеличьте плату.` : ''} Отменить — Ctrl+Z.` : 'Нечего расставлять', ok: !r.notPlaced.length, base: doc.revision, revision: r.placed ? null : doc.revision });
+      } finally { setPlacing(false); }
     }, 30);
   };
+  const route = () => { setMsg(null); void startRoute(doc, onEdit); };
+  const progress = job.running ? { done: job.done, total: job.total, secs: Math.round((Date.now() - job.startedAt) / 1000) } : null;
   return (
     <section aria-label="Автоматически">
       <h3>Автоматически</h3>
       <div className="row wrap">
         <button className="btn" disabled={busy !== null || !doc.pcb.placements.length} onClick={() => void (async () => {
           if (doc.pcb.tracks.length && !(await confirm('Расставить детали заново?', 'Все детали будут переставлены, их дорожки удалены. Отменить можно Ctrl+Z.', 'Расставить'))) return;
-          run('place');
+          place();
         })()}>{busy === 'place' ? 'Расставляю…' : 'Расставить детали'}</button>
-        <button className="btn primary" disabled={busy !== null || missing === 0} onClick={() => run('route')}>{busy === 'route' ? 'Развожу…' : `Развести дорожки${missing ? ` (${missing})` : ''}`}</button>
+        <button className="btn primary" disabled={busy !== null || missing === 0} onClick={route}>{busy === 'route' ? 'Развожу…' : `Развести дорожки${missing ? ` (${missing})` : ''}`}</button>
+        {busy === 'route' && <button className="btn" onClick={() => void api().pcb.cancelAutoroute()}>Остановить</button>}
       </div>
+      {progress && (
+        <p className="small muted" data-testid="auto-progress">Попытка {Math.min(progress.done + 1, progress.total)} из {progress.total} · {progress.secs} с. Работать с программой можно; если плата изменится, результат не применится.</p>
+      )}
       {msg && msg.revision === doc.revision && <p className={`small ${msg.ok ? 'ok-text' : 'warning-text'}`} data-testid="auto-result">{msg.text}</p>}
       <p className="muted small">Расстановка группирует связанные детали и тянет разъёмы к краю. Трассировка ведёт дорожки по правилам платы (ширина, зазор, край), уже проложенные дорожки не трогает.{doc.pcb.board?.layers === 1 ? ' На односторонней плате, если дорожкой не пройти, ставит проволочные перемычки со стороны деталей (прямые, длиной кратной 2,54 мм).' : ''}</p>
     </section>

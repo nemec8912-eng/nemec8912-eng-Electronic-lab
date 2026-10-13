@@ -10,6 +10,8 @@ import {
   movePlacement, padsOf, parseLen, ratsnest, rotatePlacement, setBoard, setTrackWidth, shapeGap, syncFromSchematic, unroutedNets,
 } from '../../src/core/pcb';
 import { artworkSvg, assemblySvg, lutMirror } from '../../src/core/pcbExport';
+import { copperField } from '../../src/core/cnc';
+import { gerberFiles } from '../../src/core/gerber';
 import { deleteInstance, deleteWire } from '../../src/core/schematic';
 import { Builder, p, touches } from '../sim-helpers';
 
@@ -334,7 +336,7 @@ describe('Формат v6', () => {
 
 // ---------- Форма платы и заливка ----------
 import { normalizePolygon, outlineArea, outlineSvgPath, polygonProblem } from '../../src/core/outline';
-import { addPour, deletePour, pourResults } from '../../src/core/pour';
+import { addPour, deletePour, inIsland, isIsland, islandStrips, pourResults } from '../../src/core/pour';
 import { setOutline } from '../../src/core/pcb';
 
 describe('Плата: форма контура', () => {
@@ -390,7 +392,21 @@ describe('Плата: медная заливка', () => {
     const vin = findPad(doc, pad(doc, v, '1'))!.netId!;
     const fence: Track = { id: crypto.randomUUID(), netId: vin, layer: 'bottom', widthMm: 0.8, from: pad(doc, v, '1'), to: pad(doc, v, '1'), points: [{ x: 0, y: 30 }, { x: 10, y: 30 }, { x: 10, y: 40 }] };
     const fenced = { ...doc, pcb: { ...doc.pcb, tracks: [...doc.pcb.tracks, fence] } };
-    assert.ok(drc(fenced).some((i) => i.code === 'island'), JSON.stringify(drc(fenced).map((i) => i.message)));
+    // Остров удаляется: в DRC не замечание, на станке и в Gerber — не медь
+    const rf = pourResults(fenced)[0]!;
+    assert.ok(rf.components.some(isIsland), 'остров есть');
+    assert.ok(inIsland(rf, 3, 36));
+    assert.ok(!inIsland(rf, 40, 10));
+    assert.ok(!drc(fenced).some((i) => i.code === 'island'), JSON.stringify(drc(fenced).map((i) => i.message)));
+    assert.ok(islandStrips(rf).length > 0);
+    const cf = copperField(fenced, 'bottom', 1);
+    const at = (x: number, y: number) => cf.d[Math.round((y - cf.y0) / cf.step) * cf.nx + Math.round((x - cf.x0) / cf.step)]!;
+    assert.ok(at(3, 36) > 0, 'в острове меди нет');
+    assert.ok(at(40, 10) <= 0, 'основная заливка — медь');
+    const regions = (g: string) => (g.match(/G36\*/g) ?? []).length;
+    const gb = gerberFiles(fenced).find((x) => x.name.endsWith('B_Cu.gbl'))!.content;
+    const gbAll = gerberFiles(doc).find((x) => x.name.endsWith('B_Cu.gbl'))!.content;
+    assert.ok(regions(gb) > regions(gbAll), 'вырезы островов в Gerber');
     assert.equal(deletePour(doc, doc.pcb.pours[0]!.id).pcb.pours.length, 0);
   });
 });

@@ -22,6 +22,7 @@ import { APP_VERSION } from './appinfo';
 import { contours, distanceTransform, loopArea, loopLength, newField, pointInPoly, polyMask, simplifyLoop, stampShape, type Field } from './field';
 import type { CncSettings, Point, ProjectDoc } from './model';
 import { DEFAULT_CNC } from './model';
+import { inIsland, isIsland, pourResults } from './pour';
 import { allPads, boardPolygon, boardVias, jumperEnds, jumperLength, jumperName, jumperOfVia, viaLayers, netName, padShape, trackShapes, viaShape, type Layer, type Shape } from './pcb';
 import { logChange, touch } from './factory';
 
@@ -122,6 +123,15 @@ export function copperField(doc: ProjectDoc, layer: Layer, reach: number): Field
     for (let i = 0; i < poly.length; i++) stampShape(edge, { pts: [poly[i]!, poly[(i + 1) % poly.length]!], closed: false, r: 0 }, edgeMm + 2 * step);
     const inside = polyMask(f, poly);
     for (let k = 0; k < inside.length; k++) if (inside[k] && (others.d[k]! < pour.clearanceMm || edge.d[k]! < edgeMm)) inside[k] = 0;
+    // Острова заливки удалены — это не медь
+    const pr = pourResults(doc).find((r) => r.pour.id === pour.id);
+    if (pr && pr.components.some(isIsland)) {
+      for (let k = 0; k < inside.length; k++) {
+        if (!inside[k]) continue;
+        const i = k % f.nx, j = (k - i) / f.nx;
+        if (inIsland(pr, f.x0 + i * step, f.y0 + j * step)) inside[k] = 0;
+      }
+    }
     const dt = distanceTransform(f.nx, f.ny, inside, step);
     for (let k = 0; k < dt.length; k++) if (dt[k]! < f.d[k]!) f.d[k] = dt[k]!;
   }

@@ -146,11 +146,11 @@ export function PourPanel({ doc, onEdit }: { doc: ProjectDoc; onEdit: Edit }) {
       <ul className="pours" data-testid="pours">
         {doc.pcb.pours.map((p) => {
           const res = results.find((r) => r.pour.id === p.id);
-          const islands = res ? res.components.filter((c) => c.keys.size === 0 && c.areaMm2 >= 0.5).length : 0;
+          const islands = res ? res.components.filter((c) => c.keys.size === 0).length : 0;
           const n = doc.schematic.nets.find((x) => x.id === p.netId);
           return (
             <li key={p.id}>
-              <span>{n ? netDisplayName(doc, n) : 'цепь удалена'} · {p.layer === 'top' ? 'верх' : 'низ'} · зазор {fmtLen(p.clearanceMm, units)}{islands ? ` · островов: ${islands}` : ''}</span>
+              <span>{n ? netDisplayName(doc, n) : 'цепь удалена'} · {p.layer === 'top' ? 'верх' : 'низ'} · зазор {fmtLen(p.clearanceMm, units)}{islands ? ` · островов удалено: ${islands}` : ''}</span>
               <button className="btn small" aria-label="Удалить заливку" onClick={() => onEdit('Удаление заливки', (d) => deletePour(d, p.id))}>×</button>
             </li>
           );

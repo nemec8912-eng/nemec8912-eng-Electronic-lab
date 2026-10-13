@@ -1,7 +1,7 @@
 {
   "name": "electronic-lab",
   "productName": "Электронная лаборатория",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Локальный редактор принципиальных схем, симулятор и проектировщик печатных плат",
   "private": true,
   "license": "UNLICENSED",

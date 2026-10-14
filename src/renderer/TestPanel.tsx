@@ -170,8 +170,6 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onE
           banner="Результаты — расчёт ngspice по моделям деталей. Модели приближённые; расчёт не гарантирует безопасность и работоспособность реальной платы."
         />
       </div>
-      {playback.legend}
-      {playback.bar}
       {usable && tab === 'scope' && result.analysis === 'tran' && (
         <div className="test-charts" aria-label="Графики">
           <ScopeScreen doc={doc} result={result} onEdit={onEdit} />
@@ -246,6 +244,14 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onE
             <ul className="issues">{failedRuns.map((r, i) => <li key={i} className="warning">Прогон {formatQuantity(r.value, PARAMS[result!.sweep!.param]?.unitRu ?? '')}: {r.error?.message ?? 'не выполнен'}</li>)}</ul>
           )}
         </section>
+
+        {(playback.bar || playback.legend) && (
+          <section className="playback-side" aria-label="Индикаторы расчёта">
+            <h3>{tranResult ? 'Воспроизведение' : 'Индикаторы'}</h3>
+            {playback.bar}
+            {playback.legend}
+          </section>
+        )}
 
         {fresh && result.issues.length > 0 && (
           <section>

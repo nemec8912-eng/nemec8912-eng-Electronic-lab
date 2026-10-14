@@ -20,7 +20,7 @@ function niceTicks(min: number, max: number, count = 5): number[] {
   return out;
 }
 
-export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, ariaLabel, yFormat }: {
+export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, ariaLabel, yFormat, marker }: {
   x: number[];
   series: Series[];
   xUnit: string;
@@ -29,6 +29,8 @@ export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, aria
   height?: number;
   ariaLabel: string;
   yFormat?: (v: number) => string;
+  /** Отметка момента воспроизведения на оси X (вертикальная линия). */
+  marker?: number | null;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(320);
@@ -95,6 +97,9 @@ export function Plot({ x, series, xUnit, yUnit, logX = false, height = 170, aria
         {paths.map((d, i) => <polyline key={i} points={d} className="trace-line" style={{ stroke: series[i]!.color ?? COLORS[i % COLORS.length] }} />)}
         {yt.map((v) => <text key={`ty${v}`} x={L - 4} y={py(v) + 3} className="trace-axis" textAnchor="end">{fy(v)}</text>)}
         {xt.map((v) => <text key={`tx${v}`} x={px(v)} y={H - 7} className="trace-axis" textAnchor="middle">{formatQuantity(v, xUnit, 3)}</text>)}
+        {marker != null && Number.isFinite(marker) && marker >= geo.x0 && marker <= geo.x1 && (
+          <line x1={px(marker)} x2={px(marker)} y1={T} y2={H - B} className="trace-marker" data-testid="plot-marker" />
+        )}
         {cursor !== null && <line x1={px(x[cursor]!)} x2={px(x[cursor]!)} y1={T} y2={H - B} className="trace-cursor" />}
       </svg>
       {cursor !== null && (

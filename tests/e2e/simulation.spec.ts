@@ -98,6 +98,22 @@ test('RC-фильтр: частотный анализ, параметричес
   await page.getByRole('radio', { name: 'Переходный процесс' }).click();
   await page.getByRole('button', { name: 'Запустить тест' }).click();
   await expect(page.getByRole('img', { name: 'Осциллограмма' })).toBeVisible();
+
+  // Воспроизведение переходного процесса: стоп, шаг по точкам, пуск/пауза, стрелки токов и легенда
+  await expect(page.getByRole('group', { name: 'Воспроизведение переходного процесса' })).toBeVisible();
+  await page.getByRole('button', { name: 'Стоп' }).click();
+  await expect(page.getByTestId('playback-time')).toContainText('точка 1 из');
+  await page.getByRole('button', { name: 'Следующая точка расчёта' }).click();
+  await expect(page.getByTestId('playback-time')).toContainText('точка 2 из');
+  await page.getByLabel('Скорость воспроизведения').selectOption('0.25');
+  await expect(page.getByTestId('playback-speed')).toContainText('1 с на экране =');
+  await page.getByRole('button', { name: 'Воспроизвести' }).click();
+  await page.getByRole('button', { name: 'Пауза' }).click();
+  await expect(page.getByTestId('plot-marker')).toBeAttached();
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Следующая точка расчёта' }).click();
+  await expect(page.locator('g.flow-arrow[data-flow-inst]').first()).toBeAttached();
+  await expect(page.getByTestId('flow-legend')).toContainText('условного тока');
+  await shot(page, 'test-playback');
   await page.keyboard.press('Control+s');
   await expect(page.locator('.indicator')).toHaveAttribute('data-state', 'saved');
 });

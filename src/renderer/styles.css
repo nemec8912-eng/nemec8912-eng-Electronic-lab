@@ -524,3 +524,18 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 4px; paddi
 .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .card-model, .card-pins { border-top: 1px solid #e3e6eb; margin-top: 8px; padding-top: 8px; }
 .field.inline-small { display: inline-flex; flex-direction: column; min-width: 120px; margin-right: 10px; }
+
+/* Индикаторы расчёта на схеме: стрелки условного тока и воспроизведение переходного процесса */
+.flow-arrow line { stroke: #e65100; stroke-linecap: round; stroke-dasharray: 5 3; animation: flow-dash 0.9s linear infinite; }
+.flow-arrow polygon { fill: #e65100; }
+.flow-arrow text { font: 600 10px/1 system-ui, sans-serif; fill: #bf360c; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+@keyframes flow-dash { to { stroke-dashoffset: -16; } }
+@media (prefers-reduced-motion: reduce) { .flow-arrow line { animation: none; stroke-dasharray: none; } }
+.trace-marker { stroke: #ff7043; stroke-width: 1.2; }
+.playback { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 12px; background: var(--panel); border-top: 1px solid var(--line); font-size: 12.5px; }
+.playback input[type=range] { flex: 1 1 180px; min-width: 120px; }
+.playback select { font: inherit; }
+.playback .pb-time { font-variant-numeric: tabular-nums; min-width: 16ch; }
+.flow-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 4px 12px 6px; background: var(--panel); font-size: 12px; color: var(--muted); }
+.flow-legend .scale { display: inline-block; width: 120px; height: 8px; border-radius: 4px; vertical-align: middle; margin: 0 4px; }
+.flow-legend .arrow-key { color: #e65100; font-weight: 700; }

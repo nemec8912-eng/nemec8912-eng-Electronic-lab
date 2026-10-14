@@ -15,6 +15,7 @@ import { circuitKey } from '../sim/key';
 import { transfer, type SweepRun } from '../sim/results';
 import { Plot, type Series } from './Plot';
 import { SchematicCanvas } from './SchematicCanvas';
+import { usePlayback } from './Playback';
 
 type Analysis = SimulationSettings['analysis'];
 
@@ -66,12 +67,18 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onE
     return v === undefined || !Number.isFinite(v) ? null : v;
   };
 
+  const tranResult = usable && result.analysis === 'tran' && result.tran && result.tran.time.length >= 2 ? result.tran : null;
+  const opResult = usable && result.analysis === 'op' ? result.op : null;
+  const playback = usePlayback(doc, tranResult, opResult);
+
   const nodeLabels = useMemo(() => {
-    if (!usable || !result.op) return undefined;
+    // Переходный процесс: напряжения в момент воспроизведения (если включены индикаторы).
+    const src = tranResult && playback.indicators ? playback.frame?.node : usable ? result.op?.node : undefined;
+    if (!src) return undefined;
     const out: Record<string, string> = {};
-    for (const [id, v] of Object.entries(result.op.node)) if (Number.isFinite(v)) out[id] = formatQuantity(v, 'В', 3);
+    for (const [id, v] of Object.entries(src)) if (Number.isFinite(v)) out[id] = formatQuantity(v, 'В', 3);
     return out;
-  }, [usable, result]);
+  }, [usable, result, tranResult, playback.indicators, playback.frame]);
 
   const flagged = useMemo(() => new Set((fresh ? result.issues.filter((i) => i.severity === 'error') : []).flatMap((i) => i.refs)), [fresh, result]);
   const probeNets = useMemo(() => ({
@@ -157,11 +164,14 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onE
           onPinClick={(pin) => { if (FIRST_TARGET[tab]) onEdit('Щуп', (d) => setProbeTarget(d, target, pin)); }}
           probes={marks}
           nodeLabels={nodeLabels}
+          flow={playback.flow}
           flagged={flagged}
           hint={FIRST_TARGET[tab] ? `Щёлкните вывод — подключить ${TARGET_TEXT[target]}` : 'Ручки блока питания — на панели справа'}
           banner="Результаты — расчёт ngspice по моделям деталей. Модели приближённые; расчёт не гарантирует безопасность и работоспособность реальной платы."
         />
       </div>
+      {playback.legend}
+      {playback.bar}
       {usable && tab === 'scope' && result.analysis === 'tran' && (
         <div className="test-charts" aria-label="Графики">
           <ScopeScreen doc={doc} result={result} onEdit={onEdit} />
@@ -175,7 +185,7 @@ export function TestPanel({ doc, ngspice, result, resultKey, running, onRun, onE
         {curves?.kind === 'tran' && (
           <section className="chart">
             <h3>Осциллограмма (красный − чёрный)</h3>
-            <Plot x={curves.x} series={curves.series} xUnit="с" yUnit="В" ariaLabel="Осциллограмма" />
+            <Plot x={curves.x} series={curves.series} xUnit="с" yUnit="В" ariaLabel="Осциллограмма" marker={playback.t} />
           </section>
         )}
         {curves?.kind === 'dc' && (

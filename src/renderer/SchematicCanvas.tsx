@@ -15,6 +15,7 @@ import {
   ungroupItems, type Clipboard, type Terminal,
 } from '../core/schematic';
 import { contentBounds, instanceLabel, instanceLabelPos } from '../core/sheet';
+import type { FlowArrow } from '../sim/playback';
 import { useDialogs } from './Dialogs';
 import { Prims, SymbolGraphic, symbolBounds } from './symbols';
 
@@ -44,6 +45,8 @@ interface Props {
   probes?: Array<{ pin: PinRef; cls: string; label: string }>;
   /** id сети → подпись (рассчитанное напряжение). */
   nodeLabels?: Record<string, string>;
+  /** Индикаторы расчёта: цвет проводов по потенциалу (id сети → цвет) и стрелки условного тока. */
+  flow?: { wireColor: Record<string, string>; arrows: FlowArrow[] } | null;
   /** id объектов с проблемами (подсветка). */
   flagged?: Set<string>;
   markers?: Marker[];
@@ -383,7 +386,7 @@ export function SchematicCanvas(p: Props) {
             return (
               <g key={w.id} data-wire-id={w.id} data-net-id={net ?? ''} className={`wire ${sel.has(w.id) ? 'selected' : ''} ${(net && p.flagged?.has(net)) || p.flagged?.has(w.id) ? 'flagged' : ''}`}>
                 <polyline points={pts} className="wire-hit" />
-                <polyline points={pts} className="wire-line" />
+                <polyline points={pts} className="wire-line" style={net && p.flow?.wireColor[net] ? { stroke: p.flow.wireColor[net] } : undefined} />
               </g>
             );
           })}
@@ -444,6 +447,7 @@ export function SchematicCanvas(p: Props) {
             if (!label || !pos) return null;
             return <text key={n.id} className="node-label" x={pos.x + 6} y={pos.y + 16} data-net-label={n.name ?? n.id}>{label}</text>;
           })}
+          {p.flow && p.flow.arrows.map((a) => <FlowArrowMark key={`${a.instanceId}#${a.from.pin}`} doc={doc} arrow={a} />)}
           {(p.probes ?? []).map((m, i) => {
             const pos = pinPosition(doc, m.pin);
             if (!pos) return null;
@@ -482,6 +486,47 @@ export function SchematicCanvas(p: Props) {
       {p.banner && <div className="stage-note">{p.banner}</div>}
       {wire && <div className="canvas-status">Провод: щёлкните точку изгиба или конец (Esc — отмена)</div>}
     </div>
+  );
+}
+
+/**
+ * Стрелка условного тока: у двухвыводной детали — вдоль линии «вывод → вывод» сбоку от обозначения,
+ * у вывода прибора — вдоль вывода, внутрь или наружу. Толщина — по величине тока (логарифмически).
+ */
+function FlowArrowMark({ doc, arrow }: { doc: ProjectDoc; arrow: FlowArrow }) {
+  const a = pinPosition(doc, arrow.from);
+  if (!a) return null;
+  let tail: Point, head: Point, lbl: Point;
+  if (arrow.to) {
+    const b = pinPosition(doc, arrow.to);
+    if (!b) return null;
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1) return null;
+    const d = { x: (b.x - a.x) / len, y: (b.y - a.y) / len }, n = { x: -d.y, y: d.x };
+    const c = { x: (a.x + b.x) / 2 + n.x * 18, y: (a.y + b.y) / 2 + n.y * 18 };
+    tail = { x: c.x - d.x * 12, y: c.y - d.y * 12 };
+    head = { x: c.x + d.x * 12, y: c.y + d.y * 12 };
+    lbl = { x: c.x + n.x * 12, y: c.y + n.y * 12 + 4 };
+  } else {
+    const inst = doc.schematic.instances.find((i) => i.id === arrow.instanceId);
+    if (!inst) return null;
+    const len = Math.hypot(inst.position.x - a.x, inst.position.y - a.y);
+    const d = len < 1 ? { x: 1, y: 0 } : { x: (inst.position.x - a.x) / len, y: (inst.position.y - a.y) / len };
+    const n = { x: -d.y, y: d.x };
+    const p0 = { x: a.x + n.x * 7, y: a.y + n.y * 7 }, p1 = { x: p0.x + d.x * 16, y: p0.y + d.y * 16 };
+    [tail, head] = arrow.inward ? [p0, p1] : [p1, p0];
+    lbl = { x: a.x + n.x * 16, y: a.y + n.y * 16 + 4 };
+  }
+  const len = Math.hypot(head.x - tail.x, head.y - tail.y) || 1;
+  const d = { x: (head.x - tail.x) / len, y: (head.y - tail.y) / len }, n = { x: -d.y, y: d.x };
+  const w = 1 + 2.4 * arrow.weight, hs = 4 + 2 * arrow.weight;
+  const tip = `${head.x},${head.y} ${head.x - d.x * hs * 1.6 + n.x * hs},${head.y - d.y * hs * 1.6 + n.y * hs} ${head.x - d.x * hs * 1.6 - n.x * hs},${head.y - d.y * hs * 1.6 - n.y * hs}`;
+  return (
+    <g className="flow-arrow" data-flow={`${arrow.from.pin}${arrow.to ? `>${arrow.to.pin}` : arrow.inward ? '>in' : '>out'}`} data-flow-inst={arrow.instanceId} pointerEvents="none">
+      <line x1={tail.x} y1={tail.y} x2={head.x - d.x * hs} y2={head.y - d.y * hs} style={{ strokeWidth: w }} />
+      <polygon points={tip} />
+      <text x={lbl.x} y={lbl.y} textAnchor="middle">{arrow.label}</text>
+    </g>
   );
 }
 

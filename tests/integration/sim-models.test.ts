@@ -41,6 +41,24 @@ describe('Модели приборов (ngspice)', { skip }, () => {
     assert.ok(res.issues.some((i) => i.code === 'unverified-model'), 'модель не проверена — сказано явно');
   });
 
+  test('диодный мост: выход = вход − 2 прямых падения, при любой полярности входа', async () => {
+    for (const reverse of [false, true]) {
+      const b = new Builder();
+      const g = b.place('GND', 0, 300);
+      const v = b.vsrc(12, 0, 100, g), br = b.part('Диодный мост (типовой)', 200, 100), r = b.res(1000, 400, 100);
+      // Вход — на выводы «~» (1 и 3), нагрузка 1 кОм — между «+» (2) и «−» (4).
+      b.wire(p(v, '+'), p(br, reverse ? '3' : '1'));
+      b.wire(p(g, '1'), p(br, reverse ? '1' : '3'));
+      b.wire(p(br, '2'), p(r, '1'));
+      b.wire(p(r, '2'), p(br, '4'));
+      const res = await simulate(b.doc, NG, { analysis: 'op' });
+      ok(res);
+      const vout = res.op!.node[netOfPin(b.doc, p(br, '2'))!.id]! - res.op!.node[netOfPin(b.doc, p(br, '4'))!.id]!;
+      // ≈ 10,7 мА через два диода 1N4007: по 0,6…0,8 В
+      within(vout, 12 - 2 * 0.8, 12 - 2 * 0.6, `U выхода моста${reverse ? ' (вход наоборот)' : ''}`);
+    }
+  });
+
   test('стабилитрон 1N4733A: 12 В через 1 кОм → 5,1 В ± 5 % (по даташиту)', async () => {
     const b = new Builder();
     const g = b.place('GND', 0, 300);

@@ -45,6 +45,19 @@ export const D_BZX55C5V1 = m('BZX55C5V1 (стабилитрон 5,1 В)', [
   '.model {model} D(IS=1n RS=5 N=1 CJO=100p M=0.33 TT=50n BV=5.1 IBV=5m)',
 ], 'упрощённая модель по даташиту: 5,1 В при тестовом токе 5 мА');
 
+// ---------- Диодный мост (символ: 1 — ~, 2 — +, 3 — ~, 4 — −) ----------
+
+export const BRIDGE_1A = m('Диодный мост 1 А (четыре диода класса 1N4007)', [
+  'X {n:1} {n:2} {n:3} {n:4} {model}',
+  '.subckt {model} ac1 pos ac2 neg',
+  'D1 ac1 pos {model}_d',
+  'D2 ac2 pos {model}_d',
+  'D3 neg ac1 {model}_d',
+  'D4 neg ac2 {model}_d',
+  '.model {model}_d D(IS=7.02767n RS=0.0341512 N=1.80803 EG=1.05743 XTI=5 BV=1000 IBV=5e-08 CJO=1e-11 VJ=0.7 M=0.5 FC=0.5 TT=1e-07)',
+  '.ends',
+], 'упрощённая модель: четыре диода с параметрами 1N4007 (Diodes Inc.); падение на мосту ≈ 2 прямых падения диода');
+
 export const D_LED_RED = m('Светодиод красный (обобщённая модель)', [
   'D {n:2} {n:1} {model}',
   '.model {model} D(IS=1e-18 N=2 RS=5 CJO=30p M=0.33 BV=5 IBV=10u)',

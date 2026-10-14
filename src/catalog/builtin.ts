@@ -6,7 +6,8 @@
  *    перед применением пользователь сверяет сведения с даташитом своего производителя.
  * SPICE-модели (этап 4) — src/catalog/spiceModels.ts: модели производителей и упрощённые/поведенческие модели
  * по даташиту, все помечены «не проверены». Простая логика КМОП, реле, тиристоры, оптопары — поведенческие модели.
- * Диодный мост без корпуса и микроконтроллер не моделируются — это показывается явно.
+ * Микроконтроллеры не моделируются — это показывается явно. Диодный мост рассчитывается моделью из четырёх
+ * диодов, но корпус у него не задан: разводка выводов у мостов разных серий разная.
  */
 import { builtinBundle, stableId, type PartBundle } from '../core/catalog';
 import { BUILTIN_PARTS, PART_INFO_DEFAULTS } from '../core/library';
@@ -196,7 +197,7 @@ const DEFS: Def[] = [
     symbol: sym('zener'), packages: [{ family: 'AXIAL', params: { pitch: 7.62, bodyL: 3.9, bodyD: 1.9, drill: 0.7 }, pinMap: [['1', '1'], ['2', '2']] }], model: SM.D_BZX55C5V1 },
   { key: 'bridge/generic', name: 'Диодный мост (типовой)', category: 'bridge', refPrefix: 'VD', description: 'Однофазный выпрямительный мост. Корпус не задан: разводка выводов у мостов разных серий разная — добавьте корпус по даташиту своей детали.', generic: true,
     ratings: { reverseVoltage: q(1000, 'V'), current: q(1, 'A') },
-    symbol: sym('bridge'), packages: [], model: null },
+    symbol: sym('bridge'), packages: [], model: SM.BRIDGE_1A },
 
   // ---------- Транзисторы ----------
   { key: 'bjt/bc547', name: 'Транзистор BC547 (n-p-n)', category: 'bjt', refPrefix: 'VT', description: 'Маломощный n-p-n транзистор общего применения', generic: false, partNumber: 'BC547', marking: 'BC547',

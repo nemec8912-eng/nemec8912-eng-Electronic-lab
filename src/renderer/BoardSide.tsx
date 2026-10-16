@@ -255,8 +255,8 @@ export function BoardSide(p: Props) {
  * вне компонента. Результат применяется, только если документ не менялся с начала трассировки
  * (проверка — внутри правки, на том документе, к которому она применяется).
  */
-type RouteOutcome = { r: AutorouteResult | null; error: string | null; applied: boolean | null };
-const routeJob = { running: false, startedAt: 0, done: 0, total: 1, outcome: null as RouteOutcome | null };
+type RouteEnd = { r: AutorouteResult | null; error: string | null; applied: boolean | null };
+const routeJob = { running: false, startedAt: 0, done: 0, total: 1, finished: null as RouteEnd | null };
 const routeSubs = new Set<() => void>();
 const notifyRoute = () => queueMicrotask(() => routeSubs.forEach((f) => f()));
 function useRouteJob() {
@@ -271,31 +271,31 @@ function useRouteJob() {
 }
 async function startRoute(doc: ProjectDoc, onEdit: (label: string, fn: (d: ProjectDoc) => ProjectDoc) => void) {
   if (routeJob.running) return;
-  Object.assign(routeJob, { running: true, startedAt: Date.now(), done: 0, total: 1, outcome: null });
+  Object.assign(routeJob, { running: true, startedAt: Date.now(), done: 0, total: 1, finished: null });
   notifyRoute();
   const off = api().pcb.onAutorouteProgress((p) => { routeJob.done = p.done; routeJob.total = p.total; notifyRoute(); });
-  const outcome: RouteOutcome = { r: null, error: null, applied: null };
+  const finished: RouteEnd = { r: null, error: null, applied: null };
   try {
     const r = await unwrap(api().pcb.autoroute(doc, {}));
-    outcome.r = r;
+    finished.r = r;
     if (r && r.routed) {
       onEdit('Автотрассировка', (d) => {
-        if (d.revision !== doc.revision) { outcome.applied = false; notifyRoute(); return d; }
-        outcome.applied = true; notifyRoute();
+        if (d.revision !== doc.revision) { finished.applied = false; notifyRoute(); return d; }
+        finished.applied = true; notifyRoute();
         return r.doc;
       });
-    } else outcome.applied = false;
+    } else finished.applied = false;
   } catch (e) {
-    outcome.error = errorText(e); outcome.applied = false;
+    finished.error = errorText(e); finished.applied = false;
   } finally {
     off();
     routeJob.running = false;
-    routeJob.outcome = outcome;
+    routeJob.finished = finished;
     notifyRoute();
   }
 }
 
-function routeMessage(o: RouteOutcome): { text: string; ok: boolean } {
+function routeMessage(o: RouteEnd): { text: string; ok: boolean } {
   if (o.error) return { text: o.error, ok: false };
   const r = o.r;
   if (!r) return { text: 'Автотрассировка остановлена, плата не изменилась.', ok: false };
@@ -318,12 +318,12 @@ function AutoPanel({ doc, onEdit, confirm }: { doc: ProjectDoc; onEdit(label: st
     if (msg && msg.revision === null && doc.revision !== msg.base) setMsg({ ...msg, revision: doc.revision });
   }, [doc.revision, msg]);
   // Итог трассировки (в том числе завершившейся, пока открыта другая вкладка)
-  const outcome = job.outcome;
+  const finished = job.finished;
   useEffect(() => {
-    if (!outcome || job.running) return;
-    if (outcome.r?.routed && outcome.applied === null) return; // правка ещё не применена
-    routeJob.outcome = null;
-    setMsg({ ...routeMessage(outcome), base: doc.revision, revision: doc.revision });
+    if (!finished || job.running) return;
+    if (finished.r?.routed && finished.applied === null) return; // правка ещё не применена
+    routeJob.finished = null;
+    setMsg({ ...routeMessage(finished), base: doc.revision, revision: doc.revision });
   });
   const busy: 'place' | 'route' | null = placing ? 'place' : job.running ? 'route' : null;
   const missing = missingConnections(doc).length;

@@ -230,6 +230,8 @@ function prunePourTracks(doc: ProjectDoc, doc0: ProjectDoc): { doc: ProjectDoc; 
   return { doc, lengthMm: removed };
 }
 
+/** Вес эвристики A*: чуть больше 1 — поиск в разы короче, трассы длиннее на единицы процентов. */
+const HW = 1.2;
 function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number, allowJumpers = true): AutorouteResult {
   const board = doc0.pcb.board!;
   const rules = rulesOf(doc0);
@@ -343,6 +345,52 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
   const jStride = Math.max(1, Math.round(2.54 / step));
   const ORTHO = [0, 2, 4, 6];
 
+  // Буферы поиска — одни на все поиски: «эпоха» отмечает состояния, тронутые текущим поиском
+  const S = N * L * 9;
+  const gs = new Float32Array(S), from = new Int32Array(S), seenAt = new Uint32Array(S);
+  let epoch = 0;
+
+  /**
+   * Достижима ли цель вообще (без учёта чужих трасс — они лишь дорожают): поиск в ширину по клеткам,
+   * переходам и прыжкам-перемычкам. Если нет — дорогой поиск A* по всему полю не нужен.
+   */
+  const mark8 = new Uint32Array(N * L);
+  let reachEpoch = 0;
+  const reachable = (net: number, starts: Path, goals: Set<number>): boolean => {
+    reachEpoch++;
+    const freeT = (li: number, k: number) => ok(base.track[li]![k]!, net);
+    const freeV = (k: number) => { for (let li = 0; li < L; li++) if (!ok(base.via[li]![k]!, net)) return false; return true; };
+    const q: number[] = [];
+    for (const s0 of starts) { const lk = s0.li * N + s0.k; if (mark8[lk] !== reachEpoch) { mark8[lk] = reachEpoch; q.push(lk); } }
+    const visit = (lk: number) => { if (mark8[lk] !== reachEpoch) { mark8[lk] = reachEpoch; q.push(lk); } };
+    for (let h = 0; h < q.length; h++) {
+      const lk = q[h]!;
+      if (goals.has(lk)) return true;
+      const li = Math.floor(lk / N), k = lk - li * N, i = k % nx, j = (k - i) / nx;
+      for (let d = 0; d < 8; d++) {
+        const [dx, dy] = DIRS[d]!;
+        const ni = i + dx, nj = j + dy;
+        if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+        const nk = nj * nx + ni;
+        if (freeT(li, nk)) visit(li * N + nk);
+      }
+      if (L === 2 && !useJ && freeV(k) && freeT(1 - li, k)) visit((1 - li) * N + k);
+      if (useJ && freeV(k)) {
+        for (const d of ORTHO) {
+          const [dx, dy] = DIRS[d]!;
+          for (let n = 1; n <= jMax; n++) {
+            const ni = i + dx * n, nj = j + dy * n;
+            if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) break;
+            const nk = nj * nx + ni;
+            if (!freeT(J, nk)) break;
+            if (n >= jMin && n % jStride === 0 && freeV(nk) && freeT(li, nk)) visit(li * N + nk);
+          }
+        }
+      }
+    }
+    return false;
+  };
+
   const search = (ci: number, pres: number): Path | null => {
     const c = conns[ci]!;
     const net = idx(c.netId);
@@ -378,12 +426,12 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
     if (!starts.length || !goals.length) return null;
     const goalSet = new Set(goals.map((x) => x.li * N + x.k));
     const tx = c.b.pos.x, ty = c.b.pos.y;
-    const S = N * L * 9;
-    const gs = new Float32Array(S).fill(Infinity);
-    const from = new Int32Array(S).fill(-1);
+    if (!reachable(net, starts, goalSet)) return null;
+    epoch++;
+    const G = (st: number) => (seenAt[st] === epoch ? gs[st]! : Infinity);
     const heap = new Heap();
-    const hfun = (k: number) => { const p = base.pt(k); const dx = Math.abs(p.x - tx) / step, dy = Math.abs(p.y - ty) / step; return Math.max(dx, dy) + 0.414 * Math.min(dx, dy); };
-    for (const s0 of starts) { const st = (s0.li * N + s0.k) * 9 + 8; gs[st] = 0; heap.push(hfun(s0.k), st); }
+    const hfun = (k: number) => { const p = base.pt(k); const dx = Math.abs(p.x - tx) / step, dy = Math.abs(p.y - ty) / step; return HW * (Math.max(dx, dy) + 0.414 * Math.min(dx, dy)); };
+    for (const s0 of starts) { const st = (s0.li * N + s0.k) * 9 + 8; seenAt[st] = epoch; gs[st] = 0; from[st] = -1; heap.push(hfun(s0.k), st); }
     let found = -1;
     let budget = 1_500_000;
     while (heap.size && budget-- > 0) {
@@ -403,7 +451,7 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
         const turn = dir === 8 || dir === d ? 0 : 0.6;
         const nc = cost + (dx && dy ? 1.414 : 1) + turn + pc;
         const ns = (li * N + nk) * 9 + d;
-        if (nc < gs[ns]!) { gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(nk), ns); }
+        if (nc < G(ns)) { seenAt[ns] = epoch; gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(nk), ns); }
       }
       if (L === 2 && !useJ) {
         const vc = viaCost(k);
@@ -411,7 +459,7 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
         if (vc >= 0 && cellCost(ol, k) >= 0) {
           const ns = (ol * N + k) * 9 + 8;
           const nc = cost + 12 + vc;
-          if (nc < gs[ns]!) { gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(k), ns); }
+          if (nc < G(ns)) { seenAt[ns] = epoch; gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(k), ns); }
         }
       }
       if (useJ) {
@@ -441,7 +489,7 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
             if (vc1 < 0) continue;
             const ns = (li * N + nk) * 9 + 8;
             const nc = cost + JUMPER_COST + n * 0.5 + acc + vc0 + vc1 + pc;
-            if (nc < gs[ns]!) { gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(nk), ns); }
+            if (nc < G(ns)) { seenAt[ns] = epoch; gs[ns] = nc; from[ns] = st; heap.push(nc + hfun(nk), ns); }
           }
         }
       }
@@ -477,7 +525,8 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
 
   const unroutable = new Set<number>();
   let pres = 0.5;
-  const ITER = 60;
+  const ITER = 60, STALL = 12;
+  let bestConflicts = Infinity, bestIt = 0;
   for (let it = 0; it < ITER; it++) {
     const todo = it === 0 ? conns.map((_, ci) => ci) : conns.map((_, ci) => ci).filter((ci) => !unroutable.has(ci) && (!paths.has(ci) || conflicted(ci)));
     if (it > 0 && todo.length === 0) break;
@@ -496,6 +545,9 @@ function routeOnce(doc0: ProjectDoc, conns: Conn[], w: number, stepOpt?: number,
       for (const q of path) if (total[q.li]![q.k]! - o[q.li]![q.k]! > 0) { hist[q.li]![q.k] = hist[q.li]![q.k]! + 1; conflicts++; }
     }
     if (conflicts === 0 && it > 0) break;
+    // Застой: наложений давно не становится меньше — дальше крутить бесполезно (остаток снимается ниже)
+    if (conflicts < bestConflicts) { bestConflicts = conflicts; bestIt = it; }
+    else if (it - bestIt >= STALL) break;
     pres *= 1.3;
   }
   // Оставшиеся конфликты: снимаем трассы с наибольшим числом наложений, пока не станет чисто

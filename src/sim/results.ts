@@ -151,6 +151,8 @@ export function mapAc(plot: RawPlot, nl: Netlist): AcResult {
 
 interface Samples {
   len: number;
+  /** Время выборок (только переходный процесс). */
+  time?: number[];
   node: Record<string, number[] | number>;
   current: Record<string, number[] | number>;
   pins: Record<string, Record<string, number[] | number>>;
@@ -163,7 +165,7 @@ const at = (x: number[] | number | undefined, i: number) => (x === undefined ? N
 function samplesOf(op: OpResult | null, tran: TranResult | null, dc: DcResult | null, doc: ProjectDoc): Samples[] {
   const out: Samples[] = [];
   if (op) out.push({ len: 1, node: op.node, current: op.current, pins: op.pins, where: () => 'в рабочей точке' });
-  if (tran) out.push({ len: tran.time.length, node: tran.node, current: tran.current, pins: tran.pins, where: (i) => `при t = ${formatQuantity(tran.time[i]!, 'с')}` });
+  if (tran) out.push({ len: tran.time.length, time: tran.time, node: tran.node, current: tran.current, pins: tran.pins, where: (i) => `при t = ${formatQuantity(tran.time[i]!, 'с')}` });
   if (dc) {
     const src = doc.schematic.instances.find((x) => x.id === dc.sourceId)?.refDes ?? 'источнике';
     out.push({ len: dc.x.length, node: dc.node, current: dc.current, pins: dc.pins, where: (i) => `при ${src} = ${formatQuantity(dc.x[i]!, '')}`.trim() });
@@ -248,9 +250,38 @@ export function checkLimits(doc: ProjectDoc, op: OpResult | null, tran: TranResu
       const a = d.byName('A'), kk = d.byName('K');
       if (a && kk) {
         if (cat !== 'zener') add('reverse-voltage', R.reverseVoltage?.value, (s, i) => d.v(s, kk, i) - d.v(s, a, i), (v, l, w) => `обратное напряжение ${V(v)} больше допустимого ${V(l)} (${w}) — риск пробоя.`);
-        add('current', R.current?.value, (s, i) => d.iin(s, a, i), (v, l, w) => cat === 'led'
-          ? `ток светодиода ${A(v)} больше допустимого ${A(l)} (${w}) — светодиод перегреется. Нужен токоограничивающий резистор побольше.`
-          : `прямой ток ${A(v)} больше допустимого ${A(l)} (${w}).`);
+        if (cat === 'diode' && R.surgeCurrent && R.current) {
+          // Выпрямительный диод: «допустимый ток» — средний прямой (IF(AV)). Пики при заряде конденсатора
+          // фильтра в разы больше и нормальны; их сравниваем с ударным током (IFSM, полупериод 50/60 Гц).
+          const lim = R.current.value, surge = R.surgeCurrent.value;
+          for (const set of sets) {
+            if (!set.time) {
+              for (let i = 0; i < set.len; i++) {
+                const x = d.iin(set, a, i);
+                if (Number.isFinite(x) && x > lim) { out.push({ instanceId: inst.id, kind: 'current', value: x, limit: lim, message: `${inst.refDes}: прямой ток ${A(x)} больше допустимого ${A(lim)} (${set.where(i)}).${suffix}` }); break; }
+              }
+              continue;
+            }
+            const t = set.time, n = set.len;
+            if (n < 2) continue;
+            const t0 = t[n - 1]! / 2;
+            let area = 0, span = 0, pk = -Infinity, pkAt = 0;
+            for (let i = 1; i < n; i++) {
+              const x0 = Math.max(0, d.iin(set, a, i - 1)), x1 = Math.max(0, d.iin(set, a, i));
+              if (Number.isFinite(x1) && x1 > pk) { pk = x1; pkAt = i; }
+              if (t[i]! <= t0 || !Number.isFinite(x0) || !Number.isFinite(x1)) continue;
+              const dt = t[i]! - Math.max(t[i - 1]!, t0);
+              area += ((x0 + x1) / 2) * dt; span += dt;
+            }
+            const avg = span > 0 ? area / span : NaN;
+            if (Number.isFinite(avg) && avg > lim) out.push({ instanceId: inst.id, kind: 'current', value: avg, limit: lim, message: `${inst.refDes}: средний прямой ток ${A(avg)} больше допустимого ${A(lim)} (вторая половина расчёта) — диод перегреется.${suffix}` });
+            if (pk > surge) out.push({ instanceId: inst.id, kind: 'current', value: pk, limit: surge, message: `${inst.refDes}: импульсный ток ${A(pk)} больше ударного ${A(surge)} (${set.where(pkAt)}) — нужен резистор или термистор для ограничения пускового тока.${suffix}` });
+          }
+        } else {
+          add('current', R.current?.value, (s, i) => d.iin(s, a, i), (v, l, w) => cat === 'led'
+            ? `ток светодиода ${A(v)} больше допустимого ${A(l)} (${w}) — светодиод перегреется. Нужен токоограничивающий резистор побольше.`
+            : `прямой ток ${A(v)} больше допустимого ${A(l)} (${w}).`);
+        }
       }
       add('power', R.power?.value, (s, i) => d.power(s, i), (v, l, w) => `рассеиваемая мощность ${W(v)} больше допустимой ${W(l)} (${w}) — риск перегрева. Оценка без тепловой модели.`);
     } else if (cat === 'bjt') {

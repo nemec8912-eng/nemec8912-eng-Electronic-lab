@@ -14,6 +14,7 @@ import {
 } from '../core/testlog';
 import { api, errorText, fmtDateTime, unwrap } from './api';
 import { useDialogs } from './Dialogs';
+import { testReportSvg, verdictText } from '../core/testReport';
 
 interface Props {
   doc: ProjectDoc;
@@ -221,7 +222,45 @@ function RecordView(p: Props & { rec: TestRecord; onDeleted(): void }) {
           <textarea aria-label="Примечания" rows={4} defaultValue={rec.notes} key={`n${rec.id}`} onChange={(e) => upd('Примечания', { notes: e.target.value }, `notes:${rec.id}`)} />
         </label>
       </section>
+
+      <ClientReport doc={doc} rec={rec} toast={p.toast} />
     </div>
+  );
+}
+
+/** Акт проверки для клиента: PDF или печать. Мастерская запоминается на этом ПК. */
+function ClientReport({ doc, rec, toast }: { doc: ProjectDoc; rec: TestRecord; toast(text: string, kind?: 'ok' | 'error'): void }) {
+  const read = () => { try { return localStorage.getItem('elab.workshop') ?? ''; } catch { return ''; } };
+  const [workshop, setWorkshop] = useState(read);
+  const [client, setClient] = useState('');
+  const sheet = () => testReportSvg(doc, rec, { workshop, client });
+  const v = verdictText(rec);
+  const run = async (kind: 'pdf' | 'print') => {
+    try {
+      const a = sheet();
+      if (kind === 'pdf') { const r = await unwrap(api().files.savePdf(a.title, a.svg, a.widthMm, a.heightMm)); if (r) toast(`Сохранено: ${r.path}`); }
+      else { const r = await unwrap(api().files.print(a.svg, a.widthMm, a.heightMm)); if (!r.printed && r.reason) toast(`Печать не выполнена: ${r.reason}`, 'error'); }
+    } catch (e) { toast(errorText(e), 'error'); }
+  };
+  return (
+    <section aria-label="Акт для клиента">
+      <h3>Акт для клиента</h3>
+      <div className="row wrap">
+        <label className="field grow"><span>Мастерская / мастер</span>
+          <input aria-label="Мастерская" value={workshop} placeholder="например: Ремонт техники, Константин, тел. …"
+            onChange={(e) => { setWorkshop(e.target.value); try { localStorage.setItem('elab.workshop', e.target.value); } catch { /* без памяти */ } }} />
+        </label>
+        <label className="field grow"><span>Клиент, устройство</span>
+          <input aria-label="Клиент и устройство" value={client} placeholder="ФИО, модель, серийный номер" onChange={(e) => setClient(e.target.value)} />
+        </label>
+      </div>
+      <p className={`small ${v.ok === true ? 'ok-text' : v.ok === false ? 'warning-text' : 'muted'}`} data-testid="report-verdict">Вывод в акте: {v.text}</p>
+      <div className="row wrap">
+        <button className="btn" onClick={() => void run('pdf')}>Акт: PDF…</button>
+        <button className="btn" onClick={() => void run('print')}>Акт: печать</button>
+      </div>
+      <p className="muted small">В акте: условия, измерения с расчётом и допуском, заменённые детали, примечания и вывод — только по сравнению замеров с расчётом. Фото в акт не входят.</p>
+    </section>
   );
 }
 

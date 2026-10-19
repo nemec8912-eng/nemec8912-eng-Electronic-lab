@@ -19,7 +19,7 @@ const pin = (d: ProjectDoc, ref: string, p: string) => ({ instanceId: d.schemati
 const add = (d: ProjectDoc, c: Partial<Check> & Pick<Check, 'quantity'>) => addCheck(d, { ...newCheck(c.quantity), ...c });
 
 describe('Тест работоспособности (ngspice)', { skip }, () => {
-  for (const f of ['пример-светодиод.elab', 'пример-rc-фильтр.elab', 'пример-мультивибратор-ne555.elab', 'пример-стабилизатор-lm317.elab', 'пример-металлоискатель.elab']) {
+  for (const f of ['пример-светодиод.elab', 'пример-rc-фильтр.elab', 'пример-мультивибратор-ne555.elab', 'пример-стабилизатор-lm317.elab', 'пример-металлоискатель.elab', 'пример-блок-питания-5в.elab']) {
     test(`${f}: условия работоспособности примера выполнены`, async () => {
       const d = await loadRaw(f);
       assert.ok(d.checks.items.length > 0);

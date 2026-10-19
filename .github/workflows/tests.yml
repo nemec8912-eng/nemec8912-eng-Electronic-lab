@@ -15,6 +15,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    permissions:
+      contents: write
     env:
       # Расчёт обязателен: без ngspice тесты падают, а не пропускаются.
       ELAB_REQUIRE_NGSPICE: '1'
@@ -87,3 +89,13 @@ jobs:
             release/*.zip
             release/*.sha256
           retention-days: 30
+      # Выпуск: при метке v* портативный архив прикрепляется к выпуску GitHub (хранится постоянно).
+      - name: Выпуск на GitHub (метка v*)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v') && success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Электронная лаборатория ${tag#v}" --notes-file docs/reports/final.md
+          gh release upload "$tag" release/*.zip release/*.sha256 --clobber

@@ -6,7 +6,7 @@
 
 ## Как запустить (Windows, без установки)
 
-1. Скачать `ElectronLab-1.0.0-win-x64-portable.zip`:
+1. Скачать `ElectronLab-<версия>-win-x64-portable.zip`:
    - со страницы [Releases](../../releases) — архив прикрепляется автоматически, когда создан выпуск с меткой `v1.0.0` (Releases → Draft a new release → тег `v1.0.0` → Publish);
    - или артефакт «ElectronLab-win-x64-portable» последнего успешного запуска «Тесты» на вкладке Actions (хранится 30 дней);
    - или собрать самому: `npm run package:win`.

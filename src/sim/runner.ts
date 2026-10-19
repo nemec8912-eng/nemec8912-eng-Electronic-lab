@@ -10,7 +10,8 @@ import * as path from 'node:path';
 import { AppError } from '../core/result';
 import { parseRaw, RawParseError, type RawPlot } from './raw';
 
-export const NGSPICE_TIMEOUT_MS = 30_000;
+/** Предел времени одного расчёта: схемы с КМОП-логикой (металлоискатель) считаются до полуминуты, на медленном ПК — дольше. */
+export const NGSPICE_TIMEOUT_MS = 120_000;
 
 export type PlotKind = 'op' | 'tran' | 'dc' | 'ac';
 

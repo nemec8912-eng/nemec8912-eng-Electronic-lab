@@ -1,0 +1,57 @@
+# Сборка ngspice в WebAssembly для браузерной демо-версии. Запускается при изменении сценария сборки
+# (или вручную); готовые файлы коммитятся в vendor/ngspice-wasm. Коммит от GITHUB_TOKEN не запускает
+# другие проверки — зацикливания нет.
+name: ngspice WebAssembly
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/ngspice-wasm/**'
+      - '.github/workflows/ngspice-wasm.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Инструменты сборки
+        run: sudo apt-get update -q && sudo apt-get install -y -q build-essential autoconf automake libtool bison flex
+      - name: Сборка ngspice → WebAssembly
+        run: bash scripts/ngspice-wasm/build.sh vendor/ngspice-wasm
+      - name: Проверка: расчёт делителя в Node.js
+        run: |
+          cat > /tmp/t.cir <<'CIR'
+          * divider
+          V1 a 0 DC 10
+          R1 a b 1k
+          R2 b 0 1k
+          .control
+          op
+          print v(b)
+          quit
+          .endc
+          .end
+          CIR
+          node -e "
+            const create = require('./vendor/ngspice-wasm/spice.js');
+            let out = '';
+            create({ print: (s) => { out += s + '\n'; }, printErr: (s) => { out += s + '\n'; } }).then((m) => {
+              m.FS.writeFile('/t.cir', require('fs').readFileSync('/tmp/t.cir', 'utf8'));
+              try { m.callMain(['-b', '/t.cir']); } catch (e) { if (!(e && e.name === 'ExitStatus')) throw e; }
+              console.log(out);
+              if (!/v\(b\) = 5\.0/.test(out)) { console.error('ожидалось v(b) = 5'); process.exit(1); }
+            });
+          "
+      - name: Коммит файлов
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vendor/ngspice-wasm
+          git commit -m "ngspice WebAssembly: $(cat vendor/ngspice-wasm/VERSION)" || echo "без изменений"
+          git pull --rebase -q origin main
+          git push origin HEAD:main

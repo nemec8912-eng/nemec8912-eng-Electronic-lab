@@ -23,7 +23,7 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q build-essential autoconf automake libtool bison flex
       - name: Сборка ngspice → WebAssembly
         run: bash scripts/ngspice-wasm/build.sh vendor/ngspice-wasm
-      - name: Проверка: расчёт делителя в Node.js
+      - name: "Проверка — расчёт делителя в Node.js"
         run: |
           cat > /tmp/t.cir <<'CIR'
           * divider

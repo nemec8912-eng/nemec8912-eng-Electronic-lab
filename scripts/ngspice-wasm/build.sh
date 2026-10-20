@@ -5,6 +5,8 @@
 # В отличие от EEcircuit, ngspice запускается в пакетном режиме (-b файл), без интерактивного ввода:
 # Asyncify не нужен. Результат: vendor/ngspice-wasm/spice.js, spice.wasm, VERSION.
 set -euo pipefail
+trap 'echo "::error::build.sh, строка $LINENO: $BASH_COMMAND"' ERR
+mkdir -p "${1:-vendor/ngspice-wasm}"
 OUT="$(realpath "${1:-vendor/ngspice-wasm}")"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="${RUNNER_TEMP:-/tmp}/ngspice-wasm"
@@ -24,10 +26,10 @@ sed -i 's/-Wno-unused-but-set-variable/-Wno-unused-const-variable/g' ./configure
 sed -i 's/AC_CHECK_FUNCS(\[time getrusage\])/AC_CHECK_FUNCS(\[time\])/g' ./configure.ac
 ./autogen.sh
 mkdir release && cd release
-emconfigure ../configure --disable-debug --disable-openmp --disable-xspice --disable-osdi --without-x --with-readline=no
+emconfigure ../configure --disable-debug --disable-openmp --disable-xspice --disable-osdi --without-x --with-readline=no > configure.log 2>&1 || { tail -20 configure.log | sed "s/^/::error::/"; exit 1; }
 sed -i 's|$(ngspice_LDADD) $(LIBS)|$(ngspice_LDADD) $(LIBS) -O2 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME=createNgspice -s ENVIRONMENT=web,worker,node -s INVOKE_RUN=0 -s EXIT_RUNTIME=1 -s FORCE_FILESYSTEM=1 -s EXPORTED_RUNTIME_METHODS=["FS","callMain"] -o spice.js|g' ./src/Makefile
 grep -q "EXPORT_NAME=createNgspice" ./src/Makefile
-emmake make -j"$(nproc)"
+emmake make -j"$(nproc)" > make.log 2>&1 || { grep -m 20 -E "error" make.log | sed "s/^/::error::/"; exit 1; }
 cp src/spice.js src/spice.wasm "$OUT/"
 cp ../COPYING "$OUT/COPYING-ngspice" 2>/dev/null || true
 echo "$tag (emscripten 3.1.74, пакетный режим)" > "$OUT/VERSION"

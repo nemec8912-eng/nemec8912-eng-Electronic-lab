@@ -3,6 +3,7 @@
  * Итог «работает» — только если все условия выполнены и (по умолчанию) ни одна деталь не перегружена.
  * Если величину посчитать нельзя, условие не считается ни выполненным, ни проваленным — причина названа.
  */
+import type { Ngspice } from './engine';
 import { checkKind, checkProblem, pinLabel } from '../core/checks';
 import type { Check, PinRef, ProjectDoc } from '../core/model';
 import { netOfPin } from '../core/schematic';
@@ -123,7 +124,7 @@ export function evaluateChecks(doc: ProjectDoc, runs: Partial<Record<'op' | 'tra
 }
 
 /** Запуск нужных анализов и проверка. */
-export async function runChecks(doc: ProjectDoc, ngspicePath: string | null): Promise<CheckReport> {
+export async function runChecks(doc: ProjectDoc, ngspicePath: Ngspice | null): Promise<CheckReport> {
   const need = new Set<'op' | 'tran' | 'ac'>(['op']);
   for (const c of doc.checks.items) need.add(checkKind(c.quantity).analysis);
   const runs: Partial<Record<'op' | 'tran' | 'ac', SimResult>> = {};

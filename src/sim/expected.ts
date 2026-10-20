@@ -8,6 +8,7 @@
  * разброс параметров полупроводников не учитываются — это сказано в описании метода.
  * Если в записи указано измеренное питание и источник питания на схеме один — расчёт ведётся при нём.
  */
+import type { Ngspice } from './engine';
 import { formatQuantity } from '../core/library';
 import type { Measurement, ProjectDoc, TestRecord } from '../core/model';
 import { netOfPin, setValue, symbolOf } from '../core/schematic';
@@ -55,7 +56,7 @@ function valueOf(doc: ProjectDoc, op: OpResult, m: Measurement): number | null {
 
 const describe = (m: Measurement) => (m.quantity === 'V' ? (m.target.kind === 'net' ? 'напряжение узла относительно земли' : 'напряжение между выводами 1 и 2') : m.target.kind === 'part' && m.target.pin ? 'ток, втекающий в вывод' : 'ток через деталь (от вывода 1 к 2)');
 
-export async function expectedValues(revisionDoc: ProjectDoc, ngspicePath: string | null, rec: TestRecord): Promise<ExpectedOutcome> {
+export async function expectedValues(revisionDoc: ProjectDoc, ngspicePath: Ngspice | null, rec: TestRecord): Promise<ExpectedOutcome> {
   const values: ExpectedValue[] = [];
   const needSim = rec.measurements.filter((m) => m.quantity === 'V' || m.quantity === 'A');
   // Сопротивление детали — номинал и допуск, без расчёта схемы.

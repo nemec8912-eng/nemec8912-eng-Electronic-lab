@@ -1,4 +1,5 @@
 /** Полный цикл расчёта: проверки → netlist → ngspice → привязка результатов → пределы; параметрический прогон. */
+import type { Ngspice } from './engine';
 import { formatQuantity, PARAMS } from '../core/library';
 import type { ProjectDoc } from '../core/model';
 import { AppError } from '../core/result';
@@ -7,7 +8,7 @@ import { analysesFor, buildNetlist } from './netlist';
 
 export { analysesFor };
 import { checkLimits, mapAc, mapDc, mapOp, mapTran, type AnalysisKind, type SimResult, type SweepRun } from './results';
-import { runNgspice, type PlotKind } from './runner';
+import { runNgspice, type PlotKind } from './engine';
 
 export interface SimulateOptions {
   /** Анализ; по умолчанию — выбранный в проекте. Рабочая точка считается всегда. */
@@ -21,7 +22,7 @@ export interface SimulateOptions {
 
 type RunPart = Pick<SimResult, 'status' | 'issues' | 'error' | 'op' | 'tran' | 'dc' | 'ac' | 'netlist' | 'warnings'> & { version: string | null };
 
-async function runOnce(doc: ProjectDoc, ngspicePath: string | null, analysis: AnalysisKind): Promise<RunPart> {
+async function runOnce(doc: ProjectDoc, ngspicePath: Ngspice | null, analysis: AnalysisKind): Promise<RunPart> {
   const an = analysesFor(doc, analysis);
   const nl = buildNetlist(doc, an, doc.name, { ammeter: ammeterPin(doc) });
   const base: RunPart = { status: 'blocked', issues: nl.issues, error: null, op: null, tran: null, dc: null, ac: null, netlist: nl.text, warnings: [], version: null };
@@ -63,7 +64,7 @@ export function withParam(doc: ProjectDoc, instanceId: string, param: string, va
   };
 }
 
-export async function simulate(doc: ProjectDoc, ngspicePath: string | null, opts: SimulateOptions = {}): Promise<SimResult> {
+export async function simulate(doc: ProjectDoc, ngspicePath: Ngspice | null, opts: SimulateOptions = {}): Promise<SimResult> {
   const started = Date.now();
   const analysis: AnalysisKind = opts.analysis ?? (opts.tran === undefined ? doc.simulation.analysis : opts.tran ? 'tran' : 'op');
   const main = await runOnce(doc, ngspicePath, analysis);

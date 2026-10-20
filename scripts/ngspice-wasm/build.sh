@@ -18,8 +18,10 @@ git clone --depth 1 https://github.com/emscripten-core/emsdk.git
 source ./emsdk/emsdk_env.sh
 git clone https://github.com/danchitnis/ngspice-sf-mirror ngspice
 cd ngspice
-tag=$(git tag | grep -E '^ngspice-[0-9]+(\.[0-9]+)?$' | sort -V | tail -n 1)
-echo "ngspice: $tag"
+# Проверенная версия; в новейшей метке зеркала встречаются неполные правки (cktsopt.c: OPT_ENH_RSHUNT).
+tag="${NGSPICE_TAG:-ngspice-44.2}"
+git rev-parse -q --verify "refs/tags/$tag" >/dev/null || tag=$(git tag | grep -E '^ngspice-[0-9]+(\.[0-9]+)?$' | sort -V | tail -n 1)
+echo "::notice::ngspice: $tag; метки: $(git tag | grep -E '^ngspice-4[0-9]' | sort -V | tail -n 6 | tr '\n' ' ')"
 git checkout "$tag"
 bash "$HERE/hicum2_patch.sh"
 sed -i 's/-Wno-unused-but-set-variable/-Wno-unused-const-variable/g' ./configure.ac

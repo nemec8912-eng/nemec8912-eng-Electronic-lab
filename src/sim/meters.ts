@@ -5,12 +5,13 @@
  * Нелинейные детали (диоды, транзисторы) дают то же, что и у настоящего прибора: показание зависит
  * от тестового тока и полярности щупов.
  */
+import type { Ngspice } from './engine';
 import type { PinRef, ProjectDoc } from '../core/model';
 import { formatQuantity } from '../core/library';
 import { AppError } from '../core/result';
 import { netOfPin } from '../core/schematic';
 import { buildNetlist, spiceNumber } from './netlist';
-import { runNgspice } from './runner';
+import { runNgspice } from './engine';
 
 export type MeasureKind = 'ohm' | 'cont' | 'diode' | 'esr';
 export interface MeasureRequest { kind: MeasureKind; red: PinRef | null; black: PinRef | null; freqHz?: number }
@@ -50,7 +51,7 @@ function prepare(doc: ProjectDoc, req: MeasureRequest) {
   return { red: req.red, black: req.black, bn, same } as const;
 }
 
-async function runOp(doc: ProjectDoc, ng: string, red: PinRef, black: PinRef, bn: string | null, extra: (r: string, b: string) => string[], ac?: number) {
+async function runOp(doc: ProjectDoc, ng: Ngspice, red: PinRef, black: PinRef, bn: string | null, extra: (r: string, b: string) => string[], ac?: number) {
   let nodes = { r: '', b: '' };
   let missing = false;
   const nl = buildNetlist(doc, { op: true, tran: null }, `${doc.name} (прибор)`, {
@@ -71,7 +72,7 @@ async function runOp(doc: ProjectDoc, ng: string, red: PinRef, black: PinRef, bn
 
 const v = (plot: { values: Record<string, number[]> } | undefined, node: string) => (node === '0' ? 0 : plot?.values[`v(${node})`]?.[0] ?? NaN);
 
-export async function measure(doc: ProjectDoc, ngspicePath: string | null, req: MeasureRequest): Promise<MeasureResult> {
+export async function measure(doc: ProjectDoc, ngspicePath: Ngspice | null, req: MeasureRequest): Promise<MeasureResult> {
   const base: MeasureResult = { kind: req.kind, status: 'blocked', display: '—', value: null, beep: false, method: '', esr: null, message: null, netlist: '' };
   const p = prepare(doc, req);
   if ('error' in p) return { ...base, message: p.error ?? null };

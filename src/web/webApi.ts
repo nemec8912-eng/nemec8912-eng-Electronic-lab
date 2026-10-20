@@ -18,6 +18,14 @@ import { connectPins, placeBundle } from '../core/schematic';
 import { APP_VERSION } from '../core/appinfo';
 import type { ElabApi, ProjectSummary, SimResult } from '../shared/api';
 import { analysesFor, buildNetlist } from '../sim/netlist';
+import { runChecks } from '../sim/checks';
+import { expectedValues } from '../sim/expected';
+import { measure } from '../sim/meters';
+import { simulate } from '../sim/simulate';
+import { hasEmbeddedNgspice, wasmExec } from './ngspiceWasm';
+
+let engine: ReturnType<typeof wasmExec> | null = null;
+const wasmEngine = () => (engine ??= wasmExec());
 
 const P = 'elab-web/';
 const mem = new Map<string, string>();
@@ -106,7 +114,7 @@ export function webApi(): ElabApi {
 
   return {
     app: {
-      info: async () => ok({ version: APP_VERSION, dataRoot: 'хранилище этого браузера', portable: false, crashedLastSession: false, restoreRecovered: null, platform: 'web', ngspice: 'web' }),
+      info: async () => ok({ version: APP_VERSION, dataRoot: 'хранилище этого браузера', portable: false, crashedLastSession: false, restoreRecovered: null, platform: 'web', ngspice: hasEmbeddedNgspice() ? 'ngspice WebAssembly' : 'web' }),
       setDirty: async () => ok(undefined),
       closeConfirmed: async () => ok(undefined),
       onCloseRequest: () => () => undefined,
@@ -212,7 +220,14 @@ export function webApi(): ElabApi {
       },
     },
     kicad: { openOnline: noWeb, openFile: noWeb, describe: noWeb, build: noWeb },
-    sim: {
+    // Расчёт: ngspice WebAssembly, если он встроен в страницу (сборка демо-версии с vendor/ngspice-wasm);
+    // иначе — только проверки схемы и netlist.
+    sim: hasEmbeddedNgspice() ? {
+      run: async (doc, opts) => ok(await simulate(doc, wasmEngine(), { analysis: opts.analysis })),
+      checks: async (doc) => ok(await runChecks(doc, wasmEngine())),
+      expected: async (doc, rec) => ok(await expectedValues(doc, wasmEngine(), rec)),
+      measure: async (doc, req) => ok(await measure(doc, wasmEngine(), req)),
+    } : {
       // ngspice в браузере не запускается. Проверки схемы (netlist) работают — их и показываем.
       run: async (doc, opts) => {
         const analysis = opts.analysis ?? doc.simulation.analysis;
